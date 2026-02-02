@@ -263,6 +263,15 @@ const enemyAnimationStates = new Map();
 // Currently selected character (defaults to corporate_employee)
 let selectedCharacter = 'corporate_employee';
 
+// Mapping from progression character IDs to asset IDs
+const CHARACTER_ID_TO_ASSET = {
+    'default': 'corporate_employee',
+    'speedster': 'intern',
+    'tank': 'it_support',
+    'fighter': 'hr_karen',
+    'ghost': 'corporate_employee'  // Ghost uses default sprite (no unique spritesheet)
+};
+
 // Character asset loader
 const characterAssetLoader = {
     loadedCount: 0,
@@ -1170,11 +1179,11 @@ function getMapDimensionsForFloor(floor) {
 
     let width;
     if (aspectRatio === '16:9') {
-        // 16:9 widescreen - wider maps
-        width = Math.round(baseHeight * 16 / 9);
+        // 16:9 widescreen - wider maps (use floor to avoid canvas overflow)
+        width = Math.floor(baseHeight * 16 / 9);
     } else if (aspectRatio === '16:10') {
-        // 16:10 (Steam Deck) - slightly wider maps
-        width = Math.round(baseHeight * 16 / 10);
+        // 16:10 (Steam Deck) - slightly wider maps (use floor to avoid canvas overflow)
+        width = Math.floor(baseHeight * 16 / 10);
     } else {
         // Square (1:1)
         width = baseHeight;
@@ -1501,7 +1510,15 @@ let gameState = {
     celebrations: [],  // Active celebration popups
     floorHits: 0,      // Hits taken this floor (for flawless tracking)
     // Zen mode flag
-    zenMode: false
+    zenMode: false,
+    // === NEW: Collectibles System (Dopamine Breadcrumbs) ===
+    coins: [],              // Coins scattered throughout maze
+    coinsCollected: 0,      // Coins collected this run
+    coinCombo: 0,           // Rapid collection combo
+    coinComboTimer: 0,      // Time remaining for combo
+    // === NEW: Quick Run Mode ===
+    quickRunMode: false,    // 7-floor quick run
+    quickRunStartFloor: 7   // Starting floor for quick run
 };
 
 // Comprehensive stats tracking (persisted)
@@ -1519,7 +1536,10 @@ let playerStats = {
     powerupsCollected: 0,
     secretExitsFound: 0,
     bestFloor: 23,  // Lowest floor reached
-    totalPlayTime: 0  // Total time playing
+    totalPlayTime: 0,  // Total time playing
+    // === NEW: Escape Points System (Meta-Progression) ===
+    escapePoints: 0,        // Persistent currency earned from runs
+    totalCoinsCollected: 0  // Lifetime coins collected
 };
 
 // Load stats from localStorage
@@ -2091,7 +2111,12 @@ const CELEBRATIONS = {
     speedster: { text: 'SPEEDSTER!', color: '#6bcb77' },
     flawless: { text: 'FLAWLESS!', color: '#4d96ff' },
     niceUse: { text: 'NICE!', color: '#9b59b6' },
-    checkpoint: { text: 'CHECKPOINT!', color: '#00d2d3' }
+    checkpoint: { text: 'CHECKPOINT!', color: '#00d2d3' },
+    // === NEW: Close Call & Coin Celebrations ===
+    closeCall: { text: 'CLOSE CALL!', color: '#ff4757' },
+    clutchEscape: { text: 'CLUTCH!', color: '#ffa502' },
+    coinStreak: { text: 'COIN STREAK x{n}!', color: '#f1c40f' },
+    coinMaster: { text: 'COIN MASTER!', color: '#f39c12' }
 };
 
 // ============================================
@@ -2120,7 +2145,18 @@ const DEFAULT_SETTINGS = {
         right: ['KeyD', 'ArrowRight'],
         action: ['Space'],
         pause: ['KeyP', 'Escape']
-    }
+    },
+    // Game Feel settings (Super Meat Boy consultant recommendations)
+    instantRestartEnabled: true,
+    instantRestartKey: 'KeyR',
+    inputBufferingEnabled: true,
+    inputBufferWindow: 80,           // milliseconds
+    freezeFramesEnabled: true,
+    freezeFrameIntensity: 1.0,       // 0.5-1.5 range
+    squashStretchEnabled: true,
+    squashStretchIntensity: 1.0,     // 0.5-1.5 range
+    ghostEnabled: true,
+    ghostOpacity: 0.4
 };
 
 // ============================================
@@ -2482,6 +2518,8 @@ function loadProgress() {
         if (saved) {
             playerProgress = { ...playerProgress, ...JSON.parse(saved) };
         }
+        // Sync the global selectedCharacter for asset lookups
+        selectedCharacter = CHARACTER_ID_TO_ASSET[playerProgress.selectedCharacter] || 'corporate_employee';
         checkUnlocks();
     } catch (e) {
         console.log('Failed to load progress:', e);
@@ -2641,6 +2679,8 @@ function getSelectedCharacter() {
 function selectCharacter(charId) {
     if (playerProgress.unlockedCharacters.includes(charId)) {
         playerProgress.selectedCharacter = charId;
+        // Update the global selectedCharacter for asset lookups
+        selectedCharacter = CHARACTER_ID_TO_ASSET[charId] || 'corporate_employee';
         saveProgress();
         updatePlayerColors();
         return true;
@@ -2670,6 +2710,44 @@ function updateProgressAfterRun(won) {
     playerStats.enemiesPunched += gameState.enemiesKnockedOut || 0;
     playerStats.enemiesZapped += gameState.enemiesZapped || 0;
     playerStats.totalRuns++;
+
+    // === NEW: Escape Points System (Meta-Progression) ===
+    // Award escape points based on performance - even failed runs give progress
+    const floorsDescended = (gameState.quickRunMode ? 7 : 23) - gameState.floor;
+    let escapePointsEarned = 0;
+
+    // Base points for floors cleared (10 per floor)
+    escapePointsEarned += floorsDescended * 10;
+
+    // Bonus for coins collected (1 point per 10 coins)
+    escapePointsEarned += Math.floor((gameState.coinsCollected || 0) / 10);
+
+    // Bonus for enemies knocked out (5 per knockout)
+    escapePointsEarned += (gameState.enemiesKnockedOut || 0) * 5;
+
+    // Bonus for enemies zapped (3 per zap)
+    escapePointsEarned += (gameState.enemiesZapped || 0) * 3;
+
+    // Victory bonus (100 points)
+    if (won) {
+        escapePointsEarned += 100;
+
+        // Perfect run bonus (no hits taken)
+        if (!playerProgress.wasHitThisRun) {
+            escapePointsEarned += 50;
+        }
+
+        // Quick Run completion bonus
+        if (gameState.quickRunMode) {
+            escapePointsEarned += 25;
+        }
+    }
+
+    // Update persistent escape points
+    playerStats.escapePoints = (playerStats.escapePoints || 0) + escapePointsEarned;
+    playerStats.totalCoinsCollected = (playerStats.totalCoinsCollected || 0) + (gameState.coinsCollected || 0);
+
+    console.log(`Earned ${escapePointsEarned} escape points. Total: ${playerStats.escapePoints}`);
 
     if (won) {
         playerProgress.totalWins++;
@@ -3192,7 +3270,88 @@ function generateMaze() {
     }
 
     console.log(`Maze generated: ${wallsAdded} walls added, paths verified`);
+
+    // === NEW: Add bottleneck corridors near exits ===
+    // Creates chokepoints that force player-enemy confrontation
+    addBottleneckCorridors(maze, corners, startX, startY);
+
     return maze;
+}
+
+// === NEW: Create bottleneck corridors near exits ===
+// This forces confrontation by creating narrow paths that players and enemies must share
+function addBottleneckCorridors(maze, corners, startX, startY) {
+    for (const corner of corners) {
+        // Create a 1-tile wide corridor leading to each exit
+        // The corridor is 3-4 tiles long, positioned 3-4 tiles away from the exit
+
+        // Determine corridor direction based on which corner
+        const isTopCorner = corner.y < MAP_HEIGHT / 2;
+        const isLeftCorner = corner.x < MAP_WIDTH / 2;
+
+        // Create horizontal or vertical bottleneck based on corner position
+        if (Math.random() > 0.5) {
+            // Horizontal bottleneck
+            const bottleneckY = corner.y + (isTopCorner ? 3 : -3);
+            const startBottleneckX = corner.x + (isLeftCorner ? 2 : -4);
+
+            if (bottleneckY > 1 && bottleneckY < MAP_HEIGHT - 2) {
+                // Create walls above and below to form corridor
+                for (let i = 0; i < 3; i++) {
+                    const wallX = startBottleneckX + i;
+                    if (wallX > 1 && wallX < MAP_WIDTH - 2) {
+                        // Wall above corridor
+                        if (bottleneckY - 1 > 0 && maze[bottleneckY - 1][wallX] === TILE.FLOOR) {
+                            maze[bottleneckY - 1][wallX] = TILE.WALL;
+                        }
+                        // Wall below corridor
+                        if (bottleneckY + 1 < MAP_HEIGHT - 1 && maze[bottleneckY + 1][wallX] === TILE.FLOOR) {
+                            maze[bottleneckY + 1][wallX] = TILE.WALL;
+                        }
+                        // Ensure corridor itself is clear
+                        if (maze[bottleneckY][wallX] === TILE.WALL) {
+                            maze[bottleneckY][wallX] = TILE.FLOOR;
+                        }
+                    }
+                }
+            }
+        } else {
+            // Vertical bottleneck
+            const bottleneckX = corner.x + (isLeftCorner ? 3 : -3);
+            const startBottleneckY = corner.y + (isTopCorner ? 2 : -4);
+
+            if (bottleneckX > 1 && bottleneckX < MAP_WIDTH - 2) {
+                // Create walls left and right to form corridor
+                for (let i = 0; i < 3; i++) {
+                    const wallY = startBottleneckY + i;
+                    if (wallY > 1 && wallY < MAP_HEIGHT - 2) {
+                        // Wall left of corridor
+                        if (bottleneckX - 1 > 0 && maze[wallY][bottleneckX - 1] === TILE.FLOOR) {
+                            maze[wallY][bottleneckX - 1] = TILE.WALL;
+                        }
+                        // Wall right of corridor
+                        if (bottleneckX + 1 < MAP_WIDTH - 1 && maze[wallY][bottleneckX + 1] === TILE.FLOOR) {
+                            maze[wallY][bottleneckX + 1] = TILE.WALL;
+                        }
+                        // Ensure corridor itself is clear
+                        if (maze[wallY][bottleneckX] === TILE.WALL) {
+                            maze[wallY][bottleneckX] = TILE.FLOOR;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Verify paths still exist after adding bottlenecks
+    for (const corner of corners) {
+        if (!hasPath(maze, startX, startY, corner.x, corner.y)) {
+            // If bottleneck blocked a path, force clear it
+            forcePathClear(maze, startX, startY, corner.x, corner.y);
+        }
+    }
+
+    console.log('Bottleneck corridors added near exits');
 }
 
 // Add desks after maze generation, verifying they don't block paths
@@ -3660,14 +3819,17 @@ function initLevel() {
     } // Close the else block for non-zen mode enemy spawning
 
     gameState.powerups = [];
-    // Fewer powerups on opening floors to increase challenge
+    // === CHANGED: Increased power-up density for better flow ===
+    // More power-ups = more tactical decisions = more engagement
     let numPowerups;
     if (gameState.floor >= 20) {
-        numPowerups = 2 + Math.floor(gameRandom() * 2);  // 2-3 powerups
+        numPowerups = 5 + Math.floor(gameRandom() * 3);  // 5-7 powerups (was 2-3)
+    } else if (gameState.floor >= 10) {
+        numPowerups = 6 + Math.floor(gameRandom() * 4);  // 6-9 powerups (was 3-5)
     } else {
-        numPowerups = 3 + Math.floor(gameRandom() * 3);  // 3-5 powerups
+        numPowerups = 8 + Math.floor(gameRandom() * 4);  // 8-11 powerups (late game gets more chaos)
     }
-    const MIN_POWERUP_DISTANCE = 8; // Minimum Manhattan distance between powerups
+    const MIN_POWERUP_DISTANCE = 6; // Reduced from 8 to allow more density
 
     for (let i = 0; i < numPowerups; i++) {
         let px, py, attempts = 0;
@@ -3729,6 +3891,56 @@ function initLevel() {
     gameState.crispyEffects = [];
     gameState.lastChance = false;
     gameState.lastChanceTimer = 0;
+
+    // === NEW: Spawn Coins (Dopamine Breadcrumbs) ===
+    // Lots of coins scattered throughout for constant micro-rewards
+    gameState.coins = [];
+    const numCoins = 15 + Math.floor(gameRandom() * 10); // 15-25 coins per floor
+    const MIN_COIN_DISTANCE = 4; // Minimum distance between coins
+
+    for (let i = 0; i < numCoins; i++) {
+        let cx, cy, attempts = 0;
+        let validPlacement = false;
+
+        do {
+            cx = Math.floor(gameRandom() * (MAP_WIDTH - 4)) + 2;
+            cy = Math.floor(gameRandom() * (MAP_HEIGHT - 4)) + 2;
+            attempts++;
+
+            // Check if tile is floor
+            if (gameState.maze[cy][cx] !== TILE.FLOOR) continue;
+
+            // Don't place coins near player spawn
+            if (Math.abs(cx - gameState.player.x) < 3 && Math.abs(cy - gameState.player.y) < 3) continue;
+
+            // Don't place coins near exits (save for exciting final dash)
+            let nearExit = false;
+            for (const exit of gameState.exits) {
+                if (Math.abs(cx - exit.x) < 2 && Math.abs(cy - exit.y) < 2) {
+                    nearExit = true;
+                    break;
+                }
+            }
+            if (nearExit) continue;
+
+            // Check distance from existing coins (slight clustering is ok)
+            validPlacement = gameState.coins.every(c =>
+                Math.abs(cx - c.x) + Math.abs(cy - c.y) >= MIN_COIN_DISTANCE
+            );
+
+        } while (!validPlacement && attempts < 100);
+
+        if (attempts < 100) {
+            gameState.coins.push({
+                x: cx,
+                y: cy,
+                value: 10, // Base coin value
+                collected: false,
+                bobOffset: gameRandom() * Math.PI * 2, // For bobbing animation
+                sparkle: gameRandom() * Math.PI * 2   // For sparkle effect
+            });
+        }
+    }
 }
 
 function drawPixel(x, y, size, color) {
@@ -4057,12 +4269,26 @@ function drawCharacterSprite(x, y, facingRight, powerupOverlay) {
 
     ctx.save();
 
+    // Get squash/stretch scale factors (Super Meat Boy feel)
+    const squashStretch = characterAnimationState.player.squashStretch || { scaleX: 1, scaleY: 1 };
+    const scaleX = squashStretch.scaleX;
+    const scaleY = squashStretch.scaleY;
+
     // Handle direction flipping
     if (!facingRight) {
         ctx.translate(x + TILE_SIZE, y);
         ctx.scale(-1, 1);
         x = 0;
         y = 0;
+    }
+
+    // Apply squash/stretch transform (pivot at bottom center of sprite)
+    if (scaleX !== 1 || scaleY !== 1) {
+        const pivotX = x + offsetX + destSize / 2;
+        const pivotY = y + offsetY + destSize; // Bottom of sprite
+        ctx.translate(pivotX, pivotY);
+        ctx.scale(scaleX, scaleY);
+        ctx.translate(-pivotX, -pivotY);
     }
 
     // Draw the sprite frame at larger size
@@ -4217,8 +4443,8 @@ function drawEnemySprite(enemy, x, y) {
     const srcX = state.frame * anim.frameWidth;
     const srcY = 0;
 
-    // Draw sprite at same scale as player
-    const spriteScale = 2.5;
+    // Draw sprite slightly smaller than player (enemy artwork fills more of frame)
+    const spriteScale = 2.0;
     const destSize = Math.floor(TILE_SIZE * spriteScale);
     const offsetX = Math.floor((TILE_SIZE - destSize) / 2);
     const offsetY = Math.floor((TILE_SIZE - destSize) / 2) - 12;
@@ -5040,6 +5266,53 @@ function drawExit(exit) {
     ctx.fill();
 }
 
+// === NEW: Draw Coin (Dopamine Breadcrumb) ===
+function drawCoin(coin) {
+    if (coin.collected) return;
+
+    const x = coin.x * TILE_SIZE;
+    const y = coin.y * TILE_SIZE;
+    const bob = Math.sin(gameState.animationTime * 4 + coin.bobOffset) * 2;
+    const sparkle = Math.sin(gameState.animationTime * 8 + coin.sparkle);
+
+    // Coin glow
+    ctx.shadowColor = '#f1c40f';
+    ctx.shadowBlur = 8 + sparkle * 4;
+
+    // Coin body (golden circle)
+    const cx = x + TILE_SIZE / 2;
+    const cy = y + TILE_SIZE / 2 + bob;
+    const radius = TILE_SIZE / 4;
+
+    // Outer gold ring
+    ctx.fillStyle = '#f39c12';
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Inner bright gold
+    ctx.fillStyle = '#f1c40f';
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius * 0.75, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Highlight (gives 3D effect)
+    ctx.fillStyle = '#fff9c4';
+    ctx.beginPath();
+    ctx.arc(cx - radius * 0.25, cy - radius * 0.25, radius * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Sparkle effect
+    if (sparkle > 0.5) {
+        ctx.fillStyle = `rgba(255, 255, 255, ${(sparkle - 0.5) * 2})`;
+        ctx.beginPath();
+        ctx.arc(cx + radius * 0.4, cy - radius * 0.4, 2, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    ctx.shadowBlur = 0;
+}
+
 function drawPowerup(powerup) {
     const x = powerup.x * TILE_SIZE;
     const y = powerup.y * TILE_SIZE;
@@ -5749,6 +6022,13 @@ function draw() {
         drawPowerup(powerup);
     }
 
+    // === NEW: Draw coins (dopamine breadcrumbs) ===
+    for (const coin of gameState.coins) {
+        if (!coin.collected) {
+            drawCoin(coin);
+        }
+    }
+
     // Draw collecting powerups (suction effect)
     drawCollectingPowerups();
 
@@ -5776,6 +6056,9 @@ function draw() {
     for (const enemy of gameState.enemies) {
         drawEnemy(enemy);
     }
+
+    // Draw ghost replay (before player so it appears behind)
+    drawGhost();
 
     // Draw player
     drawPlayer();
@@ -5882,6 +6165,38 @@ function draw() {
     // Draw celebration text (positive feedback system)
     drawCelebrations();
 
+    // === NEW: Timer Danger Visual Feedback ===
+    // Screen tint intensifies as timer approaches zero
+    if (gameState.timer <= 15 && gameState.timer > 0 && !gameState.paused) {
+        const urgency = 1 - (gameState.timer / 15); // 0 at 15s, 1 at 0s
+        const pulse = Math.sin(gameState.animationTime * (8 + urgency * 12)) * 0.5 + 0.5;
+        const alpha = urgency * 0.3 * pulse;
+
+        // Red vignette effect
+        const gradient = ctx.createRadialGradient(
+            canvas.width / 2, canvas.height / 2, canvas.width * 0.3,
+            canvas.width / 2, canvas.height / 2, canvas.width * 0.7
+        );
+        gradient.addColorStop(0, 'rgba(255, 0, 0, 0)');
+        gradient.addColorStop(1, `rgba(180, 0, 0, ${alpha})`);
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Screen shake when under 5 seconds (if enabled)
+        if (gameState.timer <= 5 && settings.screenShake) {
+            const shakeIntensity = (1 - gameState.timer / 5) * 3 * pulse;
+            ctx.translate(
+                (Math.random() - 0.5) * shakeIntensity,
+                (Math.random() - 0.5) * shakeIntensity
+            );
+        }
+
+        // Border pulse effect
+        ctx.strokeStyle = `rgba(255, 50, 50, ${alpha * 2})`;
+        ctx.lineWidth = 4 + urgency * 4;
+        ctx.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
+    }
+
     // Draw mini-map in bottom-right corner
     drawMiniMap();
 
@@ -5960,14 +6275,16 @@ function drawMiniMap() {
     // Border
     ctx.strokeStyle = '#4ecdc4';
     ctx.lineWidth = 1;
-    ctx.strokeRect(miniMapX - 2, miniMapY - 2, miniMapSize + 4, miniMapSize + 4);
+    ctx.strokeRect(miniMapX - 2, miniMapY - 2, miniMapWidth + 4, miniMapHeight + 4);
 }
 
 function updateHUD() {
     // Floor display with progress indicator
-    const floorsRemaining = gameState.floor;
-    const floorsCleared = 23 - gameState.floor;
-    document.getElementById('floor').textContent = `Floor: ${gameState.floor} (${floorsCleared}/23)`;
+    // === UPDATED: Support Quick Run mode ===
+    const startFloor = gameState.quickRunMode ? 7 : 23;
+    const floorsCleared = startFloor - gameState.floor;
+    const modeLabel = gameState.quickRunMode ? ' [QUICK]' : '';
+    document.getElementById('floor').textContent = `Floor: ${gameState.floor} (${floorsCleared}/${startFloor})${modeLabel}`;
 
     // Timer display - show if burning (drains 2x)
     const timerEl = document.getElementById('timer');
@@ -5977,6 +6294,14 @@ function updateHUD() {
     } else {
         timerEl.textContent = `Time: ${Math.ceil(gameState.timer)}`;
         timerEl.style.color = gameState.timer <= 5 ? '#e94560' : '#ff6b6b';
+    }
+
+    // === NEW: Coin display with combo indicator ===
+    const coinDisplay = document.getElementById('coinDisplay');
+    if (coinDisplay) {
+        const comboText = gameState.coinCombo > 1 ? ` x${gameState.coinCombo}` : '';
+        coinDisplay.textContent = `🪙 ${gameState.coinsCollected || 0}${comboText}`;
+        coinDisplay.style.color = gameState.coinCombo > 2 ? '#f39c12' : '#f1c40f';
     }
 
     let powerupText = 'None';
@@ -6078,6 +6403,7 @@ function pushEnemyAway(enemy, fromX, fromY) {
 function fryEnemy(enemy) {
     AudioManager.play('zap'); // Electric zap sound
     screenShake.trigger(8, 0.2); // Small shake on zap
+    triggerFreezeFrame('electricZap'); // Longer freeze for satisfying zap
 
     // Create crispy effect at enemy location
     gameState.crispyEffects.push({
@@ -6505,6 +6831,7 @@ function handlePlayerEnemyCollision(enemy) {
         gameState.enemiesKnockedOut++;
         // Add punch visual effect
         addPunchEffect(enemy.x, enemy.y);
+        triggerFreezeFrame('enemyKnockout'); // Impact freeze for satisfying punch
         // Don't consume the powerup on contact - only on SPACE
         return;
     }
@@ -6529,6 +6856,7 @@ function handlePlayerEnemyCollision(enemy) {
     if (gameState.player.stunned <= 0) {
         AudioManager.play('hit'); // Player hit sound
         screenShake.trigger(10, 0.25); // Medium shake when hit
+        triggerFreezeFrame('playerHit'); // Impact freeze frame for game feel
 
         gameState.player.hitCount++;
         gameState.player.lastHitTime = Date.now();
@@ -6554,8 +6882,8 @@ function handlePlayerEnemyCollision(enemy) {
 }
 
 function movePlayer(dx, dy) {
-    if (gameState.player.stunned > 0) return;
-    if (Date.now() - lastMove < MOVE_DELAY / (gameState.powerup === 'speed' ? 2 : 1)) return;
+    if (gameState.player.stunned > 0) return false;
+    if (Date.now() - lastMove < MOVE_DELAY / (gameState.powerup === 'speed' ? 2 : 1)) return false;
 
     const newX = gameState.player.x + dx;
     const newY = gameState.player.y + dy;
@@ -6575,6 +6903,9 @@ function movePlayer(dx, dy) {
         characterAnimationState.player.isMoving = true;
         characterAnimationState.player.lastMoveTime = Date.now();
 
+        // Trigger stretch animation on movement start (Super Meat Boy feel)
+        triggerStretch();
+
         // Check secret exit on floor 13
         if (gameState.floor === 13 && gameState.secretExit) {
             if (gameState.player.x === gameState.secretExit.x && gameState.player.y === gameState.secretExit.y) {
@@ -6591,8 +6922,54 @@ function movePlayer(dx, dy) {
         // Check regular exits
         for (const exit of gameState.exits) {
             if (gameState.player.x === exit.x && gameState.player.y === exit.y) {
+                // === NEW: Close Call Celebration ===
+                if (gameState.timer <= 5 && gameState.timer > 0) {
+                    showCelebration('clutchEscape');
+                    triggerFreezeFrame('closeDodge');
+                } else if (gameState.timer <= 10 && gameState.timer > 5) {
+                    showCelebration('closeCall');
+                }
                 nextFloor();
                 return;
+            }
+        }
+
+        // === NEW: Coin Collection (Dopamine Breadcrumbs) ===
+        for (let i = gameState.coins.length - 1; i >= 0; i--) {
+            const coin = gameState.coins[i];
+            if (!coin.collected && gameState.player.x === coin.x && gameState.player.y === coin.y) {
+                coin.collected = true;
+                gameState.coinsCollected += coin.value;
+
+                // Combo system for rapid collection
+                if (gameState.coinComboTimer > 0) {
+                    gameState.coinCombo++;
+                    if (gameState.coinCombo >= 3) {
+                        showCelebration('coinStreak', { n: gameState.coinCombo });
+                    }
+                    if (gameState.coinCombo >= 10) {
+                        showCelebration('coinMaster');
+                    }
+                } else {
+                    gameState.coinCombo = 1;
+                }
+                gameState.coinComboTimer = 2.0; // 2 seconds to keep combo
+
+                // Play coin collect sound (quick chime)
+                AudioManager.play('powerup', 0.5);
+
+                // Visual feedback - small particle burst
+                for (let j = 0; j < 4; j++) {
+                    gameState.particles.push({
+                        x: coin.x * TILE_SIZE + TILE_SIZE / 2,
+                        y: coin.y * TILE_SIZE + TILE_SIZE / 2,
+                        vx: (Math.random() - 0.5) * 3,
+                        vy: (Math.random() - 0.5) * 3 - 2,
+                        size: 3,
+                        color: '#f1c40f',
+                        life: 0.5
+                    });
+                }
             }
         }
 
@@ -6629,6 +7006,8 @@ function movePlayer(dx, dy) {
                     default:
                         AudioManager.play('powerup'); // Fallback
                 }
+                // Quick freeze frame on powerup collection
+                triggerFreezeFrame('powerupCollect');
 
                 // Handle special outdoor powerups
                 if (pu.type === 'shield') {
@@ -6669,7 +7048,9 @@ function movePlayer(dx, dy) {
                 }
             }
         }
+        return true; // Movement successful
     }
+    return false; // Movement blocked
 }
 
 function usePowerup() {
@@ -6702,6 +7083,15 @@ function moveEnemies() {
     // IMPORTANT: Only ONE enemy can attack per frame to prevent stun stacking
     let playerAlreadyHitThisFrame = false;
 
+    // === NEW: Calculate rubber-banding factor ===
+    // If player is closer to exits than enemies, enemies speed up (and vice versa)
+    // This creates more dramatic close finishes
+    let playerMinDistToExit = Infinity;
+    for (const exit of gameState.exits) {
+        const dist = Math.abs(gameState.player.x - exit.x) + Math.abs(gameState.player.y - exit.y);
+        if (dist < playerMinDistToExit) playerMinDistToExit = dist;
+    }
+
     for (const enemy of gameState.enemies) {
         if (enemy.stunned > 0) continue;
 
@@ -6720,6 +7110,20 @@ function moveEnemies() {
         // DIFFICULTY INCREASE: Faster enemy movement
         // OLD: Easy=45, Medium=30, Hard=20 | NEW: Easy=35, Medium=22, Hard=15
         let baseMoveThreshold = enemy.difficulty === 'easy' ? 35 : (enemy.difficulty === 'hard' ? 15 : 22);
+
+        // === NEW: Rubber-banding adjustment ===
+        // If player is close to exit, enemies get faster
+        // If player is far from exit, enemies slow down slightly
+        let rubberBandModifier = 1.0;
+        if (playerMinDistToExit < 5) {
+            // Player is close to exit - enemies speed up (lower threshold = faster)
+            rubberBandModifier = 0.7 + (playerMinDistToExit / 5) * 0.3; // 0.7 to 1.0
+        } else if (playerMinDistToExit > 12) {
+            // Player is far from exit - enemies slow down (higher threshold = slower)
+            rubberBandModifier = 1.0 + (Math.min(playerMinDistToExit - 12, 8) / 8) * 0.3; // 1.0 to 1.3
+        }
+        baseMoveThreshold = Math.floor(baseMoveThreshold * rubberBandModifier);
+
         // Enemies move slower in cafeteria (they're distracted by food)
         const moveThreshold = enemyInCafeteria ? baseMoveThreshold + 15 : baseMoveThreshold;
         if (enemy.moveTimer < moveThreshold) continue;
@@ -6831,6 +7235,7 @@ function nextFloor() {
 
     if (gameState.floor < 1) {
         gameState.won = true;
+        saveGhostReplay(); // Save ghost replay on victory
         AudioManager.play('victory'); // Victory fanfare
         showVictoryScreen();
         return;
@@ -6966,19 +7371,43 @@ function showVictoryScreen() {
         dailyInfo = `<br><span style="color: #f39c12;">DAILY CHALLENGE: ${formatTime(dailyChallenge.bestTime)}</span>`;
     }
 
+    // === UPDATED: Show coins and escape points ===
+    const floorsDescended = gameState.quickRunMode ? 7 : 23;
+    const modeLabel = gameState.quickRunMode ? ' (Quick Run)' : '';
+
     stats.innerHTML = `
         <span style="font-size: 24px; color: #ffe66d;">⏱️ ${timeString}</span>${newRecord ? ' <span style="color: #4ecdc4;">NEW RECORD!</span>' : ''}${dailyInfo}<br><br>
-        Floors descended: 23<br>
+        Floors descended: ${floorsDescended}${modeLabel}<br>
+        Coins collected: 🪙 ${gameState.coinsCollected || 0}<br>
         Coworkers punched: ${gameState.enemiesKnockedOut || 0}<br>
         Coworkers zapped: ${gameState.enemiesZapped || 0}<br>
         Best time: ${bestTimeStr}<br>
         Total wins: ${playerStats.totalWins}<br>
+        <span style="color: #f39c12;">Escape Points: +${calculateEscapePoints(true)} (Total: ${playerStats.escapePoints || 0})</span><br>
         Status: Unemployed but alive
     `;
     victory.style.display = 'flex';
 }
 
+// === NEW: Calculate escape points for display ===
+function calculateEscapePoints(won) {
+    const floorsDescended = (gameState.quickRunMode ? 7 : 23) - gameState.floor;
+    let points = floorsDescended * 10;
+    points += Math.floor((gameState.coinsCollected || 0) / 10);
+    points += (gameState.enemiesKnockedOut || 0) * 5;
+    points += (gameState.enemiesZapped || 0) * 3;
+    if (won) {
+        points += 100;
+        if (!playerProgress.wasHitThisRun) points += 50;
+        if (gameState.quickRunMode) points += 25;
+    }
+    return points;
+}
+
 function showGameOverScreen(message) {
+    // Save ghost replay if this was a good run
+    saveGhostReplay();
+
     // Update progress
     updateProgressAfterRun(false);
 
@@ -7006,9 +7435,12 @@ function showGameOverScreen(message) {
     let statsHtml = `<span style="color: #4ecdc4; font-size: 18px;">${encouragement}</span><br>`;
     statsHtml += `You made it to floor ${floorNum}`;
 
-    // Calculate percentile (rough estimate for encouragement)
-    const percentile = Math.min(95, Math.floor((23 - floorNum) / 23 * 100) + 10);
+    // === NEW: Show coins and escape points earned (even on failure) ===
+    const startFloor = gameState.quickRunMode ? 7 : 23;
+    const percentile = Math.min(95, Math.floor((startFloor - floorNum) / startFloor * 100) + 10);
     statsHtml += `<br><span style="color: #aaa; font-size: 12px;">That's better than ~${percentile}% of attempts!</span>`;
+    statsHtml += `<br><span style="color: #f1c40f;">🪙 Coins: ${gameState.coinsCollected || 0}</span>`;
+    statsHtml += `<br><span style="color: #f39c12;">Escape Points: +${calculateEscapePoints(false)} (Total: ${playerStats.escapePoints || 0})</span>`;
 
     // Show continue option if checkpoint available
     if (gameState.continuesRemaining > 0 && gameState.lastCheckpoint && !gameState.zenMode) {
@@ -7046,6 +7478,437 @@ function restartGame() {
 
     // Cycle to new random background
     setTitleBackground();
+}
+
+// ============================================
+// INSTANT RESTART SYSTEM (Super Meat Boy style)
+// ============================================
+let restartFlash = { active: false, alpha: 0 };
+
+function instantRestart() {
+    // Skip if instant restart disabled
+    if (!settings.instantRestartEnabled) return;
+
+    // Brief white flash effect
+    triggerRestartFlash();
+
+    // Hide all modals
+    document.getElementById('gameOver').style.display = 'none';
+    document.getElementById('victory').style.display = 'none';
+    document.getElementById('pauseScreen').style.display = 'none';
+    document.getElementById('message').style.display = 'none';
+
+    // Reset daily challenge state
+    dailyChallenge.active = false;
+
+    // Reset game state for fresh run
+    gameState.floor = 23;
+    gameState.gameOver = false;
+    gameState.won = false;
+    gameState.started = true;
+    gameState.paused = false;
+    gameState.imploding = false;
+    gameState.implosionFrame = 0;
+    gameState.particles = [];
+    gameState.lastChance = false;
+    gameState.player.hitCount = 0;
+    gameState.player.lastHitTime = 0;
+    gameState.player.burning = 0;
+    gameState.enemiesKnockedOut = 0;
+    gameState.enemiesZapped = 0;
+    gameState.fires = [];
+    gameState.runStartTime = Date.now();
+    gameState.runTotalTime = 0;
+    gameState.floorTimes = [];
+    playerProgress.wasHitThisRun = false;
+
+    // Reset ghost recording
+    gameState.ghostRecording = [];
+    gameState.lastGhostRecord = 0;
+
+    // Load previous ghost for playback
+    const ghostData = loadGhostReplay();
+    gameState.ghostPlayback = ghostData ? ghostData.positions : [];
+    gameState.ghostPlaybackIndex = 0;
+
+    // Update colors and init level
+    updatePlayerColors();
+    initLevel();
+
+    console.log('Instant restart triggered');
+}
+
+function triggerRestartFlash() {
+    restartFlash.active = true;
+    restartFlash.alpha = 0.8;
+}
+
+function updateRestartFlash(deltaTime) {
+    if (restartFlash.active) {
+        restartFlash.alpha -= deltaTime * 4; // Fade over 0.2s
+        if (restartFlash.alpha <= 0) {
+            restartFlash.active = false;
+            restartFlash.alpha = 0;
+        }
+    }
+}
+
+function drawRestartFlash() {
+    if (restartFlash.active) {
+        ctx.fillStyle = `rgba(255, 255, 255, ${restartFlash.alpha})`;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+}
+
+// ============================================
+// FREEZE FRAME SYSTEM (Hit Stop)
+// ============================================
+const FREEZE_DURATIONS = {
+    playerHit: 0.05,        // 3 frames at 60fps
+    enemyKnockout: 0.067,   // 4 frames
+    powerupCollect: 0.033,  // 2 frames
+    electricZap: 0.083,     // 5 frames (chain zap is dramatic)
+    closeDodge: 0.033       // 2 frames
+};
+
+function triggerFreezeFrame(type, customDuration = null) {
+    if (!settings.freezeFramesEnabled) return;
+    if (gameState.imploding || gameState.gameOver) return; // Don't freeze during game over
+
+    const intensity = settings.freezeFrameIntensity || 1.0;
+    const baseDuration = customDuration || FREEZE_DURATIONS[type] || 0.05;
+    const duration = baseDuration * intensity;
+
+    // Don't override longer freezes with shorter ones
+    if (gameState.freezeFrame && gameState.freezeFrame.active && gameState.freezeFrame.duration > duration) {
+        return;
+    }
+
+    gameState.freezeFrame = {
+        active: true,
+        duration: duration,
+        maxDuration: duration,
+        type: type
+    };
+}
+
+function updateFreezeFrame(deltaTime) {
+    if (!gameState.freezeFrame || !gameState.freezeFrame.active) return false;
+
+    gameState.freezeFrame.duration -= deltaTime;
+
+    if (gameState.freezeFrame.duration <= 0) {
+        gameState.freezeFrame.active = false;
+        gameState.freezeFrame.duration = 0;
+        gameState.freezeFrame.type = null;
+        return false;
+    }
+
+    return true; // Still frozen
+}
+
+function drawFreezeEffect() {
+    if (!gameState.freezeFrame || !gameState.freezeFrame.active) return;
+
+    const progress = gameState.freezeFrame.duration / gameState.freezeFrame.maxDuration;
+
+    // Subtle white flash at start of freeze
+    if (progress > 0.5) {
+        ctx.fillStyle = `rgba(255, 255, 255, ${(progress - 0.5) * 0.2})`;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+}
+
+// ============================================
+// INPUT BUFFERING SYSTEM
+// ============================================
+function initInputBuffer() {
+    gameState.inputBuffer = {
+        direction: null,      // { dx: 0, dy: 0 }
+        timestamp: 0,         // When input was buffered
+        action: false,        // Buffered action button
+        actionTimestamp: 0
+    };
+}
+
+function bufferMovementInput(dx, dy) {
+    if (!settings.inputBufferingEnabled) return;
+    if (!gameState.inputBuffer) initInputBuffer();
+
+    const timeSinceMove = Date.now() - lastMove;
+    const moveDelay = MOVE_DELAY / (gameState.powerup === 'speed' ? 2 : 1);
+    const bufferWindow = settings.inputBufferWindow || 80;
+
+    // Only buffer if we're within the buffer window before next move allowed
+    if (timeSinceMove >= moveDelay - bufferWindow && timeSinceMove < moveDelay) {
+        gameState.inputBuffer.direction = { dx, dy };
+        gameState.inputBuffer.timestamp = Date.now();
+    }
+}
+
+function bufferActionInput() {
+    if (!settings.inputBufferingEnabled) return;
+    if (!gameState.inputBuffer) initInputBuffer();
+
+    // Buffer action if we have a powerup but can't use it yet (stunned)
+    if (gameState.powerup && gameState.player.stunned > 0) {
+        gameState.inputBuffer.action = true;
+        gameState.inputBuffer.actionTimestamp = Date.now();
+    }
+}
+
+function processInputBuffer() {
+    if (!settings.inputBufferingEnabled) return;
+    if (!gameState.inputBuffer) return;
+
+    const now = Date.now();
+    const bufferExpiry = 150; // Buffered inputs expire after 150ms
+
+    // Process buffered movement
+    if (gameState.inputBuffer.direction) {
+        if (now - gameState.inputBuffer.timestamp < bufferExpiry) {
+            const { dx, dy } = gameState.inputBuffer.direction;
+            const timeSinceMove = now - lastMove;
+            const moveDelay = MOVE_DELAY / (gameState.powerup === 'speed' ? 2 : 1);
+
+            if (timeSinceMove >= moveDelay) {
+                movePlayer(dx, dy);
+                gameState.inputBuffer.direction = null;
+            }
+        } else {
+            // Buffer expired
+            gameState.inputBuffer.direction = null;
+        }
+    }
+
+    // Process buffered action
+    if (gameState.inputBuffer.action) {
+        if (now - gameState.inputBuffer.actionTimestamp < bufferExpiry) {
+            if (gameState.player.stunned <= 0 && gameState.powerup) {
+                usePowerup();
+                gameState.inputBuffer.action = false;
+            }
+        } else {
+            gameState.inputBuffer.action = false;
+        }
+    }
+}
+
+// ============================================
+// SQUASH & STRETCH ANIMATION SYSTEM
+// ============================================
+function initSquashStretch() {
+    if (!characterAnimationState.player.squashStretch) {
+        characterAnimationState.player.squashStretch = {
+            scaleX: 1.0,
+            scaleY: 1.0,
+            targetX: 1.0,
+            targetY: 1.0,
+            lastMovingState: false
+        };
+    }
+}
+
+function triggerSquash(intensity = 1.0) {
+    if (!settings.squashStretchEnabled) return;
+    initSquashStretch();
+    const mult = settings.squashStretchIntensity || 1.0;
+    const state = characterAnimationState.player.squashStretch;
+    state.targetX = 1.0 + (0.2 * intensity * mult);  // Wider
+    state.targetY = 1.0 - (0.15 * intensity * mult); // Shorter
+}
+
+function triggerStretch(intensity = 1.0) {
+    if (!settings.squashStretchEnabled) return;
+    initSquashStretch();
+    const mult = settings.squashStretchIntensity || 1.0;
+    const state = characterAnimationState.player.squashStretch;
+    state.targetX = 1.0 - (0.12 * intensity * mult); // Narrower
+    state.targetY = 1.0 + (0.18 * intensity * mult); // Taller
+}
+
+function updateSquashStretch(deltaTime) {
+    if (!settings.squashStretchEnabled) return;
+    initSquashStretch();
+
+    const state = characterAnimationState.player.squashStretch;
+    const lerpSpeed = 12; // Return to normal speed
+
+    // Smoothly interpolate toward target
+    state.scaleX += (state.targetX - state.scaleX) * lerpSpeed * deltaTime;
+    state.scaleY += (state.targetY - state.scaleY) * lerpSpeed * deltaTime;
+
+    // Decay targets back to 1.0
+    state.targetX += (1.0 - state.targetX) * 8 * deltaTime;
+    state.targetY += (1.0 - state.targetY) * 8 * deltaTime;
+
+    // Clamp to reasonable bounds
+    state.scaleX = Math.max(0.7, Math.min(1.3, state.scaleX));
+    state.scaleY = Math.max(0.7, Math.min(1.3, state.scaleY));
+
+    // Detect movement state changes
+    const isMoving = characterAnimationState.player.isMoving;
+    if (isMoving && !state.lastMovingState) {
+        // Just started moving - stretch
+        triggerStretch(0.8);
+    } else if (!isMoving && state.lastMovingState) {
+        // Just stopped moving - squash (landing)
+        triggerSquash(1.0);
+    }
+    state.lastMovingState = isMoving;
+}
+
+// ============================================
+// GHOST REPLAY SYSTEM
+// ============================================
+function initGhostSystem() {
+    if (!gameState.ghostRecording) {
+        gameState.ghostRecording = [];
+        gameState.ghostPlayback = [];
+        gameState.ghostPlaybackIndex = 0;
+        gameState.lastGhostRecord = 0;
+        gameState.ghostRecordInterval = 100; // Record every 100ms
+    }
+}
+
+function recordGhostPosition() {
+    if (!settings.ghostEnabled) return;
+    initGhostSystem();
+
+    const now = Date.now();
+    if (now - gameState.lastGhostRecord < gameState.ghostRecordInterval) return;
+
+    gameState.ghostRecording.push({
+        x: gameState.player.x,
+        y: gameState.player.y,
+        floor: gameState.floor,
+        time: now - gameState.runStartTime,
+        facingDirection: characterAnimationState.player.facingDirection || 1
+    });
+    gameState.lastGhostRecord = now;
+}
+
+function saveGhostReplay() {
+    if (!gameState.ghostRecording || gameState.ghostRecording.length === 0) return;
+
+    // Only save if this run got further or was faster
+    const existingGhost = loadGhostReplay();
+    const currentProgress = {
+        lowestFloor: gameState.floor,
+        totalTime: Date.now() - gameState.runStartTime,
+        positions: gameState.ghostRecording
+    };
+
+    let shouldSave = !existingGhost;
+    if (existingGhost) {
+        // Save if got further (lower floor number is better)
+        if (currentProgress.lowestFloor < existingGhost.lowestFloor) {
+            shouldSave = true;
+        } else if (currentProgress.lowestFloor === existingGhost.lowestFloor) {
+            // Same floor - save if faster
+            shouldSave = currentProgress.totalTime < existingGhost.totalTime;
+        }
+    }
+
+    if (shouldSave) {
+        try {
+            localStorage.setItem('deadline_ghost_replay', JSON.stringify(currentProgress));
+            console.log('Ghost replay saved - Floor:', currentProgress.lowestFloor);
+        } catch (e) {
+            console.log('Failed to save ghost replay:', e);
+        }
+    }
+}
+
+function loadGhostReplay() {
+    try {
+        const saved = localStorage.getItem('deadline_ghost_replay');
+        return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+function updateGhostPlayback() {
+    if (!settings.ghostEnabled) return;
+    if (!gameState.ghostPlayback || !gameState.ghostPlayback.length) return;
+
+    const runTime = Date.now() - gameState.runStartTime;
+
+    // Find the ghost position for current time
+    while (gameState.ghostPlaybackIndex < gameState.ghostPlayback.length - 1) {
+        const nextPos = gameState.ghostPlayback[gameState.ghostPlaybackIndex + 1];
+        if (nextPos && nextPos.time <= runTime) {
+            gameState.ghostPlaybackIndex++;
+        } else {
+            break;
+        }
+    }
+}
+
+function drawGhost() {
+    if (!settings.ghostEnabled) return;
+    if (!gameState.ghostPlayback || !gameState.ghostPlayback.length) return;
+    if (gameState.ghostPlaybackIndex >= gameState.ghostPlayback.length) return;
+
+    const ghostPos = gameState.ghostPlayback[gameState.ghostPlaybackIndex];
+    if (!ghostPos) return;
+
+    // Only draw ghost on same floor
+    if (ghostPos.floor !== gameState.floor) return;
+
+    const x = ghostPos.x * TILE_SIZE;
+    const y = ghostPos.y * TILE_SIZE;
+
+    ctx.save();
+    ctx.globalAlpha = settings.ghostOpacity || 0.4;
+
+    // Draw semi-transparent ghost silhouette
+    const charAsset = CHARACTER_ASSETS[selectedCharacter];
+    if (charAsset && charAsset.animation && charAsset.animation.loaded && charAsset.animation.image) {
+        // Draw sprite with blue/cyan tint
+        const anim = charAsset.animation;
+        const state = characterAnimationState.player;
+        const srcX = (state.frame || 0) * anim.frameWidth;
+        const srcY = 0;
+
+        const spriteScale = 2.5;
+        const destSize = Math.floor(TILE_SIZE * spriteScale);
+        const offsetX = Math.floor((TILE_SIZE - destSize) / 2);
+        const offsetY = Math.floor((TILE_SIZE - destSize) / 2) - 12;
+
+        const facingRight = ghostPos.facingDirection >= 0;
+
+        ctx.save();
+        if (!facingRight) {
+            ctx.translate(x + TILE_SIZE, y);
+            ctx.scale(-1, 1);
+            ctx.drawImage(anim.image, srcX, srcY, anim.frameWidth, anim.frameHeight,
+                          offsetX, offsetY, destSize, destSize);
+        } else {
+            ctx.drawImage(anim.image, srcX, srcY, anim.frameWidth, anim.frameHeight,
+                          x + offsetX, y + offsetY, destSize, destSize);
+        }
+        ctx.restore();
+
+        // Apply blue tint overlay
+        ctx.globalCompositeOperation = 'source-atop';
+        ctx.fillStyle = 'rgba(100, 180, 255, 0.5)';
+        ctx.fillRect(x + offsetX, y + offsetY, destSize, destSize);
+        ctx.globalCompositeOperation = 'source-over';
+    } else {
+        // Fallback: simple rectangle ghost
+        ctx.fillStyle = 'rgba(100, 180, 255, 0.5)';
+        ctx.fillRect(x + 6, y + 4, 20, 26);
+    }
+
+    // "GHOST" label above
+    ctx.fillStyle = 'rgba(100, 180, 255, 0.7)';
+    ctx.font = 'bold 8px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('GHOST', x + TILE_SIZE / 2, y - 2);
+
+    ctx.restore();
 }
 
 function startImplosion() {
@@ -7108,6 +7971,10 @@ function update(deltaTime) {
     // Update character animation state - reset isMoving if player hasn't moved recently
     if (characterAnimationState.player.lastMoveTime &&
         Date.now() - characterAnimationState.player.lastMoveTime > 150) {
+        // Trigger squash when player just stopped moving (Super Meat Boy feel)
+        if (characterAnimationState.player.isMoving) {
+            triggerSquash();
+        }
         characterAnimationState.player.isMoving = false;
     }
 
@@ -7157,6 +8024,14 @@ function update(deltaTime) {
 
     // Update celebrations
     updateCelebrations(deltaTime);
+
+    // === NEW: Update coin combo timer ===
+    if (gameState.coinComboTimer > 0) {
+        gameState.coinComboTimer -= deltaTime;
+        if (gameState.coinComboTimer <= 0) {
+            gameState.coinCombo = 0;
+        }
+    }
 
     // Timer warning sound (play every ~0.5 seconds when timer is low)
     if (gameState.timer <= 5 && gameState.timer > 0 && !gameState.lastChance) {
@@ -7209,6 +8084,10 @@ function update(deltaTime) {
     if (gameState.player.stunned > 0) {
         gameState.player.stunned -= deltaTime;
     }
+
+    // Ghost replay system - record and playback
+    recordGhostPosition();
+    updateGhostPlayback();
 
     // Reset hit count after 20 seconds without being hit
     if (Date.now() - gameState.player.lastHitTime > 20000) {
@@ -7310,11 +8189,25 @@ function update(deltaTime) {
         gamepadState.buttonCooldown -= deltaTime;
     }
 
-    // Movement using combined input
-    if (currentInput.up) movePlayer(0, -1);
-    if (currentInput.down) movePlayer(0, 1);
-    if (currentInput.left) movePlayer(-1, 0);
-    if (currentInput.right) movePlayer(1, 0);
+    // Update squash & stretch animation
+    updateSquashStretch(deltaTime);
+
+    // Process any buffered inputs first
+    processInputBuffer();
+
+    // Movement using combined input (with input buffering support)
+    if (currentInput.up) {
+        if (!movePlayer(0, -1)) bufferMovementInput(0, -1);
+    }
+    if (currentInput.down) {
+        if (!movePlayer(0, 1)) bufferMovementInput(0, 1);
+    }
+    if (currentInput.left) {
+        if (!movePlayer(-1, 0)) bufferMovementInput(-1, 0);
+    }
+    if (currentInput.right) {
+        if (!movePlayer(1, 0)) bufferMovementInput(1, 0);
+    }
 
     moveEnemies();
 
@@ -7340,15 +8233,31 @@ function gameLoop(timestamp) {
         fpsCounter.lastUpdate = timestamp;
     }
 
+    // Update freeze frame (blocks game updates while active)
+    if (updateFreezeFrame(deltaTime)) {
+        // Still draw during freeze frame, but skip game logic
+        draw();
+        drawFreezeEffect();
+        drawRestartFlash();
+        requestAnimationFrame(gameLoop);
+        return;
+    }
+
     // Don't update game state while paused, but still draw
     if (!gameState.paused) {
         update(deltaTime);
     }
 
+    // Update restart flash effect
+    updateRestartFlash(deltaTime);
+
     // Update and draw transition particles (even when paused/between levels)
     transitionParticles.update(deltaTime);
 
     draw();
+
+    // Draw restart flash on top of everything
+    drawRestartFlash();
 
     // Draw transition particles on top
     transitionParticles.draw();
@@ -7373,7 +8282,16 @@ function startGame(mode = 'normal') {
     AudioManager.play('select');
 
     document.getElementById('message').style.display = 'none';
-    gameState.floor = 23;
+
+    // === NEW: Quick Run Mode (7 floors instead of 23) ===
+    // Check if mode includes 'quick' prefix
+    const isQuickRun = mode.startsWith('quick');
+    const actualMode = isQuickRun ? mode.replace('quick_', '') : mode;
+
+    gameState.quickRunMode = isQuickRun;
+    gameState.floor = isQuickRun ? 7 : 23; // Quick run starts at floor 7
+    gameState.quickRunStartFloor = isQuickRun ? 7 : 23;
+
     gameState.gameOver = false;
     gameState.won = false;
     gameState.started = true;
@@ -7387,6 +8305,11 @@ function startGame(mode = 'normal') {
     gameState.fires = [];
     gameState.fireSpawnTimer = 0;
 
+    // === NEW: Reset coin collection ===
+    gameState.coinsCollected = 0;
+    gameState.coinCombo = 0;
+    gameState.coinComboTimer = 0;
+
     // Checkpoint system reset (Playtest Feature #2)
     gameState.lastCheckpoint = null;
     gameState.continuesRemaining = MAX_CONTINUES;
@@ -7394,8 +8317,8 @@ function startGame(mode = 'normal') {
     gameState.celebrations = [];
 
     // Set difficulty mode (Playtest Feature #1)
-    gameState.zenMode = (mode === 'zen');
-    settings.difficulty = mode;
+    gameState.zenMode = (actualMode === 'zen');
+    settings.difficulty = actualMode;
 
     // Start run timer
     gameState.runStartTime = Date.now();
@@ -7403,6 +8326,10 @@ function startGame(mode = 'normal') {
     gameState.floorTimes = [];
 
     playerProgress.wasHitThisRun = false; // Reset for perfect run tracking
+
+    // Initialize ghost replay system
+    initGhostSystem();
+    loadGhostReplay();
 
     // Don't count zen mode runs in stats
     if (!gameState.zenMode) {
@@ -7468,25 +8395,46 @@ function saveAndQuit() {
 }
 
 function updateResumeButton() {
-    const resumeBtn = document.getElementById('titleResumeBtn');
-    if (resumeBtn) {
-        resumeBtn.style.display = hasSavedGame() ? 'inline-block' : 'none';
+    // Alias for updateTitleMenuState for backwards compatibility
+    updateTitleMenuState();
+}
+
+function updateTitleMenuState() {
+    const primaryGroup = document.getElementById('primaryActionGroup');
+    const resumeBtn = document.getElementById('menuResumeBtn');
+    const playBtn = document.getElementById('menuPlayBtn');
+    const floorInfo = document.getElementById('resumeFloorInfo');
+
+    if (!primaryGroup || !resumeBtn || !playBtn) return;
+
+    if (hasSavedGame()) {
+        // Show Resume as primary, Play becomes secondary
+        primaryGroup.classList.add('has-save');
+        resumeBtn.style.display = 'flex';
+
+        // Get saved floor info to display
+        try {
+            const saveData = JSON.parse(localStorage.getItem('deadline_savedGame'));
+            if (saveData && saveData.floor) {
+                floorInfo.textContent = `FLOOR ${saveData.floor}`;
+            }
+        } catch (e) {
+            floorInfo.textContent = '';
+        }
+
+        // Change Play button text to indicate new game
+        playBtn.innerHTML = '▶ NEW GAME';
+    } else {
+        // No save - Play is primary
+        primaryGroup.classList.remove('has-save');
+        resumeBtn.style.display = 'none';
+        playBtn.innerHTML = '▶ PLAY';
     }
 }
 
 function addResumeButtonToTitle() {
-    const contentOverlay = document.querySelector('#message .content-overlay');
-    if (contentOverlay && !document.getElementById('titleResumeBtn')) {
-        const startBtn = contentOverlay.querySelector('button[onclick="startGame()"]');
-        if (startBtn) {
-            const resumeBtn = document.createElement('button');
-            resumeBtn.id = 'titleResumeBtn';
-            resumeBtn.textContent = 'RESUME';
-            resumeBtn.style.cssText = `padding:14px 45px;font-size:18px;background:linear-gradient(180deg,#2ecc71 0%,#27ae60 100%);color:#fff;border:none;cursor:pointer;font-family:'Courier New',monospace;text-transform:uppercase;margin-right:15px;border-radius:4px;letter-spacing:3px;box-shadow:0 4px 20px rgba(46,204,113,0.5);transition:all 0.2s ease;display:${hasSavedGame() ? 'inline-block' : 'none'};`;
-            resumeBtn.onclick = resumeGame;
-            startBtn.parentNode.insertBefore(resumeBtn, startBtn);
-        }
-    }
+    // Resume button is now in HTML, just update its state
+    updateTitleMenuState();
 }
 
 document.addEventListener('keydown', (e) => {
@@ -7511,6 +8459,17 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault();
         togglePause();
         return;
+    }
+
+    // Instant Restart (R key by default) - works during gameplay, game over, and implosion
+    const restartKey = settings.instantRestartKey || 'KeyR';
+    if (e.code === restartKey && settings.instantRestartEnabled) {
+        // Only allow during active gameplay states (not on title screen)
+        if (gameState.started && !gameState.paused) {
+            e.preventDefault();
+            instantRestart();
+            return;
+        }
     }
 
     // Don't process other keys while paused
@@ -7587,6 +8546,48 @@ function updateSettingsUI() {
         document.getElementById('sfxVolumeVal').textContent = Math.round(settings.sfxVolume * 100) + '%';
     }
 
+    // Update Game Feel settings
+    const instantRestartToggle = document.getElementById('instantRestartToggle');
+    if (instantRestartToggle) {
+        instantRestartToggle.checked = settings.instantRestartEnabled !== false;
+    }
+
+    const inputBufferingToggle = document.getElementById('inputBufferingToggle');
+    if (inputBufferingToggle) {
+        inputBufferingToggle.checked = settings.inputBufferingEnabled !== false;
+    }
+
+    const freezeFramesToggle = document.getElementById('freezeFramesToggle');
+    if (freezeFramesToggle) {
+        freezeFramesToggle.checked = settings.freezeFramesEnabled !== false;
+    }
+
+    const freezeIntensity = document.getElementById('freezeIntensity');
+    if (freezeIntensity) {
+        const val = Math.round((settings.freezeFrameIntensity || 1.0) * 100);
+        freezeIntensity.value = val;
+        document.getElementById('freezeIntensityVal').textContent = val + '%';
+        document.getElementById('freezeIntensityRow').style.opacity = settings.freezeFramesEnabled !== false ? '1' : '0.5';
+    }
+
+    const squashStretchToggle = document.getElementById('squashStretchToggle');
+    if (squashStretchToggle) {
+        squashStretchToggle.checked = settings.squashStretchEnabled !== false;
+    }
+
+    const ghostToggle = document.getElementById('ghostToggle');
+    if (ghostToggle) {
+        ghostToggle.checked = settings.ghostEnabled !== false;
+    }
+
+    const ghostOpacity = document.getElementById('ghostOpacity');
+    if (ghostOpacity) {
+        const val = Math.round((settings.ghostOpacity || 0.4) * 100);
+        ghostOpacity.value = val;
+        document.getElementById('ghostOpacityVal').textContent = val + '%';
+        document.getElementById('ghostOpacityRow').style.opacity = settings.ghostEnabled !== false ? '1' : '0.5';
+    }
+
     // Update controller status
     updateControllerStatus();
 }
@@ -7612,6 +8613,55 @@ function changeResolution(resKey) {
 function toggleScreenShake(enabled) {
     settings.screenShake = enabled;
     saveSettings();
+}
+
+// ============================================
+// GAME FEEL SETTINGS (Super Meat Boy features)
+// ============================================
+
+function toggleInstantRestart(enabled) {
+    settings.instantRestartEnabled = enabled;
+    saveSettings();
+}
+
+function toggleInputBuffering(enabled) {
+    settings.inputBufferingEnabled = enabled;
+    saveSettings();
+}
+
+function toggleFreezeFrames(enabled) {
+    settings.freezeFramesEnabled = enabled;
+    saveSettings();
+    // Update slider visibility
+    const row = document.getElementById('freezeIntensityRow');
+    if (row) row.style.opacity = enabled ? '1' : '0.5';
+}
+
+function setFreezeIntensity(value) {
+    settings.freezeFrameIntensity = value / 100;
+    saveSettings();
+    const span = document.getElementById('freezeIntensityVal');
+    if (span) span.textContent = value + '%';
+}
+
+function toggleSquashStretch(enabled) {
+    settings.squashStretchEnabled = enabled;
+    saveSettings();
+}
+
+function toggleGhost(enabled) {
+    settings.ghostEnabled = enabled;
+    saveSettings();
+    // Update slider visibility
+    const row = document.getElementById('ghostOpacityRow');
+    if (row) row.style.opacity = enabled ? '1' : '0.5';
+}
+
+function setGhostOpacity(value) {
+    settings.ghostOpacity = value / 100;
+    saveSettings();
+    const span = document.getElementById('ghostOpacityVal');
+    if (span) span.textContent = value + '%';
 }
 
 function toggleColorblindMode(enabled) {

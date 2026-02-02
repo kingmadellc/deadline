@@ -209,7 +209,7 @@
             justify-content: center;
             align-items: center;
             padding-top: 0;
-            margin-bottom: -40px;
+            margin-bottom: -65px;
             flex-shrink: 0;
             position: relative;
             overflow: visible;
@@ -421,7 +421,8 @@
             align-items: center;
             flex-shrink: 0;
             width: 100%;
-            margin-top: 20px;
+            margin-top: 10px;
+            padding-bottom: 15px;
         }
 
         /* Unified Button Grid */
@@ -480,6 +481,137 @@
             50% { box-shadow: 0 4px 25px rgba(233, 69, 96, 0.8), 0 0 40px rgba(233, 69, 96, 0.3); }
         }
 
+        /* Primary Action Group - Contains Resume + Play */
+        #message .primary-action-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+            width: 100%;
+        }
+
+        /* Resume Button - Green, prominent when visible */
+        #message .btn-resume {
+            padding: 12px 50px;
+            font-size: 16px;
+            letter-spacing: 3px;
+            background: linear-gradient(180deg, #2ecc71 0%, #27ae60 100%);
+            box-shadow: 0 4px 20px rgba(46, 204, 113, 0.5);
+            border: 2px solid rgba(46, 204, 113, 0.6);
+            animation: pulse-resume 2s ease-in-out infinite;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+        }
+
+        #message .btn-resume:hover {
+            background: linear-gradient(180deg, #3dd87e 0%, #2ecc71 100%);
+            box-shadow: 0 5px 25px rgba(46, 204, 113, 0.7);
+            transform: translateY(-2px);
+        }
+
+        @keyframes pulse-resume {
+            0%, 100% { box-shadow: 0 3px 15px rgba(46, 204, 113, 0.5); }
+            50% { box-shadow: 0 4px 25px rgba(46, 204, 113, 0.8), 0 0 40px rgba(46, 204, 113, 0.3); }
+        }
+
+        /* Floor info subtitle for Resume button */
+        #message .resume-floor-info {
+            font-size: 10px;
+            opacity: 0.85;
+            letter-spacing: 1px;
+            font-weight: normal;
+        }
+
+        /* Play button becomes secondary when Resume is visible */
+        #message .primary-action-group.has-save .btn-primary {
+            padding: 8px 25px;
+            font-size: 13px;
+            letter-spacing: 2px;
+            animation: none;
+            opacity: 0.9;
+        }
+
+        #message .primary-action-group.has-save .btn-primary:hover {
+            opacity: 1;
+        }
+
+        /* Secondary Actions Row - Horizontal layout for Quick Run + Daily */
+        #message .secondary-actions-row {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin-top: 8px;
+            width: 100%;
+        }
+
+        #message .btn-secondary {
+            padding: 8px 18px;
+            font-size: 12px;
+            letter-spacing: 2px;
+            min-width: 125px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1px;
+        }
+
+        #message .btn-subtitle {
+            font-size: 9px;
+            opacity: 0.75;
+            letter-spacing: 1px;
+            font-weight: normal;
+        }
+
+        /* Quick Run Button - Purple theme */
+        #message .btn-quick-run {
+            background: linear-gradient(180deg, #9b59b6 0%, #8e44ad 100%);
+            border: 2px solid #6c3483;
+            box-shadow: 0 3px 12px rgba(155, 89, 182, 0.4);
+        }
+
+        #message .btn-quick-run:hover {
+            background: linear-gradient(180deg, #a86bc2 0%, #9b59b6 100%);
+            box-shadow: 0 5px 18px rgba(155, 89, 182, 0.6);
+        }
+
+        /* Daily Challenge Button - Amber theme, matches Quick Run size */
+        #message .btn-daily {
+            background: linear-gradient(180deg, #f0a020 0%, #d08018 100%);
+            border: 2px solid rgba(255, 200, 100, 0.4);
+            box-shadow: 0 3px 12px rgba(240, 160, 32, 0.4);
+        }
+
+        #message .btn-daily:hover {
+            background: linear-gradient(180deg, #ffb030 0%, #f0a020 100%);
+            box-shadow: 0 5px 18px rgba(240, 160, 32, 0.6);
+        }
+
+        /* Tertiary Actions Row - Smaller, separated */
+        #message .tertiary-actions-row {
+            margin-top: 8px;
+            padding-top: 6px;
+            border-top: 1px solid rgba(78, 205, 196, 0.2);
+        }
+
+        #message .btn-tertiary {
+            padding: 8px 24px;
+            font-size: 12px;
+            letter-spacing: 2px;
+            background: linear-gradient(180deg, rgba(60, 60, 80, 0.95) 0%, rgba(40, 40, 55, 0.95) 100%);
+            border: 1px solid rgba(155, 89, 182, 0.4);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            min-width: auto;
+        }
+
+        #message .btn-tertiary:hover {
+            background: linear-gradient(180deg, rgba(155, 89, 182, 0.3) 0%, rgba(60, 60, 80, 0.95) 100%);
+            border-color: rgba(155, 89, 182, 0.6);
+            box-shadow: 0 4px 15px rgba(155, 89, 182, 0.3);
+        }
+
         /* Quick Play Button */
         #message .btn-quick {
             padding: 10px 24px;
@@ -500,8 +632,9 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 6px;
-            margin-bottom: 18px;
+            gap: 4px;
+            margin-top: 5px;
+            margin-bottom: 5px;
             width: 100%;
             max-width: 320px;
         }
@@ -1988,6 +2121,7 @@
         <div id="hud" role="status" aria-live="polite" aria-label="Game status">
             <span id="floor">Floor: 23</span>
             <span id="timer">Time: 30</span>
+            <span id="coinDisplay" style="color: #f1c40f;">🪙 0</span>
             <span id="runTimer">Run: 0:00</span>
             <span id="powerup">Power: None</span>
         </div>
@@ -2014,7 +2148,17 @@
 
             <!-- Bottom: Menu buttons -->
             <div class="menu-section">
-                <!-- Difficulty slider -->
+                <!-- Primary Action Group - Resume + Play -->
+                <div class="primary-action-group" id="primaryActionGroup" role="navigation" aria-label="Main menu">
+                    <button onclick="resumeGame()" class="btn-resume" id="menuResumeBtn" style="display: none;">
+                        ▶ RESUME
+                        <span class="resume-floor-info" id="resumeFloorInfo"></span>
+                    </button>
+                    <button onclick="startGame()" class="btn-primary" id="menuPlayBtn" aria-describedby="game-desc">▶ PLAY</button>
+                    <span id="game-desc" class="visually-hidden">Begin a new game run</span>
+                </div>
+
+                <!-- Difficulty slider (below primary action) -->
                 <div class="difficulty-slider-container" role="group" aria-label="Difficulty selection">
                     <div class="difficulty-label normal" id="difficultyLabel">⚡ NORMAL</div>
                     <div class="difficulty-desc" id="difficultyDesc">The intended experience</div>
@@ -2032,18 +2176,21 @@
                     </div>
                 </div>
 
-                <div class="button-group main-buttons" role="navigation" aria-label="Main menu">
-                    <button onclick="startGame()" class="btn-primary" aria-describedby="game-desc">▶ PLAY</button>
-                    <span id="game-desc" class="visually-hidden">Begin a new game run</span>
-                    <button onclick="showDailyChallenge()" class="btn-daily-challenge">DAILY CHALLENGE</button>
+                <!-- Secondary Actions Row - Quick Run + Daily Challenge side-by-side -->
+                <div class="secondary-actions-row">
+                    <button onclick="startGame('quick_normal')" class="btn-secondary btn-quick-run">
+                        ⚡ QUICK RUN
+                        <span class="btn-subtitle">7 FLOORS</span>
+                    </button>
+                    <button onclick="showDailyChallenge()" class="btn-secondary btn-daily">
+                        📅 DAILY
+                        <span class="btn-subtitle">CHALLENGE</span>
+                    </button>
                 </div>
 
-                <div class="button-row-secondary" style="margin-top: 15px;">
-                    <button onclick="showMilestonesMenu()" class="btn-milestones">🏆 MILESTONES</button>
-                </div>
-
-                <div class="button-row-tertiary" id="tertiaryButtons" style="display: none;">
-                    <!-- No longer used - moved to settings menu -->
+                <!-- Tertiary Actions Row - Milestones -->
+                <div class="tertiary-actions-row">
+                    <button onclick="showMilestonesMenu()" class="btn-tertiary">🏆 MILESTONES</button>
                 </div>
             </div>
         </div>
@@ -2274,6 +2421,40 @@
                     <div class="setting-row">
                         <label>Shape Icons:</label>
                         <span style="font-size: 0.8em; color: #888;">Auto-enabled with colorblind mode</span>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h3>Game Feel</h3>
+                    <div class="setting-row">
+                        <label>Instant Restart (R):</label>
+                        <input type="checkbox" id="instantRestartToggle" checked onchange="toggleInstantRestart(this.checked)">
+                    </div>
+                    <div class="setting-row">
+                        <label>Input Buffering:</label>
+                        <input type="checkbox" id="inputBufferingToggle" checked onchange="toggleInputBuffering(this.checked)">
+                    </div>
+                    <div class="setting-row">
+                        <label>Freeze Frames:</label>
+                        <input type="checkbox" id="freezeFramesToggle" checked onchange="toggleFreezeFrames(this.checked)">
+                    </div>
+                    <div class="setting-row" id="freezeIntensityRow">
+                        <label>Freeze Intensity:</label>
+                        <input type="range" id="freezeIntensity" min="50" max="150" value="100" onchange="setFreezeIntensity(this.value)">
+                        <span id="freezeIntensityVal">100%</span>
+                    </div>
+                    <div class="setting-row">
+                        <label>Squash & Stretch:</label>
+                        <input type="checkbox" id="squashStretchToggle" checked onchange="toggleSquashStretch(this.checked)">
+                    </div>
+                    <div class="setting-row">
+                        <label>Ghost Replay:</label>
+                        <input type="checkbox" id="ghostToggle" checked onchange="toggleGhost(this.checked)">
+                    </div>
+                    <div class="setting-row" id="ghostOpacityRow">
+                        <label>Ghost Opacity:</label>
+                        <input type="range" id="ghostOpacity" min="10" max="70" value="40" onchange="setGhostOpacity(this.value)">
+                        <span id="ghostOpacityVal">40%</span>
                     </div>
                 </div>
 
