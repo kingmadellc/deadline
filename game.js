@@ -44,13 +44,110 @@ let TILE_SIZE = 32; // Will be updated dynamically
 let MAP_WIDTH = 20; // Horizontal tiles (variable based on floor and aspect ratio)
 let MAP_HEIGHT = 20; // Vertical tiles (variable based on floor)
 
+// ============================================
+// ENDLESS DESCENT MODE - Configuration
+// ============================================
+const ENDLESS_MODE_CONFIG = {
+    startFloor: 1,              // Internal floor counter starts at 1
+    initialTimer: 45,           // Starting timer
+    minTimer: 20,               // Minimum timer at high floors
+    maxMapSize: 50,             // Maximum map height in tiles
+    maxEnemies: 25,             // Maximum enemies to prevent performance issues
+    maxFires: 15,               // Maximum active fires
+    breatherInterval: 10,       // Breather floor every N floors
+    pressureWaveStart: 7,       // Pressure wave starts at floor N of each decade
+    pressureWaveEnd: 9          // Pressure wave ends at floor N of each decade
+};
+
+// Endless Mode Milestones - Celebration moments with rewards
+const ENDLESS_MILESTONES = {
+    5: {
+        name: 'Warmed Up',
+        celebration: 'FLOOR 5 - WARMED UP!',
+        reward: { bonusTime: 3, escapePoints: 25 },
+        color: '#2ecc71'
+    },
+    10: {
+        name: 'Double Digits',
+        celebration: 'FLOOR 10 - DOUBLE DIGITS!',
+        reward: { bonusTime: 5, escapePoints: 50 },
+        color: '#f39c12'
+    },
+    15: {
+        name: 'Basement Explorer',
+        celebration: 'FLOOR 15 - BASEMENT EXPLORER!',
+        reward: { bonusTime: 5, escapePoints: 75 },
+        color: '#3498db'
+    },
+    25: {
+        name: 'Deep Dweller',
+        celebration: 'FLOOR 25 - DEEP DWELLER!',
+        reward: { bonusTime: 7, escapePoints: 100 },
+        color: '#9b59b6',
+        special: 'slowmo'
+    },
+    50: {
+        name: 'Subterranean',
+        celebration: 'FLOOR 50 - SUBTERRANEAN!',
+        reward: { bonusTime: 10, escapePoints: 250 },
+        color: '#e74c3c',
+        special: 'screenFlash'
+    },
+    75: {
+        name: 'Core Crawler',
+        celebration: 'FLOOR 75 - CORE CRAWLER!',
+        reward: { bonusTime: 12, escapePoints: 500 },
+        color: '#1abc9c'
+    },
+    100: {
+        name: 'CENTURION',
+        celebration: 'FLOOR 100 - CENTURION!',
+        reward: { bonusTime: 20, escapePoints: 1000 },
+        color: '#ffd700',
+        special: 'epicCelebration'
+    }
+};
+
+// Danger Zones - Special floor modifiers for variety
+const DANGER_ZONES = {
+    blackout: {
+        name: 'BLACKOUT',
+        description: 'Reduced visibility',
+        color: '#2c3e50',
+        floors: [8, 18, 28, 38, 48, 58, 68, 78, 88, 98]
+    },
+    swarm: {
+        name: 'SWARM',
+        description: 'Double enemies!',
+        color: '#c0392b',
+        floors: [12, 24, 36, 48, 60, 72, 84, 96]
+    },
+    inferno: {
+        name: 'INFERNO',
+        description: 'Fire spreads faster',
+        color: '#e74c3c',
+        floors: [15, 30, 45, 60, 75, 90]
+    },
+    unstable: {
+        name: 'UNSTABLE',
+        description: 'Walls shift!',
+        color: '#8e44ad',
+        floors: [20, 40, 60, 80, 100]
+    }
+};
+
 // Load powerup images
 const powerupImages = {
     speed: new Image(),
     knockout: new Image(),
     electric: new Image(),
     shield: new Image(),
-    companion: new Image()
+    companion: new Image(),
+    // === NEW POWER-UPS ===
+    timeFreeze: new Image(),
+    coinMagnet: new Image(),
+    clone: new Image(),
+    invincibility: new Image()
 };
 powerupImages.speed.src = 'powerup-speed.png';
 powerupImages.knockout.src = 'powerup-knockout.png';
@@ -58,6 +155,11 @@ powerupImages.electric.src = 'powerup-electric.png';
 // Garden/Dog park powerups - will fall back to drawn versions if images don't exist
 powerupImages.shield.src = 'powerup-shield.png';
 powerupImages.companion.src = 'powerup-companion.png';
+// New powerups - will fall back to drawn versions
+powerupImages.timeFreeze.src = 'powerup-timefreeze.png';
+powerupImages.coinMagnet.src = 'powerup-magnet.png';
+powerupImages.clone.src = 'powerup-clone.png';
+powerupImages.invincibility.src = 'powerup-invincibility.png';
 
 // Atmospheric background images for different screens
 const atmosphericBackgrounds = {
@@ -234,6 +336,50 @@ const CHARACTER_ASSETS = {
 };
 
 // Enemy/Coworker character assets (AI opponents)
+// === ENEMY TYPES WITH UNIQUE BEHAVIORS ===
+const ENEMY_TYPES = {
+    coworker: {
+        id: 'coworker',
+        name: 'Coworker',
+        description: 'Standard enemy - balanced stats',
+        speed: 1.0,           // Movement speed multiplier
+        health: 1,            // Hits to stun
+        chaseChance: 0.6,     // Probability to chase player
+        timeReward: 4,        // Base time reward when stunned
+        special: null         // No special ability
+    },
+    intern: {
+        id: 'intern',
+        name: 'The Intern',
+        description: 'Fast but fragile - high risk, high reward',
+        speed: 1.8,           // Much faster
+        health: 1,            // Dies in 1 hit
+        chaseChance: 0.9,     // Very aggressive
+        timeReward: 6,        // Higher reward for difficulty
+        special: 'sprint'     // Occasionally sprints toward player
+    },
+    it_support: {
+        id: 'it_support',
+        name: 'IT Support',
+        description: 'Slow but tough - requires multiple hits',
+        speed: 0.6,           // Slower
+        health: 3,            // Takes 3 hits to stun
+        chaseChance: 0.5,     // Less aggressive
+        timeReward: 10,       // Big reward for taking down
+        special: 'tank'       // Resistant to knockback
+    },
+    hr_karen: {
+        id: 'hr_karen',
+        name: 'HR Karen',
+        description: 'Explodes on defeat - damages nearby enemies!',
+        speed: 0.9,           // Slightly slower
+        health: 1,            // Normal health
+        chaseChance: 0.7,     // Moderately aggressive
+        timeReward: 5,        // Normal reward
+        special: 'explode'    // Explodes on stun, damaging nearby enemies
+    }
+};
+
 const ENEMY_ASSETS = {
     // Generic coworker enemy (default)
     coworker: {
@@ -253,6 +399,66 @@ const ENEMY_ASSETS = {
             primary: '#e74c3c',
             secondary: '#c0392b',
             glow: 'rgba(231, 76, 60, 0.6)'
+        }
+    },
+    // Intern - Sprinter (fast, squishy)
+    intern: {
+        id: 'intern',
+        name: 'Intern',
+        animation: {
+            type: 'spritesheet',
+            src: 'assets/characters/intern-spritesheet.png',
+            loaded: false,
+            image: null,
+            frameCount: 8,
+            frameWidth: 78,
+            frameHeight: 78,
+            frameDuration: 0.06  // Faster animation for sprinter
+        },
+        trailColor: {
+            primary: '#3498db',
+            secondary: '#2980b9',
+            glow: 'rgba(52, 152, 219, 0.6)'
+        }
+    },
+    // IT Support - Tank (slow, tough)
+    it_support: {
+        id: 'it_support',
+        name: 'IT Support',
+        animation: {
+            type: 'spritesheet',
+            src: 'assets/characters/it-support-spritesheet.png',
+            loaded: false,
+            image: null,
+            frameCount: 8,
+            frameWidth: 78,
+            frameHeight: 78,
+            frameDuration: 0.1  // Slower animation for tank
+        },
+        trailColor: {
+            primary: '#9b59b6',
+            secondary: '#8e44ad',
+            glow: 'rgba(155, 89, 182, 0.6)'
+        }
+    },
+    // HR Karen - Exploder
+    hr_karen: {
+        id: 'hr_karen',
+        name: 'HR Karen',
+        animation: {
+            type: 'spritesheet',
+            src: 'assets/characters/hr-karen-spritesheet.png',
+            loaded: false,
+            image: null,
+            frameCount: 8,
+            frameWidth: 78,
+            frameHeight: 78,
+            frameDuration: 0.083
+        },
+        trailColor: {
+            primary: '#e67e22',
+            secondary: '#d35400',
+            glow: 'rgba(230, 126, 34, 0.6)'
         }
     }
 };
@@ -880,12 +1086,13 @@ const AudioManager = {
     },
 
     // Play a sound effect
-    play(soundName, volume = 1.0) {
+    play(soundName, volume = 1.0, pitch = 1.0) {
         if (!this.initialized || !this.sounds[soundName]) return;
 
         try {
             const source = this.context.createBufferSource();
             source.buffer = this.sounds[soundName];
+            source.playbackRate.value = pitch; // Pitch scaling for variety
 
             const gainNode = this.context.createGain();
             gainNode.gain.value = volume;
@@ -1157,18 +1364,18 @@ function autoDetectResolution() {
     return bestRes;
 }
 
-// Get base map height based on floor number - INCREASED DIFFICULTY
+// Get base map height based on floor number - INCREASED DIFFICULTY (rebalanced for 13 floors)
 function getBaseMapHeightForFloor(floor) {
     // DIFFICULTY INCREASE: Larger maps throughout, no easy small maps
-    // Floor 23-20: Start at 22 tiles high - challenging from the start
-    if (floor >= 20) return 22;
-    // Floors 19-15: 24 tiles high - medium-large
-    if (floor >= 15) return 24;
-    // Floors 14-8: 26 tiles high - large maps
-    if (floor >= 8) return 26;
-    // Floors 7-4: 28 tiles high - huge maps
-    if (floor >= 4) return 28;
-    // Floors 3-1: 30 tiles high - massive finale
+    // Floor 13-11: Start at 22 tiles high - challenging from the start
+    if (floor >= 11) return 22;
+    // Floors 10-8: 24 tiles high - medium-large
+    if (floor >= 8) return 24;
+    // Floors 7-5: 26 tiles high - large maps
+    if (floor >= 5) return 26;
+    // Floors 4-2: 28 tiles high - huge maps
+    if (floor >= 2) return 28;
+    // Floor 1: 30 tiles high - massive finale
     return 30;
 }
 
@@ -1203,21 +1410,174 @@ function getEnemyCountForFloor(floor) {
     const totalTiles = dims.width * dims.height;
     // Base enemies scales with map area
     let baseEnemies = Math.floor(totalTiles / 100);
-    // Add more as floors descend
-    baseEnemies += Math.floor((23 - floor) / 3);
+    // Add more as floors descend (rebalanced for 13-floor game)
+    baseEnemies += Math.floor((13 - floor) / 2);
     // Cap at reasonable number
     return Math.min(baseEnemies, 15);
 }
 
-// Get number of fires that can spawn on floor
+// Get number of fires that can spawn on floor (rebalanced for 13-floor game)
 function getMaxFiresForFloor(floor) {
-    // Fires now start from floor 23 (level 1) with gradual increase
-    if (floor >= 22) return 1;   // Floors 23-22: 1 fire (intro to mechanic)
-    if (floor >= 20) return 2;   // Floors 21-20: 2 fires
-    if (floor >= 15) return 3;   // Floors 19-15: 3 fires
-    if (floor >= 10) return 5;   // Floors 14-10: 5 fires
-    if (floor >= 5) return 7;    // Floors 9-5: 7 fires
-    return 10;                    // Floors 4-1: 10 fires (inferno finale)
+    // Fires start from floor 13 with gradual increase - INCREASED for more intensity
+    if (floor >= 12) return 2;   // Floors 13-12: 2 fires (intro to mechanic)
+    if (floor >= 10) return 4;   // Floors 11-10: 4 fires
+    if (floor >= 7) return 6;    // Floors 9-7: 6 fires
+    if (floor >= 4) return 10;   // Floors 6-4: 10 fires
+    return 14;                    // Floors 3-1: 14 fires (inferno finale)
+}
+
+// ============================================
+// ENDLESS DESCENT MODE - Scaling Functions
+// ============================================
+
+function getEndlessMapDimensions(floor) {
+    const baseHeight = 22;
+    const floorFactor = Math.floor(Math.log2(floor + 1) * 3);
+    const height = Math.min(baseHeight + floorFactor, ENDLESS_MODE_CONFIG.maxMapSize);
+    const aspectRatio = getCurrentAspectRatio();
+    let width = height;
+    if (aspectRatio === '16:9') width = Math.floor(height * 16 / 9);
+    if (aspectRatio === '16:10') width = Math.floor(height * 16 / 10);
+    return { width, height };
+}
+
+function getEndlessTimer(floor) {
+    const baseTimer = Math.max(ENDLESS_MODE_CONFIG.minTimer, ENDLESS_MODE_CONFIG.initialTimer - Math.floor(floor / 5) * 3);
+    const dims = getEndlessMapDimensions(floor);
+    const mapBonus = Math.floor((dims.width * dims.height) / 80);
+    const decadeFloor = floor % 10;
+    const inPressureWave = decadeFloor >= ENDLESS_MODE_CONFIG.pressureWaveStart && decadeFloor <= ENDLESS_MODE_CONFIG.pressureWaveEnd;
+    const pressureMultiplier = inPressureWave ? 0.8 : 1.0;
+    const isBreather = floor % ENDLESS_MODE_CONFIG.breatherInterval === 0 && floor > 0;
+    const breatherMultiplier = isBreather ? 1.2 : 1.0;
+    return Math.floor((baseTimer + mapBonus) * pressureMultiplier * breatherMultiplier);
+}
+
+function getEndlessEnemyCount(floor) {
+    const dims = getEndlessMapDimensions(floor);
+    let baseEnemies = Math.floor((dims.width * dims.height) / 80) + Math.floor(floor / 3);
+    const preset = DIFFICULTY_PRESETS[settings.difficulty];
+    if (preset && preset.enemyMultiplier) baseEnemies = Math.round(baseEnemies * preset.enemyMultiplier);
+    if (gameState.endlessDangerZone === 'swarm') baseEnemies *= 2;
+    if (floor % ENDLESS_MODE_CONFIG.breatherInterval === 0 && floor > 0) baseEnemies = Math.floor(baseEnemies * 0.7);
+    return Math.min(Math.max(baseEnemies, 2), ENDLESS_MODE_CONFIG.maxEnemies);
+}
+
+function getEndlessAIDifficulty(floor) {
+    if (floor <= 5) return 'easy';
+    if (floor <= 12) return 'medium';
+    if (floor <= 25) return 'hard';
+    return 'brutal';
+}
+
+function getEndlessFireCount(floor) {
+    if (floor < 5) return 0;
+    let baseCount = 1 + Math.floor((floor - 5) / 4);
+    if (gameState.endlessDangerZone === 'inferno') baseCount *= 2;
+    return Math.min(baseCount, ENDLESS_MODE_CONFIG.maxFires);
+}
+
+function getEndlessFireSpawnInterval(floor) {
+    let interval = Math.max(15 - Math.min(floor * 0.3, 10), 4);
+    if (gameState.endlessDangerZone === 'inferno') interval = Math.max(interval / 2, 2);
+    return interval;
+}
+
+function selectEndlessEnemyType(floor) {
+    const types = ['coworker'];
+    if (floor >= 3) types.push('intern');
+    if (floor >= 7) types.push('it_support');
+    if (floor >= 12) types.push('hr_karen');
+    const dangerLevel = Math.min(floor / 20, 1.0);
+    if (Math.random() < dangerLevel * 0.4) {
+        const dangerTypes = types.filter(t => t !== 'coworker');
+        if (dangerTypes.length > 0) return dangerTypes[Math.floor(Math.random() * dangerTypes.length)];
+    }
+    return types[Math.floor(Math.random() * types.length)];
+}
+
+function getEndlessMilestone(floor) {
+    if (ENDLESS_MILESTONES[floor]) return ENDLESS_MILESTONES[floor];
+    if (floor > 100 && floor % 25 === 0) {
+        return { name: `Floor ${floor} Legend`, celebration: `FLOOR ${floor}!`, reward: { bonusTime: 10 + Math.floor(floor / 50), escapePoints: floor * 10 }, color: '#ffd700' };
+    }
+    return null;
+}
+
+function getEndlessDangerZone(floor) {
+    for (const [zoneId, zone] of Object.entries(DANGER_ZONES)) {
+        if (zone.floors.includes(floor)) return { id: zoneId, ...zone };
+    }
+    if (floor > 100) {
+        if (floor % 10 === 8) return { id: 'blackout', ...DANGER_ZONES.blackout };
+        if (floor % 12 === 0) return { id: 'swarm', ...DANGER_ZONES.swarm };
+        if (floor % 15 === 0) return { id: 'inferno', ...DANGER_ZONES.inferno };
+        if (floor % 20 === 0) return { id: 'unstable', ...DANGER_ZONES.unstable };
+    }
+    return null;
+}
+
+function checkEndlessPersonalBest(currentFloor) {
+    const previousBest = playerStats.endlessBestFloor || 0;
+    if (currentFloor > previousBest) return { type: 'newRecord', celebration: 'NEW PERSONAL BEST!', previousBest, newBest: currentFloor };
+    if (previousBest > 0 && currentFloor >= previousBest - 3 && currentFloor < previousBest) return { type: 'approaching', celebration: `${previousBest - currentFloor} FLOORS TO BEAT!`, target: previousBest };
+    return null;
+}
+
+function calculateEndlessScore(floor, stats) {
+    return floor * 100 + (stats.totalTimeBonus || 0) * 10 + (stats.enemiesKnockedOut || 0) * 50 + (stats.enemiesZapped || 0) * 30 + (stats.maxCombo || 0) * 100 + (stats.coinsCollected || 0) * 5 + (stats.milestoneBonus || 0) + (stats.perfectFloors || 0) * 200;
+}
+
+function calculateEndlessEscapePoints(floor, score) {
+    let ep = floor * 5 + Math.floor(score / 500);
+    if (floor > (playerStats.endlessBestFloor || 0)) ep += 50 + (floor - (playerStats.endlessBestFloor || 0)) * 10;
+    return ep;
+}
+
+function isEndlessBreatherFloor(floor) {
+    return floor > 0 && floor % ENDLESS_MODE_CONFIG.breatherInterval === 0;
+}
+
+function showEndlessMilestoneCelebration(milestone) {
+    gameState.celebrations.push({ text: milestone.celebration, subtext: milestone.name, color: milestone.color, timer: 3.0, scale: 1.5, flash: true });
+    if (milestone.reward) {
+        if (milestone.reward.bonusTime) { gameState.timer += milestone.reward.bonusTime; gameState.endlessStats.totalTimeBonus += milestone.reward.bonusTime; }
+        if (milestone.reward.escapePoints) { gameState.endlessStats.milestoneBonus += milestone.reward.escapePoints * 10; }
+    }
+    if (!gameState.endlessStats.milestonesReached.includes(milestone.name)) gameState.endlessStats.milestonesReached.push(milestone.name);
+    if (milestone.special === 'slowmo') { gameState.slowMoActive = true; gameState.slowMoTimer = 1.5; gameState.slowMoFactor = 0.3; }
+    else if (milestone.special === 'screenFlash') { gameState.milestoneFlash = 1.0; }
+    else if (milestone.special === 'epicCelebration') { gameState.slowMoActive = true; gameState.slowMoTimer = 2.0; gameState.slowMoFactor = 0.2; gameState.milestoneFlash = 1.5; }
+    AudioManager.play('victory');
+}
+
+function showDangerZoneWarning(zone) {
+    gameState.celebrations.push({ text: `⚠️ ${zone.name} ⚠️`, subtext: zone.description, color: zone.color, timer: 2.5, scale: 1.3, flash: false });
+}
+
+function showBreatherFloorNotification() {
+    gameState.celebrations.push({ text: '😮‍💨 BREATHER FLOOR', subtext: 'Easier enemies, more time', color: '#2ecc71', timer: 2.0, scale: 1.2, flash: false });
+}
+
+function showPersonalBestProximityAlert(pbStatus) {
+    if (pbStatus.type === 'approaching') {
+        gameState.celebrations.push({ text: pbStatus.celebration, subtext: `Your best: Floor ${pbStatus.target}`, color: '#f39c12', timer: 2.0, scale: 1.2, flash: false });
+    } else if (pbStatus.type === 'newRecord') {
+        gameState.celebrations.push({ text: pbStatus.celebration, subtext: `Previous: Floor ${pbStatus.previousBest}`, color: '#ffd700', timer: 3.0, scale: 1.5, flash: true });
+        AudioManager.play('victory');
+    }
+}
+
+// === ENVIRONMENTAL HAZARDS SYSTEM ===
+// Additional hazards that appear in later floors
+
+// Get hazards configuration for floor
+function getHazardsForFloor(floor) {
+    // Hazards start appearing on floor 7 and increase toward floor 1
+    if (floor >= 8) return { sparkingWires: 0, coffeeSpills: 0, malfunctioningCopiers: 0 };
+    if (floor >= 5) return { sparkingWires: 2, coffeeSpills: 3, malfunctioningCopiers: 1 };
+    if (floor >= 3) return { sparkingWires: 4, coffeeSpills: 5, malfunctioningCopiers: 2 };
+    return { sparkingWires: 6, coffeeSpills: 7, malfunctioningCopiers: 3 }; // Floors 1-2: maximum chaos
 }
 
 // Enhanced 8-bit color palette
@@ -1452,12 +1812,234 @@ const TILE = {
 };
 
 // Checkpoint system constants (must be defined before gameState)
-const CHECKPOINT_FLOORS = [20, 15, 10, 5];
+const CHECKPOINT_FLOORS = [10, 7, 4];
 const MAX_CONTINUES = 3;
+
+// === DASH SYSTEM CONSTANTS (Core Fun Mechanic) ===
+const DASH_DISTANCE = 3;          // Tiles traveled per dash
+const DASH_COOLDOWN = 1.5;        // Seconds between dashes
+const DASH_INVINCIBILITY = 0.25;  // Seconds of i-frames during dash
+const DASH_SPEED = 0.05;          // Seconds per tile during dash (fast!)
+
+// === PUNCH SYSTEM CONSTANTS (Default Attack) ===
+const PUNCH_RANGE = 2;            // Tiles - punch hits enemies within this range
+const PUNCH_COOLDOWN = 0.8;       // Seconds between punches
+const PUNCH_STUN_DURATION = 3;    // Seconds enemy is stunned
+const PUNCH_TIME_REWARD = 4;      // Seconds added to timer per enemy hit
+
+// === COMBO SYSTEM CONSTANTS (Over-the-top engagement) ===
+const COMBO_WINDOW = 2.0;         // Seconds to continue combo after a kill
+const COMBO_MAX_MULTIPLIER = 10;  // Maximum combo multiplier
+const COMBO_DECAY_RATE = 1.0;     // How fast combo timer decays per second
+
+// === SLOW-MO CONSTANTS ===
+const SLOWMO_2_KILLS = 0.3;       // Duration for 2-kill slow-mo
+const SLOWMO_3_KILLS = 0.5;       // Duration for 3+ kill slow-mo
+const SLOWMO_5_KILLS = 0.8;       // Duration for 5+ kill slow-mo (MASSACRE)
+const SLOWMO_FACTOR = 0.25;       // Time scale during slow-mo (0.25 = 4x slower)
+
+// === KILL STREAK THRESHOLDS ===
+const STREAK_DOUBLE = 2;
+const STREAK_TRIPLE = 3;
+const STREAK_RAMPAGE = 5;
+const STREAK_UNSTOPPABLE = 10;
+const STREAK_GODLIKE = 15;
+
+// === PERK SYSTEM DEFINITIONS ===
+const PERKS = {
+    // DASH PERKS
+    dashRange: {
+        id: 'dashRange',
+        name: 'Long Legs',
+        description: 'Dash travels 4 tiles instead of 3',
+        icon: '🦵',
+        category: 'dash',
+        rarity: 'common'
+    },
+    dashSpeed: {
+        id: 'dashSpeed',
+        name: 'Quick Step',
+        description: 'Dash cooldown reduced by 40%',
+        icon: '💨',
+        category: 'dash',
+        rarity: 'common'
+    },
+    dashDamage: {
+        id: 'dashDamage',
+        name: 'Shoulder Check',
+        description: 'Dashing through enemies stuns them',
+        icon: '💥',
+        category: 'dash',
+        rarity: 'rare'
+    },
+    dashTrail: {
+        id: 'dashTrail',
+        name: 'Fire Trail',
+        description: 'Dash leaves damaging fire behind',
+        icon: '🔥',
+        category: 'dash',
+        rarity: 'epic'
+    },
+    // PUNCH PERKS
+    punchRange: {
+        id: 'punchRange',
+        name: 'Long Arms',
+        description: 'Punch range increased by 1 tile',
+        icon: '🥊',
+        category: 'punch',
+        rarity: 'common'
+    },
+    punchSpeed: {
+        id: 'punchSpeed',
+        name: 'Fast Fists',
+        description: 'Punch cooldown reduced by 40%',
+        icon: '⚡',
+        category: 'punch',
+        rarity: 'common'
+    },
+    punchChain: {
+        id: 'punchChain',
+        name: 'Chain Reaction',
+        description: 'Punched enemies explode, hitting nearby enemies',
+        icon: '💫',
+        category: 'punch',
+        rarity: 'rare'
+    },
+    punchVampire: {
+        id: 'punchVampire',
+        name: 'Time Vampire',
+        description: 'Punches give +50% more time',
+        icon: '🧛',
+        category: 'punch',
+        rarity: 'epic'
+    },
+    criticalHit: {
+        id: 'criticalHit',
+        name: 'Lucky Punch',
+        description: 'Critical hit chance increased to 25%',
+        icon: '🎯',
+        category: 'punch',
+        rarity: 'rare'
+    },
+    // PASSIVE PERKS
+    speedBoost: {
+        id: 'speedBoost',
+        name: 'Coffee Boost',
+        description: 'Move 25% faster permanently',
+        icon: '☕',
+        category: 'passive',
+        rarity: 'common'
+    },
+    shieldStart: {
+        id: 'shieldStart',
+        name: 'Safety First',
+        description: 'Start each floor with a shield',
+        icon: '🛡️',
+        category: 'passive',
+        rarity: 'common'
+    },
+    coinMagnet: {
+        id: 'coinMagnet',
+        name: 'Money Magnet',
+        description: 'Coins are attracted from 3 tiles away',
+        icon: '🧲',
+        category: 'passive',
+        rarity: 'common'
+    },
+    comboExtend: {
+        id: 'comboExtend',
+        name: 'Momentum',
+        description: 'Combo timer lasts 50% longer',
+        icon: '⏱️',
+        category: 'passive',
+        rarity: 'rare'
+    },
+    startTime: {
+        id: 'startTime',
+        name: 'Head Start',
+        description: '+5 seconds at floor start',
+        icon: '⏰',
+        category: 'passive',
+        rarity: 'common'
+    },
+    luckyCoins: {
+        id: 'luckyCoins',
+        name: 'Lucky Coins',
+        description: 'Coins worth double points',
+        icon: '🍀',
+        category: 'passive',
+        rarity: 'rare'
+    },
+    invincibleDash: {
+        id: 'invincibleDash',
+        name: 'Ghost Dash',
+        description: 'Invincibility during dash lasts twice as long',
+        icon: '👻',
+        category: 'dash',
+        rarity: 'rare'
+    },
+    explosivePunch: {
+        id: 'explosivePunch',
+        name: 'Explosive Fists',
+        description: 'Punches create a shockwave that pushes all nearby enemies',
+        icon: '💣',
+        category: 'punch',
+        rarity: 'epic'
+    }
+};
+
+// Get random perks for floor selection (no duplicates from current perks)
+function getRandomPerkChoices(count = 3) {
+    const availablePerks = Object.values(PERKS).filter(perk =>
+        !gameState.perks.includes(perk.id)
+    );
+
+    // Shuffle and take first 'count'
+    const shuffled = availablePerks.sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, Math.min(count, shuffled.length));
+}
+
+// === ENEMY TYPE SELECTION ===
+// Determines what enemy type spawns based on floor and enemy index
+function selectEnemyType(floor, enemyIndex) {
+    // Floor 13-12: Only basic coworkers (tutorial)
+    if (floor >= 12) {
+        return 'coworker';
+    }
+
+    // Floor 11-10: Introduce interns (sprinters)
+    if (floor >= 10) {
+        return Math.random() < 0.3 ? 'intern' : 'coworker';
+    }
+
+    // Floor 9-7: Add IT Support (tanks)
+    if (floor >= 7) {
+        const roll = Math.random();
+        if (roll < 0.2) return 'intern';
+        if (roll < 0.35) return 'it_support';
+        return 'coworker';
+    }
+
+    // Floor 6-4: Add HR Karen (exploders)
+    if (floor >= 4) {
+        const roll = Math.random();
+        if (roll < 0.2) return 'intern';
+        if (roll < 0.35) return 'it_support';
+        if (roll < 0.5) return 'hr_karen';
+        return 'coworker';
+    }
+
+    // Floor 3-1: Full variety, more dangerous mix
+    const roll = Math.random();
+    if (roll < 0.25) return 'intern';      // 25% fast
+    if (roll < 0.4) return 'it_support';   // 15% tank
+    if (roll < 0.55) return 'hr_karen';    // 15% exploder
+    return 'coworker';                      // 45% basic
+}
 
 // Game state
 let gameState = {
-    floor: 23,
+    floor: 13,
     timer: 30,
     powerup: null,
     powerupTimer: 0,
@@ -1468,7 +2050,18 @@ let gameState = {
         lastHitTime: 0,  // For resetting hit count after a while
         burning: 0,  // Burn effect timer (drains time 2x faster)
         shielded: 0,  // Shield timer (immune to damage from garden powerup)
-        companion: null  // Dog companion from dog park (chases enemies)
+        invincible: 0,  // Invincibility timer (rainbow star power!)
+        companion: null,  // Dog companion from dog park (chases enemies)
+        // === DASH SYSTEM (Core Fun Mechanic) ===
+        dashCooldown: 0,      // Time until dash available again
+        isDashing: false,     // Currently in dash animation
+        dashInvincible: 0,    // Invincibility frames during dash
+        lastDashDir: { x: 0, y: 1 },  // Last movement direction for dash
+        // === PUNCH SYSTEM (Default Attack) ===
+        punchCooldown: 0,     // Time until punch available again
+        isPunching: false,    // Currently in punch animation
+        // === WALL BREAKER (Secret Ability) ===
+        wallBreakCooldown: 0  // Time until wall break available again
     },
     enemies: [],
     powerups: [],
@@ -1484,6 +2077,12 @@ let gameState = {
     },
     fires: [],  // Dynamic fire hazards
     fireSpawnTimer: 0,  // Timer for spawning new fires
+    // === NEW POWERUP STATES ===
+    timeFreezeActive: false,
+    timeFreezeTimer: 0,
+    coinMagnetActive: false,
+    coinMagnetTimer: 0,
+    clone: null,  // Decoy that enemies chase
     gameOver: false,
     won: false,
     imploding: false,
@@ -1513,12 +2112,54 @@ let gameState = {
     zenMode: false,
     // === NEW: Collectibles System (Dopamine Breadcrumbs) ===
     coins: [],              // Coins scattered throughout maze
-    coinsCollected: 0,      // Coins collected this run
+    coinsCollected: 0,      // Coin value collected this run (for points)
+    coinsCollectedCount: 0, // Actual number of coins collected (for display)
     coinCombo: 0,           // Rapid collection combo
     coinComboTimer: 0,      // Time remaining for combo
     // === NEW: Quick Run Mode ===
-    quickRunMode: false,    // 7-floor quick run
-    quickRunStartFloor: 7   // Starting floor for quick run
+    quickRunMode: false,    // 5-floor quick run
+    quickRunStartFloor: 5,   // Starting floor for quick run
+    // === COMBO SYSTEM (Over-the-top engagement) ===
+    killCombo: 0,           // Current kill combo multiplier
+    killComboTimer: 0,      // Time remaining to continue combo (2 seconds)
+    maxComboThisRun: 0,     // Highest combo achieved this run
+    killStreak: 0,          // Total kills without taking damage
+    lastKillTime: 0,        // Timestamp of last kill for combo timing
+    // === SLOW-MO SYSTEM ===
+    slowMoActive: false,    // Is slow-mo currently active
+    slowMoTimer: 0,         // Time remaining in slow-mo
+    slowMoFactor: 1.0,      // Current time scale (1.0 = normal, 0.3 = slow)
+    // === VISUAL POLISH SYSTEM ===
+    lastTimerSecond: -1,    // Track timer changes for pulse effect
+    timerPulseScale: 1.0,   // Current timer scale for pulse animation
+    enemySpawnFlash: 0,     // Flash when enemies spawn
+    // === PERK SYSTEM ===
+    perks: [],              // Active perks for this run
+    perkChoices: null,      // Current floor's perk choices (null = no choice pending)
+    perksPicked: 0,         // Number of perks picked this run
+    // === ENVIRONMENTAL HAZARDS ===
+    sparkingWires: [],      // Electrical hazards that stun player
+    coffeeSpills: [],       // Slippery hazards that slow player
+    malfunctioningCopiers: [], // Spawn paper enemies periodically
+    hazardSpawnTimer: 0,    // Timer for spawning new hazards
+    // === EXIT TRACKING (for secret wall-breaker unlock) ===
+    exitsUsedThisRun: new Set(), // Track which exit corners used (TL, TR, BL, BR)
+    hasWallBreaker: false,   // Secret ability unlocked
+    // === ENDLESS DESCENT MODE ===
+    endlessMode: false,           // Is endless mode active
+    endlessFloor: 0,              // Internal floor counter (1, 2, 3...)
+    endlessScore: 0,              // Score for this endless run
+    endlessDangerZone: null,      // Current danger zone modifier (blackout, swarm, etc.)
+    endlessIsBreatherFloor: false, // Is current floor a breather floor
+    endlessWallShiftTimer: 0,     // Timer for unstable floors wall shifting
+    endlessBlackoutRadius: 0,     // Visibility radius for blackout floors
+    endlessStats: {               // Stats tracked during endless run
+        totalTimeBonus: 0,        // Accumulated time bonuses
+        maxCombo: 0,              // Highest combo achieved
+        perfectFloors: 0,         // Floors completed without taking damage
+        milestoneBonus: 0,        // Bonus points from milestones
+        milestonesReached: []     // Which milestones were reached
+    }
 };
 
 // Comprehensive stats tracking (persisted)
@@ -1535,11 +2176,18 @@ let playerStats = {
     timesBurned: 0,
     powerupsCollected: 0,
     secretExitsFound: 0,
-    bestFloor: 23,  // Lowest floor reached
+    bestFloor: 13,  // Lowest floor reached
     totalPlayTime: 0,  // Total time playing
     // === NEW: Escape Points System (Meta-Progression) ===
     escapePoints: 0,        // Persistent currency earned from runs
-    totalCoinsCollected: 0  // Lifetime coins collected
+    totalCoinsCollected: 0, // Lifetime coins collected
+    // === ENDLESS DESCENT MODE STATS ===
+    endlessBestFloor: 0,          // Lowest floor reached in endless
+    endlessBestScore: 0,          // Highest score achieved in endless
+    endlessTotalFloors: 0,        // All-time floors in endless
+    endlessRuns: 0,               // Total endless attempts
+    endlessAverageFloor: 0,       // Running average floor reached
+    endlessMilestonesReached: []  // Which milestones have been hit (ever)
 };
 
 // Load stats from localStorage
@@ -1813,7 +2461,7 @@ function startDailyChallenge() {
     // Store weekly challenge modifiers for use during gameplay
     gameState.weeklyChallenge = getWeeklyChallenge();
 
-    gameState.floor = 23;
+    gameState.floor = 13;
     gameState.gameOver = false;
     gameState.won = false;
     gameState.started = true;
@@ -1929,7 +2577,16 @@ function hideHowToPlay() {
 
 let keys = {};
 let lastMove = 0;
-const MOVE_DELAY = 150;
+const MOVE_DELAY = 100; // Reduced from 150ms for snappier, more precise movement
+
+// Calculate effective move delay with perks and powerups
+function getEffectiveMoveDelay() {
+    let delay = MOVE_DELAY;
+    if (gameState && gameState.perks && gameState.perks.includes('speedBoost')) delay *= 0.75; // 25% faster
+    if (gameState && gameState.powerup === 'speed') delay *= 0.5; // Speed powerup stacks
+    if (gameState && gameState.playerSlowed) delay *= 1.5; // Coffee spill slow effect
+    return delay;
+}
 
 // ============================================
 // GAMEPAD / CONTROLLER SUPPORT
@@ -2109,14 +2766,58 @@ const CELEBRATIONS = {
     closeDodge: { text: 'CLOSE ONE!', color: '#ff6b6b' },
     combo: { text: 'COMBO x{n}!', color: '#ffd93d' },
     speedster: { text: 'SPEEDSTER!', color: '#6bcb77' },
+    speedBonus: { text: '+{coins} SPEED BONUS!', color: '#2ecc71' },
     flawless: { text: 'FLAWLESS!', color: '#4d96ff' },
+    flawlessBonus: { text: '+{coins} FLAWLESS BONUS!', color: '#3498db' },
+    domination: { text: '👑 DOMINATION! +50', color: '#ffd700' },
+    criticalHit: { text: '💥 CRITICAL HIT!', color: '#ffd700' },
     niceUse: { text: 'NICE!', color: '#9b59b6' },
     checkpoint: { text: 'CHECKPOINT!', color: '#00d2d3' },
     // === NEW: Close Call & Coin Celebrations ===
     closeCall: { text: 'CLOSE CALL!', color: '#ff4757' },
     clutchEscape: { text: 'CLUTCH!', color: '#ffa502' },
     coinStreak: { text: 'COIN STREAK x{n}!', color: '#f1c40f' },
-    coinMaster: { text: 'COIN MASTER!', color: '#f39c12' }
+    coinMaster: { text: 'COIN MASTER x10!', color: '#f39c12' },
+    coinFrenzy: { text: '💰 COIN FRENZY x20+!', color: '#ffd700' },
+    // === PUNCH SYSTEM CELEBRATIONS ===
+    timeBonus: { text: '+{seconds}s TIME!', color: '#2ecc71' },
+    multiPunch: { text: 'MULTI-HIT x{count}!', color: '#e74c3c' },
+    dashThrough: { text: 'PHASED!', color: '#00d2d3' },
+    // === ELECTRIC CHAIN CELEBRATIONS ===
+    electricChain: { text: '⚡ ZAP CHAIN x{count}!', color: '#00d4ff' },
+    // === COMBO SYSTEM CELEBRATIONS ===
+    comboKill: { text: 'x{combo} COMBO! +{time}s', color: '#ffd700' },
+    comboBreak: { text: 'COMBO LOST', color: '#666' },
+    // === KILL STREAK CELEBRATIONS ===
+    rampage: { text: '🔥 RAMPAGE!', color: '#ff6b00' },
+    unstoppable: { text: '⚡ UNSTOPPABLE!', color: '#ff00ff' },
+    godlike: { text: '👑 GODLIKE!', color: '#ffd700' },
+    massacre: { text: '💀 MASSACRE x{count}!', color: '#ff0000' },
+    // === PERK CELEBRATIONS ===
+    perkPicked: { text: '✨ {perk}', color: '#00d2d3' },
+    perkPurchased: { text: '💰 {perk} (-{price})', color: '#f1c40f' },
+    shopSkipped: { text: 'COINS SAVED!', color: '#888' },
+    // === ENEMY TYPE CELEBRATIONS ===
+    tankHit: { text: '🛡️ {remaining} HITS LEFT', color: '#9b59b6' },
+    explosion: { text: '💥 CHAIN REACTION!', color: '#e67e22' },
+    // === NEW PERK EFFECT CELEBRATIONS ===
+    chainReaction: { text: '⛓️ CHAIN x{count}!', color: '#f1c40f' },
+    shockwave: { text: '💫 SHOCKWAVE!', color: '#9b59b6' },
+    fireKill: { text: '🔥 BURNED!', color: '#e67e22' },
+    // === NEW POWERUP CELEBRATIONS ===
+    timeFreeze: { text: '⏸️ TIME FREEZE!', color: '#00d4ff' },
+    coinMagnet: { text: '🧲 COIN MAGNET!', color: '#f1c40f' },
+    cloneActivated: { text: '👤 DECOY DEPLOYED!', color: '#9b59b6' },
+    decoyExpired: { text: '👤 DECOY GONE', color: '#666' },
+    invincibility: { text: '⭐ INVINCIBLE!', color: '#ffd700' },
+    // === ENVIRONMENTAL HAZARD CELEBRATIONS ===
+    shocked: { text: '⚡ SHOCKED!', color: '#ffff00' },
+    paperJam: { text: '📄 PAPER JAM!', color: '#ffffff' },
+    // === SECRET UNLOCK CELEBRATIONS ===
+    wallBreakerUnlocked: { text: '🧱💥 WALL BREAKER UNLOCKED!', color: '#ff00ff' },
+    wallSmash: { text: '💥 SMASH!', color: '#ff6600' },
+    wallBreak: { text: '💥 WALL BREAK!', color: '#95a5a6' },
+    cooldown: { text: '⏳ RECHARGING...', color: '#3498db' }
 };
 
 // ============================================
@@ -2505,7 +3206,7 @@ let playerProgress = {
     totalPunches: 0,
     totalZaps: 0,
     totalFloorsCleared: 0,
-    bestFloor: 23,
+    bestFloor: 13,
     secretExitFound: false,
     perfectRunAchieved: false,
     achievements: [],
@@ -2703,17 +3404,17 @@ function updateProgressAfterRun(won) {
     playerProgress.totalRuns++;
     playerProgress.totalPunches += gameState.enemiesKnockedOut || 0;
     playerProgress.totalZaps += gameState.enemiesZapped || 0;
-    playerProgress.totalFloorsCleared += (23 - gameState.floor);
+    playerProgress.totalFloorsCleared += (13 - gameState.floor);
 
     // Also update playerStats for milestones
-    playerStats.totalFloorsCleared += (23 - gameState.floor);
+    playerStats.totalFloorsCleared += (13 - gameState.floor);
     playerStats.enemiesPunched += gameState.enemiesKnockedOut || 0;
     playerStats.enemiesZapped += gameState.enemiesZapped || 0;
     playerStats.totalRuns++;
 
     // === NEW: Escape Points System (Meta-Progression) ===
     // Award escape points based on performance - even failed runs give progress
-    const floorsDescended = (gameState.quickRunMode ? 7 : 23) - gameState.floor;
+    const floorsDescended = (gameState.quickRunMode ? 5 : 13) - gameState.floor;
     let escapePointsEarned = 0;
 
     // Base points for floors cleared (10 per floor)
@@ -2914,7 +3615,7 @@ function showStatsScreen() {
         { label: 'Total Runs', value: playerProgress.totalRuns, icon: '🎮' },
         { label: 'Total Wins', value: playerProgress.totalWins, icon: '🏆' },
         { label: 'Win Rate', value: winRate + '%', icon: '📊' },
-        { label: 'Best Floor Reached', value: playerProgress.bestFloor === 23 ? 'N/A' : `Floor ${playerProgress.bestFloor}`, icon: '⬇️' },
+        { label: 'Best Floor Reached', value: playerProgress.bestFloor === 13 ? 'N/A' : `Floor ${playerProgress.bestFloor}`, icon: '⬇️' },
         { label: 'Total Floors Cleared', value: playerProgress.totalFloorsCleared, icon: '🏢' },
         { label: 'Avg Floors/Run', value: avgFloorsPerRun, icon: '📈' },
         { label: 'Coworkers Punched', value: playerProgress.totalPunches, icon: '🥊' },
@@ -2957,7 +3658,7 @@ function resetAllProgress() {
             totalPunches: 0,
             totalZaps: 0,
             totalFloorsCleared: 0,
-            bestFloor: 23,
+            bestFloor: 13,
             secretExitFound: false,
             perfectRunAchieved: false,
             achievements: [],
@@ -3190,6 +3891,61 @@ function straightLineClear(maze, startX, startY, endX, endY) {
         }
         if (endX < MAP_WIDTH - 2 && (maze[y][endX+1] === TILE.WALL || maze[y][endX+1] === TILE.DESK)) {
             maze[y][endX+1] = TILE.FLOOR;
+        }
+    }
+}
+
+// === ENDLESS MODE: Shift walls for unstable floors ===
+function shiftUnstableWalls() {
+    // Play warning sound
+    AudioManager.play('alert');
+
+    // Add celebration notification
+    gameState.celebrations.push({
+        text: '⚠️ WALLS SHIFTING!',
+        subtext: '',
+        color: '#8e44ad',
+        timer: 1.5,
+        scale: 1.2,
+        flash: false
+    });
+
+    // Screen shake effect
+    screenShake.add(0.5, 8);
+
+    // Randomly shift some walls
+    const maze = gameState.maze;
+    const shiftCount = Math.min(20, Math.floor(MAP_WIDTH * MAP_HEIGHT * 0.03)); // 3% of tiles
+
+    for (let i = 0; i < shiftCount; i++) {
+        const x = Math.floor(Math.random() * (MAP_WIDTH - 4)) + 2;
+        const y = Math.floor(Math.random() * (MAP_HEIGHT - 4)) + 2;
+
+        // Don't modify near player, exits, or special zones
+        const nearPlayer = Math.abs(x - gameState.player.x) < 3 && Math.abs(y - gameState.player.y) < 3;
+        const nearExit = gameState.exits.some(e => Math.abs(x - e.x) < 2 && Math.abs(y - e.y) < 2);
+
+        if (nearPlayer || nearExit) continue;
+
+        // Toggle wall/floor
+        if (maze[y][x] === TILE.WALL) {
+            maze[y][x] = TILE.FLOOR;
+        } else if (maze[y][x] === TILE.FLOOR) {
+            // Only add wall if it doesn't block paths
+            maze[y][x] = TILE.WALL;
+            // Verify paths still exist
+            const playerX = gameState.player.x;
+            const playerY = gameState.player.y;
+            let pathBlocked = false;
+            for (const exit of gameState.exits) {
+                if (!hasPath(maze, playerX, playerY, exit.x, exit.y)) {
+                    pathBlocked = true;
+                    break;
+                }
+            }
+            if (pathBlocked) {
+                maze[y][x] = TILE.FLOOR; // Revert
+            }
         }
     }
 }
@@ -3593,10 +4349,37 @@ function addSecretExit(maze) {
 }
 
 function initLevel() {
-    // Set map dimensions based on floor and aspect ratio
-    const dims = getMapDimensionsForFloor(gameState.floor);
-    MAP_WIDTH = dims.width;
-    MAP_HEIGHT = dims.height;
+    // === ENDLESS MODE: Use endless scaling functions ===
+    if (gameState.endlessMode) {
+        // Get endless-specific dimensions
+        const dims = getEndlessMapDimensions(gameState.endlessFloor);
+        MAP_WIDTH = dims.width;
+        MAP_HEIGHT = dims.height;
+
+        // Check for danger zones
+        const dangerZone = getEndlessDangerZone(gameState.endlessFloor);
+        gameState.endlessDangerZone = dangerZone ? dangerZone.id : null;
+
+        // Check for breather floor
+        gameState.endlessIsBreatherFloor = isEndlessBreatherFloor(gameState.endlessFloor);
+
+        // Setup blackout radius if in blackout zone
+        if (gameState.endlessDangerZone === 'blackout') {
+            gameState.endlessBlackoutRadius = 5; // Visible radius in tiles
+        } else {
+            gameState.endlessBlackoutRadius = 0;
+        }
+
+        // Setup wall shift timer if in unstable zone
+        if (gameState.endlessDangerZone === 'unstable') {
+            gameState.endlessWallShiftTimer = 20; // Walls shift every 20 seconds
+        }
+    } else {
+        // Standard mode: Set map dimensions based on floor and aspect ratio
+        const dims = getMapDimensionsForFloor(gameState.floor);
+        MAP_WIDTH = dims.width;
+        MAP_HEIGHT = dims.height;
+    }
 
     // Update tile size based on current resolution and map height
     TILE_SIZE = getTileSize();
@@ -3608,43 +4391,69 @@ function initLevel() {
 
     gameState.maze = generateMaze();
 
-    // Timer calculation - tighter on early floors for more engagement
-    // Floor 23: 38s, scaling down gradually
-    if (gameState.floor >= 20) {
-        // Opening floors (23-20): Start at 38s, decrease by 2s per floor
-        // Floor 23: 38s, Floor 22: 36s, Floor 21: 34s, Floor 20: 32s
-        gameState.timer = 38 - (23 - gameState.floor) * 2;
-    } else if (gameState.floor >= 15) {
-        // Early floors (19-15): 35s base
-        gameState.timer = 35 - (19 - gameState.floor) * 2;
-    } else if (gameState.floor >= 10) {
-        // Mid floors (14-10): 30s base
-        gameState.timer = 30 - (14 - gameState.floor) * 1;
+    // === ENDLESS MODE: Timer calculation ===
+    if (gameState.endlessMode) {
+        gameState.timer = getEndlessTimer(gameState.endlessFloor);
+
+        // Show notifications for special floors
+        if (gameState.endlessDangerZone) {
+            const zone = getEndlessDangerZone(gameState.endlessFloor);
+            if (zone) showDangerZoneWarning(zone);
+        }
+        if (gameState.endlessIsBreatherFloor) {
+            showBreatherFloorNotification();
+        }
+
+        // Check for milestones
+        const milestone = getEndlessMilestone(gameState.endlessFloor);
+        if (milestone) {
+            showEndlessMilestoneCelebration(milestone);
+        }
+
+        // Check personal best proximity
+        const pbStatus = checkEndlessPersonalBest(gameState.endlessFloor);
+        if (pbStatus) {
+            showPersonalBestProximityAlert(pbStatus);
+        }
     } else {
-        // Late floors (9-1): 25s base, but more challenging
-        gameState.timer = 25;
-    }
+        // Standard mode timer calculation - tighter on early floors for more engagement
+        // Floor 13: 38s, scaling down gradually (rebalanced for 13-floor game)
+        if (gameState.floor >= 11) {
+            // Opening floors (13-11): Start at 38s, decrease by 2s per floor
+            // Floor 13: 38s, Floor 12: 36s, Floor 11: 34s
+            gameState.timer = 38 - (13 - gameState.floor) * 2;
+        } else if (gameState.floor >= 8) {
+            // Early-mid floors (10-8): 32s base
+            gameState.timer = 32 - (10 - gameState.floor) * 2;
+        } else if (gameState.floor >= 5) {
+            // Mid floors (7-5): 28s base
+            gameState.timer = 28 - (7 - gameState.floor) * 1;
+        } else {
+            // Late floors (4-1): 25s base, but more challenging
+            gameState.timer = 25;
+        }
 
-    // Give more time on larger maps (based on area)
-    const mapArea = MAP_WIDTH * MAP_HEIGHT;
-    if (mapArea >= 900) gameState.timer += 15;  // Large widescreen maps
-    else if (mapArea >= 576) gameState.timer += 12;
-    else if (mapArea >= 400) gameState.timer += 6;
+        // Give more time on larger maps (based on area)
+        const mapArea = MAP_WIDTH * MAP_HEIGHT;
+        if (mapArea >= 900) gameState.timer += 15;  // Large widescreen maps
+        else if (mapArea >= 576) gameState.timer += 12;
+        else if (mapArea >= 400) gameState.timer += 6;
 
-    // Apply milestone bonus time rewards
-    const rewards = getMilestoneRewards();
-    if (rewards.bonusTime > 0) {
-        gameState.timer += rewards.bonusTime;
-    }
+        // Apply milestone bonus time rewards
+        const rewards = getMilestoneRewards();
+        if (rewards.bonusTime > 0) {
+            gameState.timer += rewards.bonusTime;
+        }
 
-    // Store rewards for use during gameplay
-    gameState.milestoneRewards = rewards;
+        // Store rewards for use during gameplay
+        gameState.milestoneRewards = rewards;
 
-    // Apply weekly challenge modifiers (for daily challenge mode)
-    if (dailyChallenge.active && gameState.weeklyChallenge) {
-        const mods = gameState.weeklyChallenge.modifiers;
-        if (mods.timeMultiplier) {
-            gameState.timer = Math.floor(gameState.timer * mods.timeMultiplier);
+        // Apply weekly challenge modifiers (for daily challenge mode)
+        if (dailyChallenge.active && gameState.weeklyChallenge) {
+            const mods = gameState.weeklyChallenge.modifiers;
+            if (mods.timeMultiplier) {
+                gameState.timer = Math.floor(gameState.timer * mods.timeMultiplier);
+            }
         }
     }
 
@@ -3657,11 +4466,35 @@ function initLevel() {
     gameState.player.hitCount = 0;
     gameState.player.lastHitTime = 0;
     gameState.player.burning = 0;
+    // === DASH/PUNCH: Reset cooldowns on new floor (fresh start) ===
+    gameState.player.dashCooldown = 0;
+    gameState.player.dashInvincible = 0;
+    gameState.player.isDashing = false;
+    gameState.player.punchCooldown = 0;
+    gameState.player.isPunching = false;
     gameState.punchEffects = [];
+    // === COMBO: Keep combo/streak running between floors (reward for momentum) ===
+    // Don't reset killCombo, killStreak, or maxComboThisRun - they persist!
+    // === SLOW-MO: Reset slow-mo on new floor ===
+    gameState.slowMoActive = false;
+    gameState.slowMoTimer = 0;
+    gameState.slowMoFactor = 1.0;
+
+    // === VISUAL POLISH: Trigger enemy spawn flash ===
+    gameState.enemySpawnFlash = 0.15; // Brief white flash when floor starts
+    gameState.lastTimerSecond = -1; // Reset timer pulse tracking
 
     // Reset fires for new floor
     gameState.fires = [];
     gameState.fireSpawnTimer = 5;  // Start spawning fires after 5 seconds
+
+    // Reset environmental hazards for new floor
+    gameState.sparkingWires = [];
+    gameState.coffeeSpills = [];
+    gameState.malfunctioningCopiers = [];
+    gameState.hazardSpawnTimer = 3; // Spawn hazards after 3 seconds
+    gameState.playerSlowed = false;
+    gameState.slowedTimer = 0;
 
     // Clear around player (2 tile radius for safety)
     for (let dy = -2; dy <= 2; dy++) {
@@ -3684,8 +4517,8 @@ function initLevel() {
     gameState.player.shielded = 0;
     gameState.player.companion = null;
 
-    // Add cafeteria on floors 20, 15, 10, 5
-    if (gameState.floor === 20 || gameState.floor === 15 || gameState.floor === 10 || gameState.floor === 5) {
+    // Add cafeteria on floors 10, 7, 4 (rebalanced for 13-floor game)
+    if (gameState.floor === 10 || gameState.floor === 7 || gameState.floor === 4) {
         gameState.zones.cafeteria = addCafeteria(gameState.maze);
     }
 
@@ -3694,18 +4527,18 @@ function initLevel() {
         gameState.zones.bathroom = addBathroom(gameState.maze);
     }
 
-    // Add rooftop garden on floors 18, 12, 6 (gives shield powerup)
-    if (gameState.floor === 18 || gameState.floor === 12 || gameState.floor === 6) {
+    // Add rooftop garden on floors 11, 8, 5 (gives shield powerup, rebalanced)
+    if (gameState.floor === 11 || gameState.floor === 8 || gameState.floor === 5) {
         gameState.zones.garden = addGarden(gameState.maze);
     }
 
-    // Add dog park on floors 16, 9, 3 (gives companion powerup)
-    if (gameState.floor === 16 || gameState.floor === 9 || gameState.floor === 3) {
+    // Add dog park on floors 9, 6, 3 (gives companion powerup, rebalanced)
+    if (gameState.floor === 9 || gameState.floor === 6 || gameState.floor === 3) {
         gameState.zones.dogPark = addDogPark(gameState.maze);
     }
 
-    // Add secret exit on floor 13
-    if (gameState.floor === 13) {
+    // Add secret exit on floor 7 (rebalanced from floor 13)
+    if (gameState.floor === 7) {
         gameState.secretExit = addSecretExit(gameState.maze);
     }
 
@@ -3739,8 +4572,8 @@ function initLevel() {
         }
     }
 
-    // Also verify secret exit on floor 13
-    if (gameState.floor === 13 && gameState.secretExit) {
+    // Also verify secret exit on floor 7 (rebalanced from floor 13)
+    if (gameState.floor === 7 && gameState.secretExit) {
         if (!hasPath(gameState.maze, startX, startY, gameState.secretExit.x, gameState.secretExit.y)) {
             console.log('Path blocked to secret exit, forcing clear path...');
             forcePathClear(gameState.maze, startX, startY, gameState.secretExit.x - 1, gameState.secretExit.y);
@@ -3760,12 +4593,6 @@ function initLevel() {
     }
 
     // Progressive enemy introduction
-    // Floor 23-22: 1 enemy (very easy start)
-    // Floor 21-20: 2 enemies
-    // Floor 19-15: 3 enemies
-    // Floor 14-10: 4 enemies
-    // Floor 9-5: 5 enemies
-    // Floor 4-1: 6 enemies
     gameState.enemies = [];
 
     // Zen mode: no enemies (Playtest Feature #4)
@@ -3773,23 +4600,27 @@ function initLevel() {
         // Skip enemy spawning entirely in Zen mode
     } else {
         let numEnemies;
-        // Increased enemy counts on opening floors for more challenge
-        if (gameState.floor === 23) numEnemies = 2;      // Was 1
-        else if (gameState.floor >= 20) numEnemies = 3;  // Was 2 for 22-20
-        else if (gameState.floor >= 15) numEnemies = 3;
-        else if (gameState.floor >= 10) numEnemies = 4;
-        else if (gameState.floor >= 5) numEnemies = 5;
-        else numEnemies = 6;
+        let enemyDifficulty;
 
-        // Apply difficulty multiplier (Playtest Feature #1)
-        const difficultyPreset = DIFFICULTY_PRESETS[settings.difficulty] || DIFFICULTY_PRESETS.normal;
-        numEnemies = Math.max(1, Math.round(numEnemies * (difficultyPreset.enemyMultiplier || 1.0)));
+        if (gameState.endlessMode) {
+            // === ENDLESS MODE: Use endless scaling ===
+            numEnemies = getEndlessEnemyCount(gameState.endlessFloor);
+            enemyDifficulty = getEndlessAIDifficulty(gameState.endlessFloor);
+        } else {
+            // Standard mode: Enemy counts rebalanced for 13-floor game
+            if (gameState.floor === 13) numEnemies = 2;      // Tutorial floor
+            else if (gameState.floor >= 11) numEnemies = 3;  // Floors 12-11
+            else if (gameState.floor >= 8) numEnemies = 4;   // Floors 10-8
+            else if (gameState.floor >= 4) numEnemies = 5;   // Floors 7-4
+            else numEnemies = 6;                              // Floors 3-1
 
-    // Enemy AI difficulty also scales - tighter curve for more challenge
-    // Floor 23 only: Easy (slower, more random movement)
-    // Floors 22-12: Medium (normal speed, some chasing)
-    // Floors 11-1: Hard (faster, aggressive chasing)
-    const enemyDifficulty = gameState.floor >= 23 ? 'easy' : (gameState.floor >= 12 ? 'medium' : 'hard');
+            // Apply difficulty multiplier (Playtest Feature #1)
+            const difficultyPreset = DIFFICULTY_PRESETS[settings.difficulty] || DIFFICULTY_PRESETS.normal;
+            numEnemies = Math.max(1, Math.round(numEnemies * (difficultyPreset.enemyMultiplier || 1.0)));
+
+            // Enemy AI difficulty also scales - rebalanced for 13-floor game
+            enemyDifficulty = gameState.floor >= 13 ? 'easy' : (gameState.floor >= 7 ? 'medium' : 'hard');
+        }
 
     for (let i = 0; i < numEnemies; i++) {
         let ex, ey, attempts = 0;
@@ -3801,6 +4632,12 @@ function initLevel() {
                  (Math.abs(ex - gameState.player.x) < 5 && Math.abs(ey - gameState.player.y) < 5)) && attempts < 100);
 
         if (attempts < 100) {
+            // === ENEMY VARIETY: Select enemy type based on floor and randomness ===
+            let enemyType = gameState.endlessMode ?
+                selectEndlessEnemyType(gameState.endlessFloor) :
+                selectEnemyType(gameState.floor, i);
+            const typeData = ENEMY_TYPES[enemyType] || ENEMY_TYPES.coworker;
+
             gameState.enemies.push({
                 x: ex,
                 y: ey,
@@ -3812,7 +4649,13 @@ function initLevel() {
                 frame: gameRandom() * Math.PI * 2,
                 difficulty: enemyDifficulty,
                 scared: 0,  // For dog companion scare effect
-                spawnTimer: 0.8  // Spawn warning animation duration
+                spawnTimer: 0.8,  // Spawn warning animation duration
+                // === ENEMY TYPE PROPERTIES ===
+                enemyType: enemyType,
+                health: typeData.health,
+                maxHealth: typeData.health,
+                speedMultiplier: typeData.speed,
+                special: typeData.special
             });
         }
     }
@@ -3820,12 +4663,12 @@ function initLevel() {
 
     gameState.powerups = [];
     // === CHANGED: Increased power-up density for better flow ===
-    // More power-ups = more tactical decisions = more engagement
+    // More power-ups = more tactical decisions = more engagement (rebalanced for 13 floors)
     let numPowerups;
-    if (gameState.floor >= 20) {
-        numPowerups = 5 + Math.floor(gameRandom() * 3);  // 5-7 powerups (was 2-3)
-    } else if (gameState.floor >= 10) {
-        numPowerups = 6 + Math.floor(gameRandom() * 4);  // 6-9 powerups (was 3-5)
+    if (gameState.floor >= 11) {
+        numPowerups = 5 + Math.floor(gameRandom() * 3);  // 5-7 powerups (floors 13-11)
+    } else if (gameState.floor >= 6) {
+        numPowerups = 6 + Math.floor(gameRandom() * 4);  // 6-9 powerups (floors 10-6)
     } else {
         numPowerups = 8 + Math.floor(gameRandom() * 4);  // 8-11 powerups (late game gets more chaos)
     }
@@ -3851,10 +4694,25 @@ function initLevel() {
         } while (!validPlacement && attempts < 200);
 
         if (attempts < 200) {
+            // Determine powerup type based on floor and rarity
+            let powerupType;
+            const roll = gameRandom();
+
+            if (gameState.floor <= 4 && roll < 0.1) {
+                // 10% chance for super-rare powerups on floors 4-1
+                powerupType = gameRandom() < 0.5 ? 'clone' : 'invincibility';
+            } else if (gameState.floor <= 7 && roll < 0.25) {
+                // 25% chance for limited powerups on floors 7-1
+                powerupType = gameRandom() < 0.5 ? 'timeFreeze' : 'coinMagnet';
+            } else {
+                // Regular powerups
+                powerupType = ['speed', 'knockout', 'electric'][Math.floor(gameRandom() * 3)];
+            }
+
             gameState.powerups.push({
                 x: px,
                 y: py,
-                type: ['speed', 'knockout', 'electric'][Math.floor(gameRandom() * 3)]
+                type: powerupType
             });
         }
     }
@@ -3931,10 +4789,24 @@ function initLevel() {
         } while (!validPlacement && attempts < 100);
 
         if (attempts < 100) {
+            // Scale coin value based on floor (later floors = more coins for shop)
+            // Floor 13: 5-10, Floor 7-12: 8-15, Floor 1-6: 10-20
+            let baseValue, bonusValue;
+            if (gameState.floor >= 11) {
+                baseValue = 5;
+                bonusValue = Math.floor(gameRandom() * 6); // 5-10
+            } else if (gameState.floor >= 7) {
+                baseValue = 8;
+                bonusValue = Math.floor(gameRandom() * 8); // 8-15
+            } else {
+                baseValue = 10;
+                bonusValue = Math.floor(gameRandom() * 11); // 10-20
+            }
+
             gameState.coins.push({
                 x: cx,
                 y: cy,
-                value: 10, // Base coin value
+                value: baseValue + bonusValue,
                 collected: false,
                 bobOffset: gameRandom() * Math.PI * 2, // For bobbing animation
                 sparkle: gameRandom() * Math.PI * 2   // For sparkle effect
@@ -4409,7 +5281,10 @@ function drawCharacterSpeedTrail(x, y, isSpeedPowerup) {
 
 // Draw enemy character from sprite sheet
 function drawEnemySprite(enemy, x, y) {
-    const enemyAsset = ENEMY_ASSETS.coworker;
+    // === ENEMY TYPE: Select correct sprite sheet based on enemy type ===
+    const enemyType = enemy.enemyType || 'coworker';
+    const enemyAsset = ENEMY_ASSETS[enemyType] || ENEMY_ASSETS.coworker;
+
     if (!enemyAsset || !enemyAsset.animation.loaded || !enemyAsset.animation.image) {
         return false;  // Fall back to procedural rendering
     }
@@ -4417,7 +5292,7 @@ function drawEnemySprite(enemy, x, y) {
     const anim = enemyAsset.animation;
 
     // Get or create animation state for this enemy
-    const enemyId = `enemy_${enemy.x}_${enemy.y}_${enemy.frame}`;
+    const enemyId = `enemy_${enemy.x}_${enemy.y}_${enemy.frame}_${enemyType}`;
     if (!enemyAnimationStates.has(enemyId)) {
         enemyAnimationStates.set(enemyId, {
             frame: Math.floor(Math.random() * anim.frameCount),  // Random start frame
@@ -4443,11 +5318,13 @@ function drawEnemySprite(enemy, x, y) {
     const srcX = state.frame * anim.frameWidth;
     const srcY = 0;
 
-    // Draw sprite slightly smaller than player (enemy artwork fills more of frame)
-    const spriteScale = 2.0;
+    // Draw sprite - HR Karen needs smaller scale due to upright pose filling more frame
+    // Other enemies are in running poses with more negative space
+    const spriteScale = (enemyType === 'hr_karen') ? 1.7 : 2.0;
     const destSize = Math.floor(TILE_SIZE * spriteScale);
     const offsetX = Math.floor((TILE_SIZE - destSize) / 2);
-    const offsetY = Math.floor((TILE_SIZE - destSize) / 2) - 12;
+    // HR Karen needs less vertical offset since she's standing upright
+    const offsetY = Math.floor((TILE_SIZE - destSize) / 2) - (enemyType === 'hr_karen' ? 8 : 12);
 
     ctx.save();
 
@@ -4857,6 +5734,68 @@ function drawCompanion() {
     }
 }
 
+// Draw clone decoy (enemies chase this instead of player)
+function drawClone() {
+    if (!gameState.clone) return;
+
+    const clone = gameState.clone;
+    const x = clone.x * TILE_SIZE;
+    const y = clone.y * TILE_SIZE;
+    const pulse = Math.sin(clone.frame) * 0.2 + 0.8;
+    const blink = Math.sin(clone.blinkTimer * 10) > 0.8;
+
+    // Ghostly purple glow
+    ctx.shadowColor = '#9b59b6';
+    ctx.shadowBlur = 15 * pulse;
+
+    // Semi-transparent player silhouette
+    const alpha = blink && clone.timer < 3 ? 0.3 : 0.6;
+    ctx.fillStyle = `rgba(155, 89, 182, ${alpha})`;
+
+    // Body
+    ctx.beginPath();
+    ctx.arc(x + TILE_SIZE / 2, y + TILE_SIZE / 2, TILE_SIZE / 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // "Head"
+    ctx.beginPath();
+    ctx.arc(x + TILE_SIZE / 2, y + TILE_SIZE / 3 - 2, TILE_SIZE / 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Hologram lines
+    ctx.strokeStyle = `rgba(200, 150, 255, ${alpha * 0.5})`;
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 3; i++) {
+        const lineY = y + 8 + i * 10 + (gameState.animationTime * 20 + i * 5) % 20;
+        if (lineY < y + TILE_SIZE) {
+            ctx.beginPath();
+            ctx.moveTo(x + 8, lineY);
+            ctx.lineTo(x + TILE_SIZE - 8, lineY);
+            ctx.stroke();
+        }
+    }
+
+    ctx.shadowBlur = 0;
+
+    // "DECOY" label above
+    if (clone.timer > 3 || Math.sin(clone.blinkTimer * 8) > 0) {
+        ctx.fillStyle = '#9b59b6';
+        ctx.font = 'bold 8px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('DECOY', x + TILE_SIZE / 2, y - 4);
+        ctx.textAlign = 'left';
+    }
+
+    // Timer warning when about to expire
+    if (clone.timer < 3) {
+        ctx.fillStyle = `rgba(255, 100, 100, ${1 - clone.timer / 3})`;
+        ctx.font = 'bold 10px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${clone.timer.toFixed(1)}s`, x + TILE_SIZE / 2, y + TILE_SIZE + 12);
+        ctx.textAlign = 'left';
+    }
+}
+
 function drawStar(x, y, size) {
     ctx.fillRect(x + size/2 - 1, y, 2, size);
     ctx.fillRect(x, y + size/2 - 1, size, 2);
@@ -5194,26 +6133,33 @@ function drawColorblindEnemyIndicator(x, y) {
 function drawExit(exit) {
     const x = exit.x * TILE_SIZE;
     const y = exit.y * TILE_SIZE;
-    const pulse = Math.sin(gameState.animationTime * 4) * 0.3 + 0.7;
+
+    // Enhanced pulse - more urgent when timer is low
+    const urgencyBoost = gameState.timer <= 10 ? 1.5 : 1.0;
+    const pulseSpeed = 4 * urgencyBoost;
+    const pulse = Math.sin(gameState.animationTime * pulseSpeed) * 0.3 + 0.7;
     const arrowBob = Math.sin(gameState.animationTime * 6) * 2;
 
-    // Radiating "beckoning" rings - 3 expanding concentric circles
+    // Radiating "beckoning" rings - 3 expanding concentric circles (more visible when urgent)
+    const ringAlphaBoost = gameState.timer <= 10 ? 1.5 : 1.0;
     for (let i = 0; i < 3; i++) {
-        const phase = (gameState.animationTime * 1.5 + i * 0.33) % 1;
-        const radius = 18 + phase * 20;
-        const alpha = (1 - phase) * 0.25;
+        const phase = (gameState.animationTime * 1.5 * urgencyBoost + i * 0.33) % 1;
+        const radius = 18 + phase * 25;
+        const alpha = (1 - phase) * 0.25 * ringAlphaBoost;
 
         ctx.strokeStyle = `rgba(241, 196, 15, ${alpha})`;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = gameState.timer <= 5 ? 3 : 2;
         ctx.beginPath();
         ctx.arc(x + TILE_SIZE / 2, y + TILE_SIZE / 2, radius, 0, Math.PI * 2);
         ctx.stroke();
     }
 
-    // Glow
-    ctx.fillStyle = `rgba(241, 196, 15, ${pulse * 0.4})`;
+    // Enhanced glow - brighter when urgent
+    const glowSize = gameState.timer <= 10 ? 28 + pulse * 4 : 24;
+    const glowAlpha = gameState.timer <= 10 ? pulse * 0.6 : pulse * 0.4;
+    ctx.fillStyle = `rgba(241, 196, 15, ${glowAlpha})`;
     ctx.beginPath();
-    ctx.arc(x + 16, y + 16, 24, 0, Math.PI * 2);
+    ctx.arc(x + 16, y + 16, glowSize, 0, Math.PI * 2);
     ctx.fill();
 
     // Door frame
@@ -5268,6 +6214,32 @@ function drawExit(exit) {
 
 // === NEW: Draw Coin (Dopamine Breadcrumb) ===
 function drawCoin(coin) {
+    // Handle collecting animation (pop scale then fade)
+    if (coin.collecting) {
+        const x = coin.x * TILE_SIZE;
+        const y = coin.y * TILE_SIZE;
+        const cx = x + TILE_SIZE / 2;
+        const cy = y + TILE_SIZE / 2;
+
+        // Pop scale and fade out
+        const scale = coin.collectScale || 1.0;
+        const alpha = coin.collectAlpha || 1.0;
+        const radius = (TILE_SIZE / 4) * scale;
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.shadowColor = '#f1c40f';
+        ctx.shadowBlur = 15;
+
+        ctx.fillStyle = '#ffd700';
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+        return;
+    }
+
     if (coin.collected) return;
 
     const x = coin.x * TILE_SIZE;
@@ -5343,6 +6315,28 @@ function drawPowerup(powerup) {
         glowColor = 'rgba(139, 195, 74, 0.6)';
         shadowColor = '#8bc34a';
         drawFallback = !img || !img.complete;
+    } else if (powerup.type === 'timeFreeze') {
+        img = powerupImages.timeFreeze;
+        glowColor = 'rgba(0, 212, 255, 0.6)';
+        shadowColor = '#00d4ff';
+        drawFallback = true; // Always use fallback for new powerups
+    } else if (powerup.type === 'coinMagnet') {
+        img = powerupImages.coinMagnet;
+        glowColor = 'rgba(241, 196, 15, 0.6)';
+        shadowColor = '#f1c40f';
+        drawFallback = true;
+    } else if (powerup.type === 'clone') {
+        img = powerupImages.clone;
+        glowColor = 'rgba(155, 89, 182, 0.6)';
+        shadowColor = '#9b59b6';
+        drawFallback = true;
+    } else if (powerup.type === 'invincibility') {
+        img = powerupImages.invincibility;
+        // Rainbow glow!
+        const rainbowHue = (gameState.animationTime * 100) % 360;
+        glowColor = `hsla(${rainbowHue}, 100%, 50%, 0.6)`;
+        shadowColor = `hsl(${rainbowHue}, 100%, 50%)`;
+        drawFallback = true;
     }
 
     // Draw glow effect behind powerup
@@ -5446,6 +6440,114 @@ function drawPowerup(powerup) {
         ctx.quadraticCurveTo(cx + 14 + wagAngle * 4, cy - 4, cx + 12 + wagAngle * 6, cy - 8);
         ctx.stroke();
         ctx.lineWidth = 1;
+    } else if (powerup.type === 'timeFreeze') {
+        // Fallback: Clock/stopwatch icon
+        const cx = x + TILE_SIZE / 2;
+        const cy = y + TILE_SIZE / 2 + bounce;
+
+        // Clock face
+        ctx.fillStyle = '#00d4ff';
+        ctx.beginPath();
+        ctx.arc(cx, cy, 12, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Inner face
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(cx, cy, 9, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Clock hands
+        ctx.strokeStyle = '#00d4ff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx, cy - 6);
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + 4, cy);
+        ctx.stroke();
+        ctx.lineWidth = 1;
+
+        // "Pause" bars
+        ctx.fillStyle = '#00d4ff';
+        ctx.fillRect(cx - 5, cy + 4, 3, 6);
+        ctx.fillRect(cx + 2, cy + 4, 3, 6);
+    } else if (powerup.type === 'coinMagnet') {
+        // Fallback: Horseshoe magnet icon
+        const cx = x + TILE_SIZE / 2;
+        const cy = y + TILE_SIZE / 2 + bounce;
+
+        // Magnet body
+        ctx.strokeStyle = '#e74c3c';
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 8, Math.PI, 0, true);
+        ctx.stroke();
+
+        // Poles
+        ctx.fillStyle = '#c0392b';
+        ctx.fillRect(cx - 11, cy - 2, 6, 10);
+        ctx.fillStyle = '#3498db';
+        ctx.fillRect(cx + 5, cy - 2, 6, 10);
+        ctx.lineWidth = 1;
+
+        // Gold sparkles around it
+        ctx.fillStyle = '#f1c40f';
+        ctx.fillRect(cx - 14, cy - 8, 3, 3);
+        ctx.fillRect(cx + 12, cy - 6, 3, 3);
+    } else if (powerup.type === 'clone') {
+        // Fallback: Two overlapping silhouettes
+        const cx = x + TILE_SIZE / 2;
+        const cy = y + TILE_SIZE / 2 + bounce;
+
+        // Shadow silhouette
+        ctx.fillStyle = 'rgba(155, 89, 182, 0.5)';
+        ctx.beginPath();
+        ctx.arc(cx + 4, cy - 4, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillRect(cx + 1, cy, 6, 10);
+
+        // Main silhouette
+        ctx.fillStyle = '#9b59b6';
+        ctx.beginPath();
+        ctx.arc(cx - 2, cy - 4, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillRect(cx - 5, cy, 6, 10);
+    } else if (powerup.type === 'invincibility') {
+        // Fallback: Rainbow star
+        const cx = x + TILE_SIZE / 2;
+        const cy = y + TILE_SIZE / 2 + bounce;
+        const rotation = gameState.animationTime * 2;
+
+        // Star with rainbow gradient
+        const hue = (gameState.animationTime * 100) % 360;
+        ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(rotation);
+
+        // 5-pointed star
+        ctx.beginPath();
+        for (let i = 0; i < 5; i++) {
+            const angle = (i * 4 * Math.PI / 5) - Math.PI / 2;
+            const r = i === 0 ? 0 : (i % 2 === 0 ? 12 : 5);
+            if (i === 0) {
+                ctx.moveTo(Math.cos(-Math.PI / 2) * 12, Math.sin(-Math.PI / 2) * 12);
+            } else {
+                ctx.lineTo(Math.cos(angle) * r, Math.sin(angle) * r);
+            }
+        }
+        // Complete the star manually
+        for (let i = 0; i < 10; i++) {
+            const angle = (i * Math.PI / 5) - Math.PI / 2;
+            const r = i % 2 === 0 ? 12 : 5;
+            ctx.lineTo(Math.cos(angle) * r, Math.sin(angle) * r);
+        }
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.restore();
     }
 
     // Add sparkle effects
@@ -5821,6 +6923,17 @@ function updateCelebrations(deltaTime) {
         const cel = gameState.celebrations[i];
         cel.timer -= deltaTime;
         cel.offsetY -= deltaTime * 50; // Float upward
+
+        // Pop-in scale animation - starts at 0.5, overshoots to 1.1, settles at 1.0
+        if (cel.popScale === undefined) cel.popScale = 0.5;
+        if (cel.popScale < 1.0) {
+            cel.popScale += deltaTime * 8; // Quickly scale up
+            if (cel.popScale > 1.1) cel.popScale = 1.1;
+        } else if (cel.popScale > 1.0) {
+            cel.popScale -= deltaTime * 2; // Slowly settle
+            if (cel.popScale < 1.0) cel.popScale = 1.0;
+        }
+
         if (cel.timer <= 0) {
             gameState.celebrations.splice(i, 1);
         }
@@ -5830,14 +6943,17 @@ function updateCelebrations(deltaTime) {
 function drawCelebrations() {
     for (const cel of gameState.celebrations) {
         const alpha = Math.min(1, cel.timer / 0.5); // Fade out in last 0.5s
+        const scale = cel.popScale || 1.0;
         ctx.save();
         ctx.globalAlpha = alpha;
+        ctx.translate(cel.x, cel.y + cel.offsetY);
+        ctx.scale(scale, scale);
         ctx.font = 'bold 16px monospace';
         ctx.textAlign = 'center';
         ctx.fillStyle = cel.color;
         ctx.shadowColor = '#000';
         ctx.shadowBlur = 4;
-        ctx.fillText(cel.text, cel.x, cel.y + cel.offsetY);
+        ctx.fillText(cel.text, 0, 0);
         ctx.restore();
     }
 }
@@ -5849,10 +6965,23 @@ function checkCelebrationTriggers(event, data = {}) {
             // Speedster: cleared with 10+ seconds
             if (gameState.timer >= 10) {
                 showCelebration('speedster');
+                // Speed bonus coins!
+                const speedBonus = Math.floor(gameState.timer * 2);
+                gameState.coinsCollected += speedBonus;
+                showCelebration('speedBonus', { coins: speedBonus });
             }
             // Flawless: no hits this floor
             if (gameState.floorHits === 0) {
                 showCelebration('flawless');
+                // Flawless bonus coins!
+                const flawlessBonus = 25 + (13 - gameState.floor) * 5; // More on later floors
+                gameState.coinsCollected += flawlessBonus;
+                showCelebration('flawlessBonus', { coins: flawlessBonus });
+            }
+            // DOMINATION: Both speedster AND flawless!
+            if (gameState.timer >= 10 && gameState.floorHits === 0) {
+                showCelebration('domination');
+                gameState.coinsCollected += 50; // Extra domination bonus
             }
             break;
         case 'enemyStunned':
@@ -5879,8 +7008,8 @@ function updateTutorial(deltaTime) {
         }
     }
 
-    // Check for tutorial triggers
-    if (gameState.floor === 23 && !tutorialState.shown.movement) {
+    // Check for tutorial triggers (rebalanced for 13-floor game)
+    if (gameState.floor === 13 && !tutorialState.shown.movement) {
         showTutorialHint('movement', 'Use WASD or Arrow Keys to move. Reach the EXIT in the corners!', 5);
     }
 
@@ -5923,13 +7052,13 @@ function updateTutorial(deltaTime) {
         }
     }
 
-    // Floor 13 secret hint
-    if (gameState.floor === 13 && !tutorialState.shown.secret && gameState.secretExit) {
-        showTutorialHint('secret', 'Floor 13... Something feels different. Look for a SECRET EXIT!', 5);
+    // Floor 7 secret hint (rebalanced from floor 13)
+    if (gameState.floor === 7 && !tutorialState.shown.secret && gameState.secretExit) {
+        showTutorialHint('secret', 'Floor 7... Something feels different. Look for a SECRET EXIT!', 5);
     }
 
-    // Fire hazard hint - show when first fire spawns on floor 23
-    if (gameState.floor === 23 && !tutorialState.shown.fire && gameState.fires.length > 0) {
+    // Fire hazard hint - show when first fire spawns on floor 13
+    if (gameState.floor === 13 && !tutorialState.shown.fire && gameState.fires.length > 0) {
         showTutorialHint('fire', 'FIRE! Avoid the flames - they burn and drain your time faster!', 4);
     }
 }
@@ -6007,8 +7136,8 @@ function draw() {
     // Draw zone labels
     drawZoneLabels();
 
-    // Draw secret exit hints on Floor 13
-    if (gameState.floor === 13 && gameState.secretExit) {
+    // Draw secret exit hints on Floor 7 (rebalanced from floor 13)
+    if (gameState.floor === 7 && gameState.secretExit) {
         drawSecretExitHints();
     }
 
@@ -6042,6 +7171,9 @@ function draw() {
         drawFire(fire);
     }
 
+    // Draw environmental hazards
+    drawEnvironmentalHazards();
+
     // Draw crispy remains
     for (const crispy of gameState.crispyEffects) {
         drawCrispyEffect(crispy);
@@ -6065,6 +7197,44 @@ function draw() {
 
     // Draw dog companion (if active)
     drawCompanion();
+
+    // Draw clone decoy (if active)
+    drawClone();
+
+    // === TIME FREEZE EFFECT: Blue-tinted screen when enemies frozen ===
+    if (gameState.timeFreezeActive) {
+        ctx.fillStyle = 'rgba(0, 212, 255, 0.15)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Frozen particle effect
+        if (Math.random() < 0.3) {
+            const fx = Math.random() * canvas.width;
+            const fy = Math.random() * canvas.height;
+            ctx.fillStyle = 'rgba(200, 240, 255, 0.8)';
+            ctx.fillRect(fx, fy, 2, 2);
+        }
+    }
+
+    // === INVINCIBILITY EFFECT: Rainbow border when player is invincible ===
+    if (gameState.player.invincible > 0) {
+        const hue = (gameState.animationTime * 200) % 360;
+        const borderWidth = 8;
+        ctx.strokeStyle = `hsl(${hue}, 100%, 50%)`;
+        ctx.lineWidth = borderWidth;
+        ctx.strokeRect(borderWidth / 2, borderWidth / 2, canvas.width - borderWidth, canvas.height - borderWidth);
+        ctx.lineWidth = 1;
+
+        // Rainbow sparkles
+        for (let i = 0; i < 3; i++) {
+            const sparkX = Math.random() * canvas.width;
+            const sparkY = Math.random() * canvas.height;
+            const sparkHue = (hue + i * 60) % 360;
+            ctx.fillStyle = `hsl(${sparkHue}, 100%, 70%)`;
+            ctx.beginPath();
+            ctx.arc(sparkX, sparkY, 3, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
 
     // Timer urgency vignette - builds up gradually from 10 seconds
     if (gameState.timer <= 10 && gameState.timer > 5 && !gameState.lastChance) {
@@ -6145,6 +7315,33 @@ function draw() {
         ctx.textAlign = 'left';
     }
 
+    // === ENDLESS MODE: Blackout danger zone effect ===
+    if (gameState.endlessMode && gameState.endlessDangerZone === 'blackout') {
+        // Draw darkness with a spotlight around the player
+        const playerScreenX = gameState.player.x * TILE_SIZE + TILE_SIZE / 2;
+        const playerScreenY = gameState.player.y * TILE_SIZE + TILE_SIZE / 2;
+        const visRadius = (gameState.endlessBlackoutRadius || 5) * TILE_SIZE;
+
+        // Create radial gradient for spotlight effect
+        const blackoutGradient = ctx.createRadialGradient(
+            playerScreenX, playerScreenY, visRadius * 0.3,
+            playerScreenX, playerScreenY, visRadius
+        );
+        blackoutGradient.addColorStop(0, 'rgba(0,0,0,0)');
+        blackoutGradient.addColorStop(0.7, 'rgba(0,0,0,0.5)');
+        blackoutGradient.addColorStop(1, 'rgba(0,0,0,0.95)');
+
+        ctx.fillStyle = blackoutGradient;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // === ENDLESS MODE: Milestone flash effect ===
+    if (gameState.milestoneFlash && gameState.milestoneFlash > 0) {
+        const flashAlpha = Math.min(gameState.milestoneFlash, 1) * 0.5;
+        ctx.fillStyle = `rgba(255, 215, 0, ${flashAlpha})`;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
     // Show if in safe zone
     const inCafeteria = isInCafeteria(gameState.player.x, gameState.player.y);
     const inBathroom = isInBathroom(gameState.player.x, gameState.player.y);
@@ -6199,6 +7396,12 @@ function draw() {
 
     // Draw mini-map in bottom-right corner
     drawMiniMap();
+
+    // === ENEMY SPAWN FLASH: Brief white flash when floor starts ===
+    if (gameState.enemySpawnFlash > 0) {
+        ctx.fillStyle = `rgba(255, 255, 255, ${gameState.enemySpawnFlash * 0.3})`;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
 
     // Restore context after screen shake
     ctx.restore();
@@ -6280,19 +7483,45 @@ function drawMiniMap() {
 
 function updateHUD() {
     // Floor display with progress indicator
-    // === UPDATED: Support Quick Run mode ===
-    const startFloor = gameState.quickRunMode ? 7 : 23;
-    const floorsCleared = startFloor - gameState.floor;
-    const modeLabel = gameState.quickRunMode ? ' [QUICK]' : '';
-    document.getElementById('floor').textContent = `Floor: ${gameState.floor} (${floorsCleared}/${startFloor})${modeLabel}`;
+    if (gameState.endlessMode) {
+        // === ENDLESS MODE: Show floor as negative with score ===
+        const floorDisplay = `-${gameState.endlessFloor}`;
+        let modeLabel = ' [ENDLESS]';
+        if (gameState.endlessDangerZone) {
+            const zone = DANGER_ZONES[gameState.endlessDangerZone];
+            modeLabel = ` ⚠️${zone.name}`;
+        } else if (gameState.endlessIsBreatherFloor) {
+            modeLabel = ' 😮‍💨';
+        }
+        document.getElementById('floor').textContent = `Floor: ${floorDisplay}${modeLabel}`;
+    } else {
+        // === Standard/Quick Run mode ===
+        const startFloor = gameState.quickRunMode ? 5 : 13;
+        const floorsCleared = startFloor - gameState.floor;
+        const modeLabel = gameState.quickRunMode ? ' [QUICK]' : '';
+        document.getElementById('floor').textContent = `Floor: ${gameState.floor} (${floorsCleared}/${startFloor})${modeLabel}`;
+    }
 
     // Timer display - show if burning (drains 2x)
     const timerEl = document.getElementById('timer');
+    const currentSecond = Math.ceil(gameState.timer);
+
+    // Trigger pulse when second changes
+    if (currentSecond !== gameState.lastTimerSecond && gameState.lastTimerSecond !== -1) {
+        gameState.timerPulseScale = 1.15; // Pop effect
+    }
+    gameState.lastTimerSecond = currentSecond;
+
+    // Apply pulse scale to timer element
+    const pulseScale = gameState.timerPulseScale || 1.0;
+    timerEl.style.transform = `scale(${pulseScale})`;
+    timerEl.style.transition = 'transform 0.1s ease-out';
+
     if (gameState.player.burning > 0) {
-        timerEl.textContent = `Time: ${Math.ceil(gameState.timer)} 🔥2X`;
+        timerEl.textContent = `Time: ${currentSecond} 🔥2X`;
         timerEl.style.color = '#ff4500';
     } else {
-        timerEl.textContent = `Time: ${Math.ceil(gameState.timer)}`;
+        timerEl.textContent = `Time: ${currentSecond}`;
         timerEl.style.color = gameState.timer <= 5 ? '#e94560' : '#ff6b6b';
     }
 
@@ -6300,11 +7529,13 @@ function updateHUD() {
     const coinDisplay = document.getElementById('coinDisplay');
     if (coinDisplay) {
         const comboText = gameState.coinCombo > 1 ? ` x${gameState.coinCombo}` : '';
-        coinDisplay.textContent = `🪙 ${gameState.coinsCollected || 0}${comboText}`;
+        coinDisplay.textContent = `🪙 ${gameState.coinsCollectedCount || 0}${comboText}`;
         coinDisplay.style.color = gameState.coinCombo > 2 ? '#f39c12' : '#f1c40f';
     }
 
     let powerupText = 'None';
+    let powerupExpiring = false; // Track if any powerup is about to expire
+
     if (gameState.player.burning > 0) {
         // Show burn timer when burning
         powerupText = `🔥 BURNING ${gameState.player.burning.toFixed(1)}s`;
@@ -6314,12 +7545,19 @@ function updateHUD() {
     } else if (gameState.player.shielded > 0) {
         // Show shield timer
         powerupText = `🛡️ SHIELD ${gameState.player.shielded.toFixed(1)}s`;
+        powerupExpiring = gameState.player.shielded <= 3;
     } else if (gameState.powerup === 'speed') {
         powerupText = `⚡ Speed ${gameState.powerupTimer.toFixed(1)}s`;
+        powerupExpiring = gameState.powerupTimer <= 3;
     } else if (gameState.powerup === 'knockout') {
         powerupText = `🥊 Knockout ${gameState.powerupTimer.toFixed(1)}s`;
+        powerupExpiring = gameState.powerupTimer <= 3;
     } else if (gameState.powerup === 'electric') {
         powerupText = `⚡ ELECTRIC ${gameState.powerupTimer.toFixed(1)}s`;
+        powerupExpiring = gameState.powerupTimer <= 3;
+    } else if (gameState.player.invincible > 0) {
+        powerupText = `⭐ INVINCIBLE ${gameState.player.invincible.toFixed(1)}s`;
+        powerupExpiring = gameState.player.invincible <= 3;
     }
 
     // Add companion indicator if active
@@ -6327,7 +7565,92 @@ function updateHUD() {
         powerupText += ` | 🐕 ${gameState.player.companion.timer.toFixed(1)}s`;
     }
 
-    document.getElementById('powerup').textContent = `Power: ${powerupText}`;
+    // Add clone indicator if active
+    if (gameState.clone) {
+        powerupText += ` | 👤 DECOY ${gameState.clone.timer.toFixed(1)}s`;
+    }
+
+    // Add time freeze indicator if active
+    if (gameState.timeFreezeActive) {
+        powerupText += ` | ⏸️ FREEZE ${gameState.timeFreezeTimer.toFixed(1)}s`;
+    }
+
+    // Add coin magnet indicator if active
+    if (gameState.coinMagnetActive) {
+        powerupText += ` | 🧲 MAGNET ${gameState.coinMagnetTimer.toFixed(1)}s`;
+    }
+
+    const powerupEl = document.getElementById('powerup');
+    powerupEl.textContent = `Power: ${powerupText}`;
+
+    // === POWERUP EXPIRATION WARNING: Flash when about to expire ===
+    if (powerupExpiring) {
+        const pulse = Math.sin(gameState.animationTime * 10) * 0.5 + 0.5;
+        powerupEl.style.color = `rgb(255, ${Math.floor(100 + pulse * 155)}, ${Math.floor(pulse * 100)})`;
+        powerupEl.style.textShadow = `0 0 ${5 + pulse * 10}px rgba(255, 100, 0, ${0.5 + pulse * 0.5})`;
+
+        // Play warning beep at 3s and 1s remaining
+        const timerVal = gameState.powerupTimer || gameState.player.shielded || gameState.player.invincible || 0;
+        if (!gameState._powerupWarnedAt3 && timerVal <= 3 && timerVal > 2.9) {
+            AudioManager.play('timerWarning', 0.3, 1.5);
+            gameState._powerupWarnedAt3 = true;
+        }
+        if (!gameState._powerupWarnedAt1 && timerVal <= 1 && timerVal > 0.9) {
+            AudioManager.play('timerWarning', 0.4, 2.0);
+            gameState._powerupWarnedAt1 = true;
+        }
+    } else {
+        powerupEl.style.color = '';
+        powerupEl.style.textShadow = '';
+        gameState._powerupWarnedAt3 = false;
+        gameState._powerupWarnedAt1 = false;
+    }
+
+    // === DASH/PUNCH COOLDOWN INDICATORS ===
+    const skillsEl = document.getElementById('skillCooldowns');
+    if (skillsEl) {
+        const dashReady = gameState.player.dashCooldown <= 0;
+        const punchReady = gameState.player.punchCooldown <= 0;
+
+        const dashText = dashReady ? '🏃 DASH' : `🏃 ${gameState.player.dashCooldown.toFixed(1)}s`;
+        const punchText = punchReady ? '👊 PUNCH' : `👊 ${gameState.player.punchCooldown.toFixed(1)}s`;
+
+        // === WALL BREAKER INDICATOR (only show if unlocked) ===
+        let wallBreakText = '';
+        if (gameState.hasWallBreaker) {
+            const wallBreakReady = gameState.player.wallBreakCooldown <= 0;
+            wallBreakText = wallBreakReady ?
+                ' | <span style="color:#9b59b6;text-shadow:0 0 5px #9b59b6;">🧱 SMASH</span>' :
+                ` | <span style="color:#666">🧱 ${gameState.player.wallBreakCooldown.toFixed(1)}s</span>`;
+        }
+
+        // === COMBO COUNTER ===
+        let comboText = '';
+        if (gameState.killCombo >= 2) {
+            const comboColor = getComboDisplayColor(gameState.killCombo);
+            comboText = ` | <span style="color:${comboColor};font-weight:bold;text-shadow:0 0 10px ${comboColor};">x${gameState.killCombo} COMBO</span>`;
+        }
+
+        // === KILL STREAK INDICATOR ===
+        let streakText = '';
+        if (gameState.killStreak >= STREAK_RAMPAGE) {
+            const streakColor = gameState.killStreak >= STREAK_GODLIKE ? '#ffd700' :
+                               gameState.killStreak >= STREAK_UNSTOPPABLE ? '#ff00ff' : '#ff6b00';
+            const streakLabel = gameState.killStreak >= STREAK_GODLIKE ? '👑' :
+                               gameState.killStreak >= STREAK_UNSTOPPABLE ? '⚡' : '🔥';
+            streakText = ` <span style="color:${streakColor}">${streakLabel}${gameState.killStreak}</span>`;
+        }
+
+        skillsEl.innerHTML = `<span style="color:${dashReady ? '#00d2d3' : '#666'}">${dashText}</span> | <span style="color:${punchReady ? '#e74c3c' : '#666'}">${punchText}</span>${wallBreakText}${comboText}${streakText}`;
+    }
+
+    // Get combo display color
+    function getComboDisplayColor(combo) {
+        if (combo >= 8) return '#ff00ff'; // Magenta
+        if (combo >= 6) return '#ff4500'; // Orange-red
+        if (combo >= 4) return '#ffd700'; // Gold
+        return '#ff6b6b'; // Light red
+    }
 
     // Update run timer display (if element exists)
     const runTimerEl = document.getElementById('runTimer');
@@ -6349,6 +7672,10 @@ function pushEnemyAway(enemy, fromX, fromY) {
     // Push enemy away from a position
     const dx = enemy.x - fromX;
     const dy = enemy.y - fromY;
+
+    // Store original position for knockback visual
+    const oldX = enemy.x;
+    const oldY = enemy.y;
 
     // Build a comprehensive list of push options, starting with furthest away
     const pushOptions = [];
@@ -6378,6 +7705,12 @@ function pushEnemyAway(enemy, fromX, fromY) {
             !(opt.x === gameState.player.x && opt.y === gameState.player.y)) {
             enemy.x = opt.x;
             enemy.y = opt.y;
+
+            // === VISUAL KNOCKBACK: Animate enemy being pushed ===
+            enemy.knockbackX = (oldX - opt.x) * TILE_SIZE * 0.5; // Start offset toward old position
+            enemy.knockbackY = (oldY - opt.y) * TILE_SIZE * 0.5;
+            enemy.knockbackTimer = 0.25; // 0.25s knockback animation
+
             return true;
         }
     }
@@ -6391,6 +7724,12 @@ function pushEnemyAway(enemy, fromX, fromY) {
                     Math.abs(checkX - fromX) >= 2 && Math.abs(checkY - fromY) >= 2) {
                     enemy.x = checkX;
                     enemy.y = checkY;
+
+                    // Knockback visual for fallback pushes too
+                    enemy.knockbackX = (oldX - checkX) * TILE_SIZE * 0.3;
+                    enemy.knockbackY = (oldY - checkY) * TILE_SIZE * 0.3;
+                    enemy.knockbackTimer = 0.2;
+
                     return true;
                 }
             }
@@ -6404,6 +7743,34 @@ function fryEnemy(enemy) {
     AudioManager.play('zap'); // Electric zap sound
     screenShake.trigger(8, 0.2); // Small shake on zap
     triggerFreezeFrame('electricZap'); // Longer freeze for satisfying zap
+
+    // === CONTRIBUTE TO KILL COMBO! ===
+    const comboWindow = 2.5; // Generous window for chaining zaps
+    if (gameState.killComboTimer > 0) {
+        gameState.killCombo = Math.min(gameState.killCombo + 1, 20);
+    } else {
+        gameState.killCombo = 1;
+    }
+    gameState.killComboTimer = comboWindow;
+    gameState.killStreak++;
+
+    // Update max combo
+    if (gameState.killCombo > gameState.maxComboThisRun) {
+        gameState.maxComboThisRun = gameState.killCombo;
+    }
+
+    // Show combo celebration for zaps
+    if (gameState.killCombo >= 3) {
+        showCelebration('electricChain', { count: gameState.killCombo });
+    }
+
+    // Drop coins from fried enemies (more generous)
+    const coinValue = 5 + Math.floor(Math.random() * 10);
+    gameState.coins.push({
+        x: enemy.x,
+        y: enemy.y,
+        value: coinValue
+    });
 
     // Create crispy effect at enemy location
     gameState.crispyEffects.push({
@@ -6468,11 +7835,12 @@ function spawnFire() {
                 continue;
             }
 
-            // Spawn fire!
+            // Spawn fire! - Now starts bigger on later floors
+            const startSize = gameState.floor <= 4 ? 2 : 1; // Floors 1-4 start at size 2
             gameState.fires.push({
                 x: x,
                 y: y,
-                size: 1,  // Starts small, grows over time
+                size: startSize,
                 age: 0,
                 spreadTimer: 0
             });
@@ -6527,6 +7895,274 @@ function canSpawnFireWithoutBlockingAllPaths(fireX, fireY) {
     return false; // No path to any exit - don't spawn fire here
 }
 
+// === ENVIRONMENTAL HAZARDS SYSTEM ===
+// Spawn and update additional office hazards (start at floor 7, intensify toward floor 1)
+
+function spawnEnvironmentalHazards() {
+    const config = getHazardsForFloor(gameState.floor);
+
+    // Spawn sparking wires
+    while (gameState.sparkingWires.length < config.sparkingWires) {
+        const pos = findValidHazardPosition();
+        if (pos) {
+            gameState.sparkingWires.push({
+                x: pos.x,
+                y: pos.y,
+                sparkTimer: 0,
+                active: true,
+                nextSparkTime: 2 + Math.random() * 3 // Random spark interval
+            });
+        } else break;
+    }
+
+    // Spawn coffee spills
+    while (gameState.coffeeSpills.length < config.coffeeSpills) {
+        const pos = findValidHazardPosition();
+        if (pos) {
+            gameState.coffeeSpills.push({
+                x: pos.x,
+                y: pos.y,
+                size: 1 + Math.floor(Math.random() * 2), // 1-2 tile radius
+                drying: false,
+                age: 0
+            });
+        } else break;
+    }
+
+    // Spawn malfunctioning copiers
+    while (gameState.malfunctioningCopiers.length < config.malfunctioningCopiers) {
+        const pos = findValidHazardPosition();
+        if (pos) {
+            gameState.malfunctioningCopiers.push({
+                x: pos.x,
+                y: pos.y,
+                paperTimer: 0,
+                nextPaperTime: 5 + Math.random() * 5, // Spawn paper enemy every 5-10s
+                jammed: false
+            });
+        } else break;
+    }
+}
+
+function findValidHazardPosition() {
+    let attempts = 0;
+    while (attempts < 30) {
+        const x = Math.floor(Math.random() * (MAP_WIDTH - 4)) + 2;
+        const y = Math.floor(Math.random() * (MAP_HEIGHT - 4)) + 2;
+
+        if (gameState.maze[y] && gameState.maze[y][x] === TILE.FLOOR) {
+            // Not too close to player
+            const distToPlayer = Math.abs(x - gameState.player.x) + Math.abs(y - gameState.player.y);
+            if (distToPlayer < 4) { attempts++; continue; }
+
+            // Not near exits
+            let nearExit = false;
+            for (const exit of gameState.exits) {
+                if (Math.abs(x - exit.x) <= 3 && Math.abs(y - exit.y) <= 3) {
+                    nearExit = true;
+                    break;
+                }
+            }
+            if (nearExit) { attempts++; continue; }
+
+            // Not on fire or existing hazard
+            let occupied = false;
+            for (const fire of gameState.fires) {
+                if (fire.x === x && fire.y === y) { occupied = true; break; }
+            }
+            for (const wire of gameState.sparkingWires) {
+                if (wire.x === x && wire.y === y) { occupied = true; break; }
+            }
+            for (const spill of gameState.coffeeSpills) {
+                if (Math.abs(spill.x - x) <= spill.size && Math.abs(spill.y - y) <= spill.size) { occupied = true; break; }
+            }
+            for (const copier of gameState.malfunctioningCopiers) {
+                if (copier.x === x && copier.y === y) { occupied = true; break; }
+            }
+            if (occupied) { attempts++; continue; }
+
+            return { x, y };
+        }
+        attempts++;
+    }
+    return null;
+}
+
+function updateEnvironmentalHazards(deltaTime) {
+    // Update sparking wires
+    for (const wire of gameState.sparkingWires) {
+        wire.sparkTimer += deltaTime;
+
+        // Spark periodically
+        if (wire.sparkTimer >= wire.nextSparkTime) {
+            wire.sparkTimer = 0;
+            wire.nextSparkTime = 2 + Math.random() * 3;
+
+            // Create spark particles
+            for (let i = 0; i < 6; i++) {
+                gameState.particles.push({
+                    x: wire.x * TILE_SIZE + TILE_SIZE / 2,
+                    y: wire.y * TILE_SIZE + TILE_SIZE / 2,
+                    vx: (Math.random() - 0.5) * 8,
+                    vy: (Math.random() - 0.5) * 8,
+                    size: 2 + Math.random() * 3,
+                    color: Math.random() < 0.5 ? '#ffff00' : '#00ffff',
+                    life: 0.3 + Math.random() * 0.2
+                });
+            }
+
+            // Damage player if on same tile
+            if (gameState.player.x === wire.x && gameState.player.y === wire.y) {
+                if (gameState.player.stunned <= 0 && gameState.player.shielded <= 0) {
+                    gameState.player.stunned = 1.5; // Electric shock stun
+                    showCelebration('shocked');
+                    screenShake.trigger(10, 0.2);
+                    AudioManager.play('electricCollect', 0.8);
+                }
+            }
+        }
+    }
+
+    // Update coffee spills - slow player when walking through
+    for (const spill of gameState.coffeeSpills) {
+        spill.age += deltaTime;
+
+        // Check if player is in spill area
+        const dx = Math.abs(gameState.player.x - spill.x);
+        const dy = Math.abs(gameState.player.y - spill.y);
+        if (dx <= spill.size && dy <= spill.size) {
+            // Player is slowed (handled in movement via gameState.playerSlowed)
+            gameState.playerSlowed = true;
+            gameState.slowedTimer = 0.5; // Reset slow timer
+        }
+    }
+
+    // Update player slow effect
+    if (gameState.slowedTimer !== undefined && gameState.slowedTimer > 0) {
+        gameState.slowedTimer -= deltaTime;
+        if (gameState.slowedTimer <= 0) {
+            gameState.playerSlowed = false;
+        }
+    }
+
+    // Update malfunctioning copiers - spawn paper enemies
+    for (const copier of gameState.malfunctioningCopiers) {
+        if (copier.jammed) continue;
+
+        copier.paperTimer += deltaTime;
+
+        if (copier.paperTimer >= copier.nextPaperTime) {
+            copier.paperTimer = 0;
+            copier.nextPaperTime = 5 + Math.random() * 5;
+
+            // Spawn a paper enemy (fast, weak intern-type)
+            const spawnX = copier.x + (Math.random() < 0.5 ? 1 : -1);
+            const spawnY = copier.y;
+
+            if (canMove(spawnX, spawnY)) {
+                gameState.enemies.push({
+                    x: spawnX,
+                    y: spawnY,
+                    stunned: 0,
+                    frame: 0,
+                    enemyType: 'intern', // Fast paper enemy
+                    health: 1,
+                    maxHealth: 1,
+                    special: null,
+                    isPaperEnemy: true, // Mark as paper enemy for visual
+                    spawnTime: Date.now()
+                });
+
+                // Paper burst particles
+                for (let i = 0; i < 8; i++) {
+                    gameState.particles.push({
+                        x: copier.x * TILE_SIZE + TILE_SIZE / 2,
+                        y: copier.y * TILE_SIZE + TILE_SIZE / 2,
+                        vx: (Math.random() - 0.5) * 6,
+                        vy: -Math.random() * 4 - 2,
+                        size: 4 + Math.random() * 4,
+                        color: '#ffffff',
+                        life: 0.5
+                    });
+                }
+
+                showCelebration('paperJam');
+            }
+        }
+    }
+}
+
+function drawEnvironmentalHazards() {
+    // Draw sparking wires
+    for (const wire of gameState.sparkingWires) {
+        const x = wire.x * TILE_SIZE;
+        const y = wire.y * TILE_SIZE;
+
+        // Wire base (dark gray cable)
+        ctx.fillStyle = '#333';
+        ctx.fillRect(x + 4, y + TILE_SIZE - 8, TILE_SIZE - 8, 4);
+        ctx.fillRect(x + TILE_SIZE / 2 - 2, y + TILE_SIZE / 2, 4, TILE_SIZE / 2 - 4);
+
+        // Spark glow (pulsing)
+        const sparkIntensity = Math.sin(gameState.animationTime * 15) * 0.5 + 0.5;
+        ctx.fillStyle = `rgba(255, 255, 0, ${0.3 + sparkIntensity * 0.4})`;
+        ctx.beginPath();
+        ctx.arc(x + TILE_SIZE / 2, y + TILE_SIZE / 2, 8 + sparkIntensity * 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Warning sign
+        ctx.fillStyle = '#ff0';
+        ctx.font = 'bold 10px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('⚡', x + TILE_SIZE / 2, y + 12);
+    }
+
+    // Draw coffee spills
+    for (const spill of gameState.coffeeSpills) {
+        const x = spill.x * TILE_SIZE;
+        const y = spill.y * TILE_SIZE;
+        const radius = spill.size * TILE_SIZE / 2;
+
+        // Brown coffee puddle
+        ctx.fillStyle = 'rgba(101, 67, 33, 0.7)';
+        ctx.beginPath();
+        ctx.ellipse(x + TILE_SIZE / 2, y + TILE_SIZE / 2, radius, radius * 0.6, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Shine highlight
+        ctx.fillStyle = 'rgba(150, 100, 50, 0.4)';
+        ctx.beginPath();
+        ctx.ellipse(x + TILE_SIZE / 2 - 4, y + TILE_SIZE / 2 - 4, radius * 0.3, radius * 0.2, 0.5, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Draw malfunctioning copiers
+    for (const copier of gameState.malfunctioningCopiers) {
+        const x = copier.x * TILE_SIZE;
+        const y = copier.y * TILE_SIZE;
+
+        // Copier body
+        ctx.fillStyle = '#555';
+        ctx.fillRect(x + 2, y + 4, TILE_SIZE - 4, TILE_SIZE - 8);
+
+        // Screen (glitching)
+        const glitch = Math.sin(gameState.animationTime * 20) > 0;
+        ctx.fillStyle = glitch ? '#0f0' : '#0a0';
+        ctx.fillRect(x + 6, y + 8, TILE_SIZE - 12, 8);
+
+        // Paper tray
+        ctx.fillStyle = '#ddd';
+        ctx.fillRect(x + 4, y + TILE_SIZE - 10, TILE_SIZE - 8, 6);
+
+        // Warning light (blinking)
+        const blink = Math.sin(gameState.animationTime * 8) > 0;
+        ctx.fillStyle = blink ? '#f00' : '#600';
+        ctx.beginPath();
+        ctx.arc(x + TILE_SIZE - 8, y + 10, 3, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+
 // Update spatial audio cues based on nearby threats
 function updateSpatialAudio() {
     if (!settings.audioProximityCues) return;
@@ -6577,17 +8213,18 @@ function updateFires(deltaTime) {
     gameState.fireSpawnTimer += deltaTime;
 
     let baseInterval, randomRange;
-    if (gameState.floor >= 20) {
-        baseInterval = 15;  // Floors 20-23: gentle intro
+    // Rebalanced for 13-floor game
+    if (gameState.floor >= 11) {
+        baseInterval = 15;  // Floors 11-13: gentle intro
         randomRange = 5;
-    } else if (gameState.floor >= 15) {
-        baseInterval = 12;  // Floors 15-19
+    } else if (gameState.floor >= 8) {
+        baseInterval = 12;  // Floors 8-10
         randomRange = 4;
-    } else if (gameState.floor >= 10) {
-        baseInterval = 10;  // Floors 10-14
+    } else if (gameState.floor >= 5) {
+        baseInterval = 10;  // Floors 5-7
         randomRange = 4;
     } else {
-        baseInterval = 6;   // Floors 1-9: fast spawning
+        baseInterval = 6;   // Floors 1-4: fast spawning
         randomRange = 4;
     }
 
@@ -6600,19 +8237,65 @@ function updateFires(deltaTime) {
     for (const fire of gameState.fires) {
         fire.age += deltaTime;
 
-        // Fire grows over time (max size 3) - faster on lower floors
-        const growthMultiplier = gameState.floor >= 15 ? 1.0 : (gameState.floor >= 10 ? 0.8 : 0.6);
-        const size2Threshold = 5 * growthMultiplier;   // 5s / 4s / 3s
-        const size3Threshold = 12 * growthMultiplier;  // 12s / 9.6s / 7.2s
+        // Fire grows over time (max size 3) - FASTER growth for more intensity
+        const growthMultiplier = gameState.floor >= 9 ? 0.8 : (gameState.floor >= 5 ? 0.5 : 0.3);
+        const size2Threshold = 3 * growthMultiplier;   // 2.4s / 1.5s / 0.9s
+        const size3Threshold = 6 * growthMultiplier;   // 4.8s / 3s / 1.8s
         if (fire.age > size2Threshold && fire.size < 2) fire.size = 2;
         if (fire.age > size3Threshold && fire.size < 3) fire.size = 3;
 
-        // Check if player is on fire
-        if (fire.x === gameState.player.x && fire.y === gameState.player.y) {
+        // Check if player is on fire (skip player-created fires)
+        if (fire.x === gameState.player.x && fire.y === gameState.player.y && !fire.isPlayerFire) {
             // Player is BURNING!
             if (gameState.player.burning <= 0) {
                 gameState.player.burning = 2.0;  // 2 seconds of burn
                 playerStats.timesBurned++;
+            }
+        }
+
+        // Auto-extinguish player-created fires after their lifespan
+        if (fire.isPlayerFire && fire.age > (fire.lifespan || 5)) {
+            fire.expired = true;
+        }
+
+        // Player-created fires damage enemies!
+        if (fire.isPlayerFire) {
+            for (const enemy of gameState.enemies) {
+                if (enemy.x === fire.x && enemy.y === fire.y && enemy.stunned <= 0) {
+                    // Burn the enemy!
+                    enemy.health = (enemy.health || 1) - 1;
+                    if (enemy.health <= 0) {
+                        enemy.stunned = PUNCH_STUN_DURATION;
+                        enemy.health = enemy.maxHealth || 1;
+                        gameState.enemiesKnockedOut++;
+                        gameState.killStreak++;
+
+                        // Time bonus for fire kill
+                        const timeBonus = 3;
+                        gameState.timer += timeBonus;
+                        showCelebration('fireKill');
+
+                        // Chain reaction for HR Karen
+                        if (enemy.special === 'explode') {
+                            triggerEnemyExplosion(enemy);
+                        }
+                    } else {
+                        enemy.stunned = 0.5; // Stagger
+                    }
+
+                    // Fire kill particle burst
+                    for (let p = 0; p < 8; p++) {
+                        gameState.particles.push({
+                            x: fire.x * TILE_SIZE + TILE_SIZE / 2,
+                            y: fire.y * TILE_SIZE + TILE_SIZE / 2,
+                            vx: (Math.random() - 0.5) * 6,
+                            vy: (Math.random() - 0.5) * 6 - 2,
+                            size: 4 + Math.random() * 4,
+                            color: Math.random() < 0.5 ? '#e67e22' : '#f1c40f',
+                            life: 0.4
+                        });
+                    }
+                }
             }
         }
 
@@ -6648,6 +8331,9 @@ function updateFires(deltaTime) {
             }
         }
     }
+
+    // Remove expired fires (player-created fires that have timed out)
+    gameState.fires = gameState.fires.filter(f => !f.expired);
 }
 
 // Draw fire spread warning glow on adjacent tiles
@@ -6805,11 +8491,55 @@ function handlePlayerEnemyCollision(enemy) {
     // No collision effects in bathroom
     if (inBathroom) return;
 
+    // === DASH INVINCIBILITY - Player phases through enemies during dash ===
+    if (gameState.player.dashInvincible > 0) {
+        // Player dashed through enemy - bonus style points!
+        gameState.enemiesDodged++;
+        // Small particle effect for style
+        for (let i = 0; i < 4; i++) {
+            gameState.particles.push({
+                x: enemy.x * TILE_SIZE + TILE_SIZE / 2,
+                y: enemy.y * TILE_SIZE + TILE_SIZE / 2,
+                vx: (Math.random() - 0.5) * 4,
+                vy: (Math.random() - 0.5) * 4,
+                size: 3,
+                color: '#00d2d3',
+                life: 0.3
+            });
+        }
+        return;
+    }
+
     // Shield protects player from all damage!
     if (gameState.player.shielded > 0) {
         // Push enemy away and stun briefly without hurting player
         enemy.stunned = 1.5;
         pushEnemyAway(enemy, gameState.player.x, gameState.player.y);
+        return;
+    }
+
+    // === INVINCIBILITY: Rainbow star power! ===
+    if (gameState.player.invincible > 0) {
+        // Knock out any enemy on contact!
+        enemy.stunned = 3;
+        enemy.health = 0;
+        gameState.enemiesKnockedOut++;
+        pushEnemyAway(enemy, gameState.player.x, gameState.player.y);
+
+        // Rainbow particles!
+        const colors = ['#ff0000', '#ff7f00', '#ffff00', '#00ff00', '#0000ff', '#8b00ff'];
+        for (let i = 0; i < 10; i++) {
+            gameState.particles.push({
+                x: enemy.x * TILE_SIZE + TILE_SIZE / 2,
+                y: enemy.y * TILE_SIZE + TILE_SIZE / 2,
+                vx: (Math.random() - 0.5) * 8,
+                vy: (Math.random() - 0.5) * 8,
+                size: 5,
+                color: colors[Math.floor(Math.random() * colors.length)],
+                life: 0.5
+            });
+        }
+        AudioManager.play('punch1', 0.8);
         return;
     }
 
@@ -6863,6 +8593,15 @@ function handlePlayerEnemyCollision(enemy) {
         const stunDuration = getStunDuration(gameState.player.hitCount);
         gameState.player.stunned = stunDuration;
         playerProgress.wasHitThisRun = true; // Track for perfect run
+
+        // === KILL STREAK RESET: Getting hit breaks your streak ===
+        if (gameState.killStreak >= 3) {
+            showCelebration('comboBreak');
+        }
+        gameState.killStreak = 0;
+        gameState.killCombo = 0;
+        gameState.killComboTimer = 0;
+
         console.log(`Player hit #${gameState.player.hitCount}, stunned for ${stunDuration} seconds`);
         // Mark enemy as having just attacked (cooldown) - prevents repeated attacks
         enemy.lastAttackTime = Date.now();
@@ -6883,7 +8622,7 @@ function handlePlayerEnemyCollision(enemy) {
 
 function movePlayer(dx, dy) {
     if (gameState.player.stunned > 0) return false;
-    if (Date.now() - lastMove < MOVE_DELAY / (gameState.powerup === 'speed' ? 2 : 1)) return false;
+    if (Date.now() - lastMove < getEffectiveMoveDelay()) return false;
 
     const newX = gameState.player.x + dx;
     const newY = gameState.player.y + dy;
@@ -6891,9 +8630,30 @@ function movePlayer(dx, dy) {
     if (canMove(newX, newY)) {
         // Play footstep sound (quieter, randomized)
         if (Math.random() < 0.5) AudioManager.play('footstep', 0.3);
+
+        // === DIRECTION CHANGE DUST: Spawn particles on 90° turns ===
+        const prevDir = gameState.player.lastDashDir || { x: 0, y: 0 };
+        const isDirectionChange = (prevDir.x !== 0 && dx === 0 && dy !== 0) ||
+                                  (prevDir.y !== 0 && dy === 0 && dx !== 0);
+        if (isDirectionChange && (prevDir.x !== 0 || prevDir.y !== 0)) {
+            // Spawn 2-3 dust particles at feet
+            for (let p = 0; p < 2 + Math.floor(Math.random() * 2); p++) {
+                gameState.particles.push({
+                    x: gameState.player.x * TILE_SIZE + TILE_SIZE / 2,
+                    y: gameState.player.y * TILE_SIZE + TILE_SIZE * 0.8,
+                    vx: (Math.random() - 0.5) * 2 - prevDir.x * 1.5,
+                    vy: (Math.random() - 0.5) * 1 - 0.5,
+                    size: 3 + Math.random() * 2,
+                    color: '#888',
+                    lifetime: 0.4
+                });
+            }
+        }
+
         gameState.player.x = newX;
         gameState.player.y = newY;
         gameState.player.direction = dx !== 0 ? (dx > 0 ? 1 : 3) : (dy > 0 ? 2 : 0);
+        gameState.player.lastDashDir = { x: dx, y: dy }; // Track for direction change detection
         lastMove = Date.now();
 
         // Track facing direction for sprite animation (1 = right, -1 = left)
@@ -6906,22 +8666,37 @@ function movePlayer(dx, dy) {
         // Trigger stretch animation on movement start (Super Meat Boy feel)
         triggerStretch();
 
-        // Check secret exit on floor 13
-        if (gameState.floor === 13 && gameState.secretExit) {
+        // Check secret exit on floor 7 (rebalanced from floor 13)
+        if (gameState.floor === 7 && gameState.secretExit) {
             if (gameState.player.x === gameState.secretExit.x && gameState.player.y === gameState.secretExit.y) {
                 // Secret path! Jump straight to floor 1
                 gameState.floor = 1;
                 gameState.won = true;
                 playerProgress.secretExitFound = true; // Unlock ghost character
                 checkUnlocks();
-                showMessage('SECRET ESCAPE!', 'You found the hidden path from floor 13!', true);
+                showMessage('SECRET ESCAPE!', 'You found the hidden path from floor 7!', true);
                 return;
             }
         }
 
         // Check regular exits
-        for (const exit of gameState.exits) {
+        for (let exitIndex = 0; exitIndex < gameState.exits.length; exitIndex++) {
+            const exit = gameState.exits[exitIndex];
             if (gameState.player.x === exit.x && gameState.player.y === exit.y) {
+                // === TRACK EXIT USAGE (for wall-breaker secret unlock) ===
+                // Exits: 0=TL, 1=TR, 2=BL, 3=BR
+                const exitCorners = ['TL', 'TR', 'BL', 'BR'];
+                if (!gameState.exitsUsedThisRun) gameState.exitsUsedThisRun = new Set();
+                gameState.exitsUsedThisRun.add(exitCorners[exitIndex]);
+
+                // Check if all 4 exits have been used - unlock wall-breaker!
+                if (gameState.exitsUsedThisRun.size >= 4 && !gameState.hasWallBreaker) {
+                    gameState.hasWallBreaker = true;
+                    showCelebration('wallBreakerUnlocked');
+                    screenShake.trigger(20, 0.5);
+                    AudioManager.play('powerup', 1.0);
+                }
+
                 // === NEW: Close Call Celebration ===
                 if (gameState.timer <= 5 && gameState.timer > 0) {
                     showCelebration('clutchEscape');
@@ -6937,26 +8712,38 @@ function movePlayer(dx, dy) {
         // === NEW: Coin Collection (Dopamine Breadcrumbs) ===
         for (let i = gameState.coins.length - 1; i >= 0; i--) {
             const coin = gameState.coins[i];
-            if (!coin.collected && gameState.player.x === coin.x && gameState.player.y === coin.y) {
-                coin.collected = true;
-                gameState.coinsCollected += coin.value;
+            if (!coin.collected && !coin.collecting && gameState.player.x === coin.x && gameState.player.y === coin.y) {
+                // Start pop animation instead of immediately marking collected
+                coin.collecting = true;
+                coin.collectScale = 1.3; // Pop up
+                coin.collectAlpha = 1.0;
+                // Lucky Coins perk: double coin value
+                const coinMultiplier = gameState.perks.includes('luckyCoins') ? 2 : 1;
+                gameState.coinsCollected += coin.value * coinMultiplier;
+                gameState.coinsCollectedCount++;
 
                 // Combo system for rapid collection
+                // Each coin extends the combo timer, making it easier to chain!
+                const baseComboTime = 3.5; // Increased from 2.0 for easier chaining
+                const comboBonus = Math.min(gameState.coinCombo * 0.25, 2.0); // Up to +2s bonus at high combos
+
                 if (gameState.coinComboTimer > 0) {
                     gameState.coinCombo++;
-                    if (gameState.coinCombo >= 3) {
+                    if (gameState.coinCombo >= 5 && gameState.coinCombo < 10) {
                         showCelebration('coinStreak', { n: gameState.coinCombo });
-                    }
-                    if (gameState.coinCombo >= 10) {
+                    } else if (gameState.coinCombo >= 10 && gameState.coinCombo < 20) {
                         showCelebration('coinMaster');
+                    } else if (gameState.coinCombo >= 20) {
+                        showCelebration('coinFrenzy');
                     }
                 } else {
                     gameState.coinCombo = 1;
                 }
-                gameState.coinComboTimer = 2.0; // 2 seconds to keep combo
+                gameState.coinComboTimer = baseComboTime + comboBonus;
 
-                // Play coin collect sound (quick chime)
-                AudioManager.play('powerup', 0.5);
+                // Play coin collect sound with pitch scaling (Mario-style ascending notes)
+                const pitchScale = 1.0 + (gameState.coinCombo * 0.08); // Higher pitch per combo
+                AudioManager.play('powerup', 0.5, Math.min(pitchScale, 2.0)); // Cap at 2x pitch
 
                 // Visual feedback - small particle burst
                 for (let j = 0; j < 4; j++) {
@@ -7025,6 +8812,54 @@ function movePlayer(dx, dy) {
                     };
                     playerStats.powerupsCollected++;
                     saveStats();
+                } else if (pu.type === 'timeFreeze') {
+                    // TIME FREEZE - Freeze all enemies for 5 seconds
+                    gameState.timeFreezeActive = true;
+                    gameState.timeFreezeTimer = 5;
+                    showCelebration('timeFreeze');
+                    screenShake.trigger(10, 0.2);
+                    // Freeze all enemies
+                    for (const enemy of gameState.enemies) {
+                        enemy.frozen = true;
+                    }
+                    playerStats.powerupsCollected++;
+                    saveStats();
+                } else if (pu.type === 'coinMagnet') {
+                    // COIN MAGNET - Pull all coins toward player for 8 seconds
+                    gameState.coinMagnetActive = true;
+                    gameState.coinMagnetTimer = 8;
+                    showCelebration('coinMagnet');
+                    playerStats.powerupsCollected++;
+                    saveStats();
+                } else if (pu.type === 'clone') {
+                    // CLONE - Create a decoy that enemies chase
+                    gameState.clone = {
+                        x: gameState.player.x,
+                        y: gameState.player.y,
+                        timer: 12,  // Lasts 12 seconds
+                        frame: 0,
+                        blinkTimer: 0
+                    };
+                    showCelebration('cloneActivated');
+                    playerStats.powerupsCollected++;
+                    saveStats();
+                } else if (pu.type === 'invincibility') {
+                    // INVINCIBILITY - Complete immunity for 4 seconds (rainbow!)
+                    gameState.player.invincible = 4;
+                    showCelebration('invincibility');
+                    screenShake.trigger(15, 0.3);
+                    // Rainbow flash effect
+                    const flash = document.createElement('div');
+                    flash.style.cssText = `
+                        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+                        background: linear-gradient(45deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #8b00ff);
+                        opacity: 0.4; pointer-events: none; z-index: 999;
+                        animation: flashFade 0.5s ease-out forwards;
+                    `;
+                    document.body.appendChild(flash);
+                    setTimeout(() => flash.remove(), 500);
+                    playerStats.powerupsCollected++;
+                    saveStats();
                 } else {
                     // Regular powerups
                     gameState.powerup = pu.type;
@@ -7051,6 +8886,825 @@ function movePlayer(dx, dy) {
         return true; // Movement successful
     }
     return false; // Movement blocked
+}
+
+// === DASH SYSTEM (Core Fun Mechanic) ===
+// Spacebar: Dash 3 tiles in facing direction with i-frames
+function performDash() {
+    // Can't dash if on cooldown, stunned, or already dashing
+    if (gameState.player.dashCooldown > 0) return false;
+    if (gameState.player.stunned > 0) return false;
+    if (gameState.player.isDashing) return false;
+
+    // === APPLY PERK MODIFIERS ===
+    let dashRange = DASH_DISTANCE;
+    let dashCooldown = DASH_COOLDOWN;
+    let dashInvincibility = DASH_INVINCIBILITY;
+
+    if (gameState.perks.includes('dashRange')) dashRange += 1;
+    if (gameState.perks.includes('dashSpeed')) dashCooldown *= 0.6;
+    if (gameState.perks.includes('invincibleDash')) dashInvincibility *= 2;
+
+    // Get dash direction from last movement or facing direction
+    let dx = 0, dy = 0;
+    const dir = gameState.player.direction;
+    if (dir === 0) dy = -1;      // up
+    else if (dir === 1) dx = 1;  // right
+    else if (dir === 2) dy = 1;  // down
+    else if (dir === 3) dx = -1; // left
+
+    // If no direction, use last dash direction or default down
+    if (dx === 0 && dy === 0) {
+        dx = gameState.player.lastDashDir.x;
+        dy = gameState.player.lastDashDir.y;
+    }
+    if (dx === 0 && dy === 0) dy = 1; // fallback
+
+    // Store dash direction
+    gameState.player.lastDashDir = { x: dx, y: dy };
+
+    // Calculate how far we can dash (stop at walls)
+    let dashDistance = 0;
+    let finalX = gameState.player.x;
+    let finalY = gameState.player.y;
+
+    for (let i = 1; i <= dashRange; i++) {
+        const checkX = gameState.player.x + dx * i;
+        const checkY = gameState.player.y + dy * i;
+
+        if (canMove(checkX, checkY)) {
+            finalX = checkX;
+            finalY = checkY;
+            dashDistance = i;
+        } else {
+            break; // Hit a wall, stop here
+        }
+    }
+
+    if (dashDistance === 0) {
+        // Can't dash anywhere - still trigger cooldown but shorter
+        gameState.player.dashCooldown = dashCooldown * 0.3;
+        return false;
+    }
+
+    // Execute dash!
+    gameState.player.isDashing = true;
+    gameState.player.dashInvincible = dashInvincibility;
+    gameState.player.dashCooldown = dashCooldown;
+
+    // === DASH DAMAGE PERK: Stun enemies we dash through ===
+    if (gameState.perks.includes('dashDamage')) {
+        for (const enemy of gameState.enemies) {
+            // Check if enemy is along dash path
+            for (let i = 1; i <= dashDistance; i++) {
+                const pathX = gameState.player.x - dx * (dashDistance - i);
+                const pathY = gameState.player.y - dy * (dashDistance - i);
+                if (enemy.x === pathX && enemy.y === pathY && enemy.stunned <= 0) {
+                    enemy.stunned = 2;
+                    gameState.enemiesKnockedOut++;
+                    gameState.killStreak++;
+                    // Give time for dash-stuns too
+                    const timeBonus = 2;
+                    gameState.timer += timeBonus;
+                    showCelebration('dashThrough');
+                    break;
+                }
+            }
+        }
+    }
+
+    // Move player to final position
+    gameState.player.x = finalX;
+    gameState.player.y = finalY;
+
+    // Update facing direction for sprite
+    if (dx !== 0) {
+        characterAnimationState.player.facingDirection = dx > 0 ? 1 : -1;
+    }
+    characterAnimationState.player.isMoving = true;
+    characterAnimationState.player.lastMoveTime = Date.now();
+
+    // Visual feedback - dash trail particles
+    const startX = (gameState.player.x - dx * dashDistance) * TILE_SIZE + TILE_SIZE / 2;
+    const startY = (gameState.player.y - dy * dashDistance) * TILE_SIZE + TILE_SIZE / 2;
+    const endX = gameState.player.x * TILE_SIZE + TILE_SIZE / 2;
+    const endY = gameState.player.y * TILE_SIZE + TILE_SIZE / 2;
+
+    // Create trail particles along dash path
+    for (let i = 0; i < dashDistance * 3; i++) {
+        const t = i / (dashDistance * 3);
+        gameState.particles.push({
+            x: startX + (endX - startX) * t + (Math.random() - 0.5) * 10,
+            y: startY + (endY - startY) * t + (Math.random() - 0.5) * 10,
+            vx: -dx * 2 + (Math.random() - 0.5) * 2,
+            vy: -dy * 2 + (Math.random() - 0.5) * 2,
+            size: 4 + Math.random() * 4,
+            color: '#00d2d3',  // Cyan trail
+            life: 0.3 + Math.random() * 0.2
+        });
+    }
+
+    // === DASH TRAIL PERK: Leave damaging fire tiles along dash path ===
+    if (gameState.perks.includes('dashTrail')) {
+        const maxTrailFires = Math.min(dashDistance, 3); // Cap at 3 fire tiles
+
+        for (let i = 1; i <= maxTrailFires; i++) {
+            const fireX = gameState.player.x - dx * i;
+            const fireY = gameState.player.y - dy * i;
+
+            // Check if tile is valid floor (not wall, not already on fire)
+            if (gameState.maze[fireY] && gameState.maze[fireY][fireX] === 0) { // 0 = FLOOR
+                let alreadyOnFire = false;
+                for (const f of gameState.fires) {
+                    if (f.x === fireX && f.y === fireY) {
+                        alreadyOnFire = true;
+                        break;
+                    }
+                }
+
+                if (!alreadyOnFire) {
+                    gameState.fires.push({
+                        x: fireX,
+                        y: fireY,
+                        size: 1,
+                        age: 0,
+                        spreadTimer: 0,
+                        isPlayerFire: true, // Mark as player-created (won't damage player)
+                        lifespan: 5 // Auto-extinguish after 5 seconds
+                    });
+
+                    // Fire spawn particle effect
+                    for (let p = 0; p < 6; p++) {
+                        gameState.particles.push({
+                            x: fireX * TILE_SIZE + TILE_SIZE / 2,
+                            y: fireY * TILE_SIZE + TILE_SIZE / 2,
+                            vx: (Math.random() - 0.5) * 4,
+                            vy: -Math.random() * 4 - 2,
+                            size: 4 + Math.random() * 4,
+                            color: Math.random() < 0.5 ? '#e67e22' : '#e74c3c',
+                            life: 0.4
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // Audio feedback
+    AudioManager.play('powerup', 0.6);
+
+    // Screen shake for impact feel
+    screenShake.trigger(5, 0.1);
+
+    // Check for coin collection along dash path (bonus!)
+    for (let i = 1; i <= dashDistance; i++) {
+        const checkX = gameState.player.x - dx * (dashDistance - i);
+        const checkY = gameState.player.y - dy * (dashDistance - i);
+
+        for (let j = gameState.coins.length - 1; j >= 0; j--) {
+            const coin = gameState.coins[j];
+            if (!coin.collected && coin.x === checkX && coin.y === checkY) {
+                coin.collected = true;
+                // Lucky Coins perk: double coin value
+                const coinMultiplier = gameState.perks.includes('luckyCoins') ? 2 : 1;
+                gameState.coinsCollected += coin.value * coinMultiplier;
+                gameState.coinsCollectedCount++;
+                gameState.coinCombo++;
+                gameState.coinComboTimer = 2.0;
+            }
+        }
+    }
+
+    // Check exit collision at destination
+    for (const exit of gameState.exits) {
+        if (gameState.player.x === exit.x && gameState.player.y === exit.y) {
+            if (gameState.timer <= 5 && gameState.timer > 0) {
+                showCelebration('clutchEscape');
+                triggerFreezeFrame('closeDodge');
+            } else if (gameState.timer <= 10 && gameState.timer > 5) {
+                showCelebration('closeCall');
+            }
+            nextFloor();
+            return true;
+        }
+    }
+
+    // End dash state after brief moment
+    setTimeout(() => {
+        gameState.player.isDashing = false;
+    }, DASH_SPEED * dashDistance * 1000);
+
+    return true;
+}
+
+// === PUNCH SYSTEM (Default Attack - Z Key) ===
+// Punch enemies in range, stun them, and gain TIME scaled by COMBO MULTIPLIER
+function performPunch() {
+    // Can't punch if on cooldown or stunned
+    if (gameState.player.punchCooldown > 0) return false;
+    if (gameState.player.stunned > 0) return false;
+
+    // Apply perk modifiers
+    let punchRange = PUNCH_RANGE;
+    let punchCooldown = PUNCH_COOLDOWN;
+    if (gameState.perks.includes('punchRange')) punchRange += 1;
+    if (gameState.perks.includes('punchSpeed')) punchCooldown *= 0.6;
+
+    gameState.player.isPunching = true;
+    gameState.player.punchCooldown = punchCooldown;
+
+    let enemiesHit = 0;
+    let timeGained = 0;
+
+    // Find all enemies in punch range
+    for (const enemy of gameState.enemies) {
+        if (enemy.stunned > 0) continue; // Already stunned
+
+        const dist = Math.abs(enemy.x - gameState.player.x) + Math.abs(enemy.y - gameState.player.y);
+
+        if (dist <= punchRange) {
+            // HIT!
+            enemiesHit++;
+
+            // === CRITICAL HIT SYSTEM: 15% chance for double damage + extra effects ===
+            const critChance = gameState.perks.includes('criticalHit') ? 0.25 : 0.15;
+            const isCriticalHit = Math.random() < critChance;
+            const damageDealt = isCriticalHit ? 2 : 1;
+
+            // === ENEMY HEALTH SYSTEM: Tanks need multiple hits ===
+            enemy.health = (enemy.health || 1) - damageDealt;
+
+            if (isCriticalHit) {
+                showCelebration('criticalHit');
+                screenShake.trigger(12, 0.2);
+                // Extra crit particles (yellow/gold)
+                for (let c = 0; c < 8; c++) {
+                    gameState.particles.push({
+                        x: enemy.x * TILE_SIZE + TILE_SIZE / 2,
+                        y: enemy.y * TILE_SIZE + TILE_SIZE / 2,
+                        vx: (Math.random() - 0.5) * 10,
+                        vy: (Math.random() - 0.5) * 10 - 3,
+                        size: 5,
+                        color: '#ffd700',
+                        life: 0.6
+                    });
+                }
+            }
+
+            if (enemy.health <= 0) {
+                // Enemy is fully defeated - stun them
+                enemy.stunned = PUNCH_STUN_DURATION;
+                enemy.health = enemy.maxHealth || 1; // Reset health for respawn
+                gameState.enemiesKnockedOut++;
+                gameState.killStreak++;
+
+                // === SPECIAL ABILITY: Exploder (HR Karen) ===
+                if (enemy.special === 'explode') {
+                    triggerEnemyExplosion(enemy);
+                }
+
+                // === PUNCH CHAIN PERK: Punched enemies create chain reaction ===
+                if (gameState.perks.includes('punchChain') && enemy.special !== 'explode') {
+                    triggerPunchChainExplosion(enemy);
+                }
+
+                // === SHOP ECONOMY: Enemies drop coins when defeated ===
+                const coinDrop = 5 + Math.floor(Math.random() * 10); // 5-14 coins
+                gameState.coinsCollected += coinDrop;
+
+                // Coin drop visual effect
+                for (let c = 0; c < 3; c++) {
+                    gameState.particles.push({
+                        x: enemy.x * TILE_SIZE + TILE_SIZE / 2,
+                        y: enemy.y * TILE_SIZE + TILE_SIZE / 2,
+                        vx: (Math.random() - 0.5) * 4,
+                        vy: -Math.random() * 4 - 2,
+                        size: 4,
+                        color: '#f1c40f', // Gold coin color
+                        life: 0.5
+                    });
+                }
+            } else {
+                // Tank enemy - show damage but don't stun yet
+                enemy.stunned = 0.3; // Brief stagger
+                showCelebration('tankHit', { remaining: enemy.health });
+                // Particle effect for hit
+                for (let k = 0; k < 5; k++) {
+                    gameState.particles.push({
+                        x: enemy.x * TILE_SIZE + TILE_SIZE / 2,
+                        y: enemy.y * TILE_SIZE + TILE_SIZE / 2,
+                        vx: (Math.random() - 0.5) * 6,
+                        vy: (Math.random() - 0.5) * 6,
+                        size: 4,
+                        color: '#9b59b6', // Purple for IT
+                        life: 0.3
+                    });
+                }
+                continue; // Don't give full rewards for non-killing blow
+            }
+
+            enemy.hitCount = (enemy.hitCount || 0) + 1;
+
+            // === COMBO SYSTEM: Build combo for multiplied time rewards ===
+            const now = Date.now();
+            if (gameState.killComboTimer > 0) {
+                // Continue combo
+                gameState.killCombo = Math.min(gameState.killCombo + 1, COMBO_MAX_MULTIPLIER);
+            } else {
+                // Start new combo
+                gameState.killCombo = 1;
+            }
+            // Perk: Momentum - combo timer lasts 50% longer
+            const comboWindow = gameState.perks.includes('comboExtend') ? COMBO_WINDOW * 1.5 : COMBO_WINDOW;
+            gameState.killComboTimer = comboWindow;
+            gameState.lastKillTime = now;
+
+            // Track max combo
+            if (gameState.killCombo > gameState.maxComboThisRun) {
+                gameState.maxComboThisRun = gameState.killCombo;
+            }
+
+            // === TIME REWARD SCALED BY COMBO ===
+            const comboMultiplier = gameState.killCombo;
+            let baseReward = PUNCH_TIME_REWARD;
+            // Perk: Time Vampire - 50% more time per kill
+            if (gameState.perks.includes('punchVampire')) baseReward = Math.floor(baseReward * 1.5);
+            const timeReward = Math.floor(baseReward * (1 + (comboMultiplier - 1) * 0.5)); // 4, 6, 8, 10...
+            gameState.timer += timeReward;
+            timeGained += timeReward;
+
+            // Push enemy away from player
+            const dx = enemy.x - gameState.player.x;
+            const dy = enemy.y - gameState.player.y;
+            const pushDist = 2;
+
+            for (let i = pushDist; i >= 1; i--) {
+                const pushX = enemy.x + (dx !== 0 ? Math.sign(dx) * i : 0);
+                const pushY = enemy.y + (dy !== 0 ? Math.sign(dy) * i : 0);
+                if (canMove(pushX, pushY)) {
+                    enemy.x = pushX;
+                    enemy.y = pushY;
+                    break;
+                }
+            }
+
+            // Visual punch effect
+            gameState.punchEffects.push({
+                x: enemy.x * TILE_SIZE + TILE_SIZE / 2,
+                y: enemy.y * TILE_SIZE + TILE_SIZE / 2,
+                frame: 0,
+                maxFrames: 8
+            });
+
+            // Particles - more particles for higher combos
+            const particleCount = 8 + gameState.killCombo * 2;
+            for (let j = 0; j < particleCount; j++) {
+                gameState.particles.push({
+                    x: enemy.x * TILE_SIZE + TILE_SIZE / 2,
+                    y: enemy.y * TILE_SIZE + TILE_SIZE / 2,
+                    vx: (Math.random() - 0.5) * (8 + gameState.killCombo),
+                    vy: (Math.random() - 0.5) * (8 + gameState.killCombo) - 2,
+                    size: 3 + Math.random() * 3,
+                    color: getComboColor(gameState.killCombo),
+                    life: 0.4 + gameState.killCombo * 0.05
+                });
+            }
+        }
+    }
+
+    // Audio and visual feedback based on hits
+    if (enemiesHit > 0) {
+        AudioManager.play('punch1', 0.8);
+
+        // === SLOW-MO ON MULTI-KILLS ===
+        if (enemiesHit >= 5) {
+            triggerSlowMo(SLOWMO_5_KILLS);
+            showCelebration('massacre', { count: enemiesHit });
+            playKillStreakAnnouncer('massacre');
+        } else if (enemiesHit >= 3) {
+            triggerSlowMo(SLOWMO_3_KILLS);
+            showCelebration('multiPunch', { count: enemiesHit });
+            playKillStreakAnnouncer('triple');
+        } else if (enemiesHit >= 2) {
+            triggerSlowMo(SLOWMO_2_KILLS);
+            showCelebration('multiPunch', { count: enemiesHit });
+            playKillStreakAnnouncer('double');
+        }
+
+        // Screen shake scales with combo
+        screenShake.trigger(8 + enemiesHit * 3 + gameState.killCombo * 2, 0.15 + gameState.killCombo * 0.02);
+        triggerFreezeFrame('playerHit');
+
+        // Show combo and time gained
+        if (gameState.killCombo >= 3) {
+            showCelebration('comboKill', { combo: gameState.killCombo, time: timeGained });
+        } else if (timeGained > 0) {
+            showCelebration('timeBonus', { seconds: timeGained, enemies: enemiesHit });
+        }
+
+        // === KILL STREAK ANNOUNCEMENTS ===
+        if (gameState.killStreak === STREAK_GODLIKE) {
+            playKillStreakAnnouncer('godlike');
+            showCelebration('godlike');
+        } else if (gameState.killStreak === STREAK_UNSTOPPABLE) {
+            playKillStreakAnnouncer('unstoppable');
+            showCelebration('unstoppable');
+        } else if (gameState.killStreak === STREAK_RAMPAGE) {
+            playKillStreakAnnouncer('rampage');
+            showCelebration('rampage');
+        }
+    } else {
+        // Whiff - still play a sound but quieter
+        AudioManager.play('footstep', 0.4);
+    }
+
+    // === EXPLOSIVE PUNCH PERK: Shockwave pushes ALL nearby enemies ===
+    if (gameState.perks.includes('explosivePunch') && enemiesHit > 0) {
+        const shockwaveRadius = 4; // Larger than punch range
+
+        for (const enemy of gameState.enemies) {
+            const dist = Math.abs(enemy.x - gameState.player.x) + Math.abs(enemy.y - gameState.player.y);
+
+            if (dist <= shockwaveRadius && dist > 0) {
+                // Calculate push direction (away from player)
+                const dx = enemy.x - gameState.player.x;
+                const dy = enemy.y - gameState.player.y;
+                const pushDist = Math.max(1, 4 - Math.floor(dist)); // Closer = pushed further
+
+                // Find valid push position
+                for (let i = pushDist; i >= 1; i--) {
+                    let pushX = enemy.x;
+                    let pushY = enemy.y;
+
+                    // Push in dominant direction
+                    if (Math.abs(dx) >= Math.abs(dy)) {
+                        pushX += Math.sign(dx) * i;
+                    } else {
+                        pushY += Math.sign(dy) * i;
+                    }
+
+                    if (canMove(pushX, pushY)) {
+                        enemy.x = pushX;
+                        enemy.y = pushY;
+                        break;
+                    }
+                }
+
+                // Brief stagger for pushed enemies
+                if (enemy.stunned <= 0) {
+                    enemy.stunned = 0.3;
+                }
+            }
+        }
+
+        // Shockwave visual effect (ring expanding outward)
+        const px = gameState.player.x * TILE_SIZE + TILE_SIZE / 2;
+        const py = gameState.player.y * TILE_SIZE + TILE_SIZE / 2;
+
+        for (let i = 0; i < 16; i++) {
+            const angle = (i / 16) * Math.PI * 2;
+            const speed = 8;
+            gameState.particles.push({
+                x: px,
+                y: py,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                size: 5,
+                color: '#9b59b6', // Purple shockwave
+                life: 0.4
+            });
+        }
+
+        screenShake.trigger(12, 0.2);
+        AudioManager.play('punch1', 0.9);
+        showCelebration('shockwave');
+    }
+
+    // End punch animation after brief moment
+    setTimeout(() => {
+        gameState.player.isPunching = false;
+    }, 150);
+
+    return enemiesHit > 0;
+}
+
+// Get particle color based on combo level
+function getComboColor(combo) {
+    if (combo >= 8) return '#ff00ff'; // Magenta - GODLIKE
+    if (combo >= 6) return '#ff4500'; // Orange-red
+    if (combo >= 4) return '#ffd700'; // Gold
+    if (combo >= 2) return '#ff6b6b'; // Light red
+    return '#e74c3c'; // Base red
+}
+
+// === WALL BREAKER (Secret Ability - Unlocked by using all 4 exits) ===
+// Shift: Break through walls in facing direction
+const WALL_BREAK_COOLDOWN = 3; // 3 second cooldown
+const WALL_BREAK_RANGE = 3; // Can break up to 3 walls
+
+function performWallBreak() {
+    // Can't break walls if on cooldown or stunned
+    if (gameState.player.wallBreakCooldown > 0) {
+        showCelebration('cooldown');
+        return false;
+    }
+    if (gameState.player.stunned > 0) return false;
+
+    // Get direction from facing
+    let dx = 0, dy = 0;
+    const dir = gameState.player.direction;
+    if (dir === 0) dy = -1;      // up
+    else if (dir === 1) dx = 1;  // right
+    else if (dir === 2) dy = 1;  // down
+    else if (dir === 3) dx = -1; // left
+
+    // If no direction, default down
+    if (dx === 0 && dy === 0) dy = 1;
+
+    // Find walls to break in that direction
+    let wallsBroken = 0;
+    const brokenPositions = [];
+
+    for (let i = 1; i <= WALL_BREAK_RANGE; i++) {
+        const checkX = gameState.player.x + dx * i;
+        const checkY = gameState.player.y + dy * i;
+
+        // Stop at map boundaries
+        if (checkX < 1 || checkX >= MAP_WIDTH - 1 || checkY < 1 || checkY >= MAP_HEIGHT - 1) {
+            break;
+        }
+
+        const tile = gameState.maze[checkY][checkX];
+
+        // Break walls and desks
+        if (tile === TILE.WALL || tile === TILE.DESK) {
+            gameState.maze[checkY][checkX] = TILE.FLOOR;
+            wallsBroken++;
+            brokenPositions.push({ x: checkX, y: checkY });
+        }
+    }
+
+    if (wallsBroken > 0) {
+        // Set cooldown
+        gameState.player.wallBreakCooldown = WALL_BREAK_COOLDOWN;
+
+        // Audio - heavy impact sound
+        AudioManager.play('punch1', 1.0);
+
+        // Screen shake - big one!
+        screenShake.trigger(15 + wallsBroken * 5, 0.3);
+        triggerFreezeFrame('playerHit');
+
+        // Visual effects for each broken wall
+        for (const pos of brokenPositions) {
+            const centerX = pos.x * TILE_SIZE + TILE_SIZE / 2;
+            const centerY = pos.y * TILE_SIZE + TILE_SIZE / 2;
+
+            // Debris particles (gray stone/concrete)
+            for (let j = 0; j < 12; j++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = 3 + Math.random() * 5;
+                gameState.particles.push({
+                    x: centerX,
+                    y: centerY,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed - 3,
+                    size: 4 + Math.random() * 4,
+                    color: ['#7f8c8d', '#95a5a6', '#bdc3c7'][Math.floor(Math.random() * 3)],
+                    life: 0.6 + Math.random() * 0.3
+                });
+            }
+
+            // Dust cloud particles (lighter, slower)
+            for (let j = 0; j < 8; j++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = 1 + Math.random() * 2;
+                gameState.particles.push({
+                    x: centerX,
+                    y: centerY,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed - 1,
+                    size: 8 + Math.random() * 6,
+                    color: 'rgba(200, 200, 200, 0.5)',
+                    life: 0.8 + Math.random() * 0.4
+                });
+            }
+        }
+
+        // Show celebration
+        if (wallsBroken >= 3) {
+            showCelebration('wallSmash', { count: wallsBroken });
+        } else {
+            showCelebration('wallBreak');
+        }
+
+        // Push any enemies that were behind the walls
+        for (const enemy of gameState.enemies) {
+            for (const pos of brokenPositions) {
+                if (enemy.x === pos.x && enemy.y === pos.y) {
+                    // Stun enemy caught in debris
+                    enemy.stunned = 2;
+                    enemy.health = (enemy.health || 1) - 1;
+                    if (enemy.health <= 0) {
+                        enemy.health = enemy.maxHealth || 1;
+                        gameState.enemiesKnockedOut++;
+                    }
+                }
+            }
+        }
+
+        return true;
+    } else {
+        // No walls in range
+        AudioManager.play('footstep', 0.3);
+        return false;
+    }
+}
+
+// === SLOW-MO SYSTEM ===
+function triggerSlowMo(duration) {
+    gameState.slowMoActive = true;
+    gameState.slowMoTimer = duration;
+    gameState.slowMoFactor = SLOWMO_FACTOR;
+
+    // Visual flash effect
+    const flash = document.createElement('div');
+    flash.style.cssText = `
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(255, 255, 255, 0.3);
+        pointer-events: none; z-index: 999;
+        animation: flashFade 0.2s ease-out forwards;
+    `;
+    document.body.appendChild(flash);
+    setTimeout(() => flash.remove(), 200);
+}
+
+// === ENEMY EXPLOSION (HR Karen Special) ===
+// When HR Karen is defeated, she explodes and damages nearby enemies
+function triggerEnemyExplosion(enemy) {
+    const explosionRadius = 3; // Tiles
+    let chainKills = 0;
+
+    // Find all enemies in explosion radius
+    for (const otherEnemy of gameState.enemies) {
+        if (otherEnemy === enemy) continue;
+        if (otherEnemy.stunned > 0) continue;
+
+        const dist = Math.abs(otherEnemy.x - enemy.x) + Math.abs(otherEnemy.y - enemy.y);
+        if (dist <= explosionRadius) {
+            // Chain damage!
+            otherEnemy.health = (otherEnemy.health || 1) - 1;
+            if (otherEnemy.health <= 0) {
+                otherEnemy.stunned = PUNCH_STUN_DURATION;
+                otherEnemy.health = otherEnemy.maxHealth || 1;
+                gameState.enemiesKnockedOut++;
+                chainKills++;
+
+                // If this enemy ALSO explodes, trigger chain reaction
+                if (otherEnemy.special === 'explode') {
+                    setTimeout(() => triggerEnemyExplosion(otherEnemy), 100);
+                }
+            } else {
+                otherEnemy.stunned = 0.5; // Stagger
+            }
+        }
+    }
+
+    // Explosion visual effect
+    const centerX = enemy.x * TILE_SIZE + TILE_SIZE / 2;
+    const centerY = enemy.y * TILE_SIZE + TILE_SIZE / 2;
+
+    // Orange/red explosion particles
+    for (let i = 0; i < 20; i++) {
+        const angle = (i / 20) * Math.PI * 2;
+        const speed = 5 + Math.random() * 5;
+        gameState.particles.push({
+            x: centerX,
+            y: centerY,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            size: 6 + Math.random() * 6,
+            color: Math.random() < 0.5 ? '#e67e22' : '#e74c3c',
+            life: 0.5 + Math.random() * 0.3
+        });
+    }
+
+    // Screen shake and sound
+    screenShake.trigger(15, 0.3);
+    AudioManager.play('punch1', 1.0);
+
+    // Slow-mo if chain kills
+    if (chainKills >= 2) {
+        triggerSlowMo(SLOWMO_3_KILLS);
+        showCelebration('explosion');
+
+        // Bonus time for chain reaction
+        const chainBonus = chainKills * 3;
+        gameState.timer += chainBonus;
+        gameState.killCombo += chainKills;
+    }
+}
+
+// === PUNCH CHAIN EXPLOSION (smaller radius than HR Karen) ===
+function triggerPunchChainExplosion(enemy) {
+    const explosionRadius = 2; // Smaller than HR Karen's 3
+    let chainKills = 0;
+
+    // Find all enemies in explosion radius
+    for (const otherEnemy of gameState.enemies) {
+        if (otherEnemy === enemy) continue;
+        if (otherEnemy.stunned > 0) continue;
+
+        const dist = Math.abs(otherEnemy.x - enemy.x) + Math.abs(otherEnemy.y - enemy.y);
+        if (dist <= explosionRadius) {
+            // Chain damage!
+            otherEnemy.health = (otherEnemy.health || 1) - 1;
+            if (otherEnemy.health <= 0) {
+                otherEnemy.stunned = PUNCH_STUN_DURATION;
+                otherEnemy.health = otherEnemy.maxHealth || 1;
+                gameState.enemiesKnockedOut++;
+                gameState.killStreak++;
+                chainKills++;
+
+                // Chain explosions propagate (with delay to prevent infinite loops)
+                if (gameState.perks.includes('punchChain') && otherEnemy.special !== 'explode') {
+                    setTimeout(() => {
+                        if (otherEnemy.stunned > 0) { // Still stunned = hasn't recovered
+                            triggerPunchChainExplosion(otherEnemy);
+                        }
+                    }, 150);
+                }
+
+                // HR Karen still explodes normally
+                if (otherEnemy.special === 'explode') {
+                    setTimeout(() => triggerEnemyExplosion(otherEnemy), 100);
+                }
+            } else {
+                otherEnemy.stunned = 0.3; // Brief stagger
+            }
+        }
+    }
+
+    // Smaller visual effect than HR Karen (yellow instead of orange)
+    const centerX = enemy.x * TILE_SIZE + TILE_SIZE / 2;
+    const centerY = enemy.y * TILE_SIZE + TILE_SIZE / 2;
+
+    for (let i = 0; i < 12; i++) {
+        const angle = (i / 12) * Math.PI * 2;
+        const speed = 3 + Math.random() * 3;
+        gameState.particles.push({
+            x: centerX,
+            y: centerY,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            size: 4 + Math.random() * 4,
+            color: Math.random() < 0.5 ? '#f1c40f' : '#f39c12', // Yellow/gold for chain
+            life: 0.3 + Math.random() * 0.2
+        });
+    }
+
+    // Feedback
+    if (chainKills > 0) {
+        showCelebration('chainReaction', { count: chainKills });
+        screenShake.trigger(8, 0.15);
+
+        // Bonus time for chain kills
+        const chainBonus = chainKills * 2;
+        gameState.timer += chainBonus;
+        gameState.killCombo += chainKills;
+    } else {
+        // Even without kills, show small effect
+        screenShake.trigger(4, 0.1);
+    }
+
+    AudioManager.play('punch1', 0.7);
+}
+
+// === KILL STREAK ANNOUNCER ===
+function playKillStreakAnnouncer(type) {
+    // Generate announcer-style sound effects
+    const sounds = {
+        double: { freq: 400, duration: 0.15 },
+        triple: { freq: 500, duration: 0.2 },
+        rampage: { freq: 600, duration: 0.25 },
+        unstoppable: { freq: 700, duration: 0.3 },
+        godlike: { freq: 800, duration: 0.4 },
+        massacre: { freq: 900, duration: 0.35 }
+    };
+
+    const sound = sounds[type];
+    if (sound && AudioManager.context) {
+        const osc = AudioManager.context.createOscillator();
+        const gain = AudioManager.context.createGain();
+        osc.connect(gain);
+        gain.connect(AudioManager.sfxGain);
+        osc.frequency.setValueAtTime(sound.freq, AudioManager.context.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(sound.freq * 1.5, AudioManager.context.currentTime + sound.duration);
+        gain.gain.setValueAtTime(0.3, AudioManager.context.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, AudioManager.context.currentTime + sound.duration);
+        osc.start();
+        osc.stop(AudioManager.context.currentTime + sound.duration);
+    }
 }
 
 function usePowerup() {
@@ -7094,6 +9748,7 @@ function moveEnemies() {
 
     for (const enemy of gameState.enemies) {
         if (enemy.stunned > 0) continue;
+        if (enemy.frozen) continue;  // Time freeze - enemy can't move!
 
         // Update scared timer
         if (enemy.scared > 0) {
@@ -7110,6 +9765,10 @@ function moveEnemies() {
         // DIFFICULTY INCREASE: Faster enemy movement
         // OLD: Easy=45, Medium=30, Hard=20 | NEW: Easy=35, Medium=22, Hard=15
         let baseMoveThreshold = enemy.difficulty === 'easy' ? 35 : (enemy.difficulty === 'hard' ? 15 : 22);
+
+        // === ENEMY TYPE SPEED: Apply speed multiplier from enemy type ===
+        const speedMult = enemy.speedMultiplier || 1.0;
+        baseMoveThreshold = Math.floor(baseMoveThreshold / speedMult);
 
         // === NEW: Rubber-banding adjustment ===
         // If player is close to exit, enemies get faster
@@ -7154,6 +9813,21 @@ function moveEnemies() {
         }
         // DIFFICULTY INCREASE: Higher chase probability
         // OLD: Easy=20%, Medium=50%, Hard=80% | NEW: Easy=40%, Medium=70%, Hard=95%
+        // === CLONE DECOY: Most enemies chase clone instead of player ===
+        else if (gameState.clone && enemy.target === 'clone') {
+            // Chase the decoy clone!
+            const distX = Math.abs(gameState.clone.x - enemy.x);
+            const distY = Math.abs(gameState.clone.y - enemy.y);
+            const totalDist = distX + distY + 0.1;
+
+            if (Math.random() < (distX / totalDist)) {
+                if (gameState.clone.x < enemy.x) dx = -1;
+                else if (gameState.clone.x > enemy.x) dx = 1;
+            } else {
+                if (gameState.clone.y < enemy.y) dy = -1;
+                else if (gameState.clone.y > enemy.y) dy = 1;
+            }
+        }
         else {
             const chaseChance = enemy.difficulty === 'easy' ? 0.4 : (enemy.difficulty === 'hard' ? 0.95 : 0.7);
 
@@ -7222,6 +9896,44 @@ function nextFloor() {
     // Check for celebration triggers before advancing
     checkCelebrationTriggers('floorComplete');
 
+    // === ENDLESS MODE: No win condition, always continue ===
+    if (gameState.endlessMode) {
+        // Track time bonus for this floor
+        if (gameState.timer > 0) {
+            gameState.endlessStats.totalTimeBonus += Math.floor(gameState.timer);
+        }
+
+        // Track perfect floor (no hits)
+        if (gameState.floorHits === 0) {
+            gameState.endlessStats.perfectFloors++;
+        }
+
+        // Update max combo
+        if (gameState.maxComboThisRun > gameState.endlessStats.maxCombo) {
+            gameState.endlessStats.maxCombo = gameState.maxComboThisRun;
+        }
+
+        // Advance to next floor
+        gameState.endlessFloor++;
+        gameState.floor = -gameState.endlessFloor; // Display as negative
+
+        // Update score
+        gameState.endlessScore = calculateEndlessScore(gameState.endlessFloor - 1, {
+            ...gameState.endlessStats,
+            enemiesKnockedOut: gameState.enemiesKnockedOut,
+            enemiesZapped: gameState.enemiesZapped,
+            coinsCollected: gameState.coinsCollected
+        });
+
+        // Reset floor hits for flawless tracking
+        gameState.floorHits = 0;
+
+        // Show transition with endless floor number
+        showEndlessLevelTransition(gameState.endlessFloor);
+        return;
+    }
+
+    // Standard mode
     gameState.floor--;
 
     // Check for checkpoint (Playtest Feature #2)
@@ -7243,55 +9955,141 @@ function nextFloor() {
     showLevelTransition(gameState.floor);
 }
 
-// Level transition particle system
+// Endless mode level transition
+function showEndlessLevelTransition(floor) {
+    const transition = document.getElementById('levelTransition');
+    const floorNum = document.getElementById('nextFloorNum');
+
+    // Display floor as negative (descending into the abyss)
+    floorNum.textContent = `-${floor}`;
+
+    // Set random atmospheric background
+    const bg = getRandomBackground('levelTransition');
+    transition.style.backgroundImage = `url('${bg}')`;
+
+    transition.style.display = 'flex';
+
+    // Start falling debris particle effect
+    transitionParticles.start();
+
+    // Show perk selection after brief delay (same as standard mode)
+    setTimeout(() => {
+        transition.style.display = 'none';
+        transitionParticles.stop();
+        showPerkSelection(floor);
+    }, 1500);
+}
+
+// Level transition particle system - Enhanced with more variety
 const transitionParticles = {
     particles: [],
     active: false,
+    flashAlpha: 0,      // Screen flash effect
+    slideOffset: 0,     // Vertical slide effect
 
     start() {
         this.particles = [];
         this.active = true;
-        // Create 40 falling debris particles
-        for (let i = 0; i < 40; i++) {
+        this.flashAlpha = 0.8;  // Start with bright flash
+        this.slideOffset = 0;
+
+        // Create 60 falling debris particles (increased from 40)
+        for (let i = 0; i < 60; i++) {
+            const type = Math.random();
             this.particles.push({
                 x: Math.random() * canvas.width,
-                y: -20 - Math.random() * 150,
-                vy: 2 + Math.random() * 3,
-                vx: (Math.random() - 0.5) * 1.5,
-                size: 2 + Math.random() * 6,
+                y: -20 - Math.random() * 200,
+                vy: 2 + Math.random() * 4,
+                vx: (Math.random() - 0.5) * 2,
+                size: type < 0.3 ? 1 + Math.random() * 2 : 3 + Math.random() * 8, // Mix of dust and debris
                 rotation: Math.random() * Math.PI * 2,
-                rotationSpeed: (Math.random() - 0.5) * 0.2,
-                color: ['#1a1a1a', '#2c2c2c', '#454545', '#8b4513', '#666'][Math.floor(Math.random() * 5)],
-                alpha: 0.7 + Math.random() * 0.3
+                rotationSpeed: (Math.random() - 0.5) * 0.3,
+                color: ['#1a1a1a', '#2c2c2c', '#454545', '#8b4513', '#666', '#4a3a2a', '#333'][Math.floor(Math.random() * 7)],
+                alpha: 0.6 + Math.random() * 0.4,
+                type: type < 0.3 ? 'dust' : (type < 0.7 ? 'debris' : 'paper') // Different particle types
+            });
+        }
+
+        // Add paper particles (flutter effect)
+        for (let i = 0; i < 15; i++) {
+            this.particles.push({
+                x: Math.random() * canvas.width,
+                y: -30 - Math.random() * 100,
+                vy: 1 + Math.random() * 2,
+                vx: (Math.random() - 0.5) * 3,
+                size: 8 + Math.random() * 6,
+                rotation: Math.random() * Math.PI * 2,
+                rotationSpeed: (Math.random() - 0.5) * 0.15,
+                color: ['#f5f5f5', '#e8e8e8', '#fffacd'][Math.floor(Math.random() * 3)],
+                alpha: 0.8,
+                type: 'paper',
+                flutter: Math.random() * Math.PI * 2 // Flutter phase
             });
         }
     },
 
     update(deltaTime) {
         if (!this.active) return;
+
+        // Fade out flash
+        if (this.flashAlpha > 0) {
+            this.flashAlpha -= deltaTime * 2;
+        }
+
         for (const p of this.particles) {
             p.y += p.vy;
             p.x += p.vx;
             p.rotation += p.rotationSpeed;
-            // Accelerate slightly (gravity)
-            p.vy += 0.05;
+
+            // Different physics per particle type
+            if (p.type === 'paper') {
+                // Flutter effect for paper
+                p.flutter = (p.flutter || 0) + deltaTime * 5;
+                p.vx += Math.sin(p.flutter) * 0.3;
+                p.vy += 0.02; // Slower gravity for paper
+            } else if (p.type === 'dust') {
+                p.vy += 0.03; // Slower gravity for dust
+                p.alpha -= deltaTime * 0.3; // Dust fades
+            } else {
+                p.vy += 0.08; // Normal gravity for debris
+            }
         }
-        // Remove particles that have fallen off screen
-        this.particles = this.particles.filter(p => p.y < canvas.height + 50);
-        if (this.particles.length === 0) {
+
+        // Remove particles that have fallen off screen or faded
+        this.particles = this.particles.filter(p => p.y < canvas.height + 50 && p.alpha > 0);
+        if (this.particles.length === 0 && this.flashAlpha <= 0) {
             this.active = false;
         }
     },
 
     draw() {
         if (!this.active) return;
+
+        // Draw flash effect
+        if (this.flashAlpha > 0) {
+            ctx.fillStyle = `rgba(255, 255, 255, ${this.flashAlpha * 0.5})`;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+
         for (const p of this.particles) {
             ctx.save();
             ctx.translate(p.x, p.y);
             ctx.rotate(p.rotation);
-            ctx.globalAlpha = p.alpha;
+            ctx.globalAlpha = Math.max(0, p.alpha);
             ctx.fillStyle = p.color;
-            ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
+
+            if (p.type === 'paper') {
+                // Draw paper as rectangle with slight skew
+                ctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2);
+            } else if (p.type === 'dust') {
+                // Draw dust as small circles
+                ctx.beginPath();
+                ctx.arc(0, 0, p.size, 0, Math.PI * 2);
+                ctx.fill();
+            } else {
+                // Draw debris as squares
+                ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
+            }
             ctx.restore();
         }
     },
@@ -7299,6 +10097,7 @@ const transitionParticles = {
     stop() {
         this.active = false;
         this.particles = [];
+        this.flashAlpha = 0;
     }
 };
 
@@ -7316,12 +10115,168 @@ function showLevelTransition(floor) {
     // Start falling debris particle effect
     transitionParticles.start();
 
-    // Auto-continue after 2 seconds
+    // === PERK SELECTION: Show perk choices every floor ===
+    // Generate perk choices
+    gameState.perkChoices = getRandomPerkChoices(3);
+
+    // Show perk selection UI after brief delay
     setTimeout(() => {
         transition.style.display = 'none';
         transitionParticles.stop();
-        initLevel();
-    }, 2000);
+        showPerkSelection(floor);
+    }, 1500);
+}
+
+// === PERK SELECTION UI ===
+// Shop pricing by rarity
+const PERK_PRICES = {
+    common: 50,
+    rare: 100,
+    epic: 200
+};
+
+function showPerkSelection(floor) {
+    // Create perk selection overlay if it doesn't exist
+    let perkScreen = document.getElementById('perkSelection');
+    if (!perkScreen) {
+        perkScreen = document.createElement('div');
+        perkScreen.id = 'perkSelection';
+        perkScreen.style.cssText = `
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.95);
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            z-index: 1000; font-family: 'Courier New', monospace;
+        `;
+        document.body.appendChild(perkScreen);
+    }
+
+    const perks = gameState.perkChoices;
+    const rarityColors = {
+        common: '#4ecdc4',
+        rare: '#9b59b6',
+        epic: '#f39c12'
+    };
+
+    perkScreen.innerHTML = `
+        <h2 style="color: #fff; margin-bottom: 10px; font-size: 24px;">FLOOR ${floor} - SUPPLY CLOSET</h2>
+        <p style="color: #f1c40f; font-size: 20px; margin-bottom: 20px;">Coins: ${gameState.coinsCollected}</p>
+        <div style="display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; max-width: 900px;">
+            ${perks.map((perk, index) => {
+                const price = PERK_PRICES[perk.rarity];
+                const canAfford = gameState.coinsCollected >= price;
+                return `
+                <div class="perk-card" onclick="${canAfford ? `purchasePerk('${perk.id}', ${price})` : ''}" style="
+                    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+                    border: 3px solid ${canAfford ? rarityColors[perk.rarity] : '#444'};
+                    border-radius: 15px;
+                    padding: 25px;
+                    width: 220px;
+                    cursor: ${canAfford ? 'pointer' : 'not-allowed'};
+                    transition: all 0.2s ease;
+                    text-align: center;
+                    opacity: ${canAfford ? 1 : 0.5};
+                " ${canAfford ? `onmouseover="this.style.transform='scale(1.05)';this.style.boxShadow='0 0 30px ${rarityColors[perk.rarity]}'" onmouseout="this.style.transform='scale(1)';this.style.boxShadow='none'"` : ''}>
+                    <div style="font-size: 48px; margin-bottom: 15px;">${perk.icon}</div>
+                    <div style="color: ${canAfford ? rarityColors[perk.rarity] : '#666'}; font-size: 11px; text-transform: uppercase; margin-bottom: 8px;">${perk.rarity}</div>
+                    <div style="color: #fff; font-size: 18px; font-weight: bold; margin-bottom: 10px;">${perk.name}</div>
+                    <div style="color: #aaa; font-size: 13px; line-height: 1.4;">${perk.description}</div>
+                    <div style="margin-top: 15px; color: ${canAfford ? '#f1c40f' : '#666'}; font-size: 14px; font-weight: bold;">${price} coins</div>
+                    <div style="margin-top: 5px; color: #666; font-size: 12px;">[${index + 1}]</div>
+                </div>
+            `;}).join('')}
+        </div>
+        <button onclick="skipShop()" style="
+            margin-top: 30px;
+            padding: 15px 40px;
+            font-size: 16px;
+            background: transparent;
+            border: 2px solid #666;
+            color: #888;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+        " onmouseover="this.style.borderColor='#fff';this.style.color='#fff'" onmouseout="this.style.borderColor='#666';this.style.color='#888'">
+            SKIP (Save coins) [Space]
+        </button>
+        <p style="color: #444; margin-top: 20px; font-size: 11px;">Current perks: ${gameState.perks.length > 0 ? gameState.perks.map(p => PERKS[p]?.icon || '?').join(' ') : 'None'}</p>
+    `;
+
+    perkScreen.style.display = 'flex';
+
+    // Keyboard shortcuts for shop
+    const shopKeyHandler = (e) => {
+        const perks = gameState.perkChoices;
+        if (e.key === '1' && perks[0] && gameState.coinsCollected >= PERK_PRICES[perks[0].rarity]) {
+            purchasePerk(perks[0].id, PERK_PRICES[perks[0].rarity]);
+        } else if (e.key === '2' && perks[1] && gameState.coinsCollected >= PERK_PRICES[perks[1].rarity]) {
+            purchasePerk(perks[1].id, PERK_PRICES[perks[1].rarity]);
+        } else if (e.key === '3' && perks[2] && gameState.coinsCollected >= PERK_PRICES[perks[2].rarity]) {
+            purchasePerk(perks[2].id, PERK_PRICES[perks[2].rarity]);
+        } else if (e.key === ' ' || e.key === 'Escape') {
+            skipShop();
+        }
+    };
+    document.addEventListener('keydown', shopKeyHandler, { once: true });
+
+    // Store handler for cleanup
+    perkScreen.keyHandler = shopKeyHandler;
+}
+
+// Purchase a perk from the shop
+function purchasePerk(perkId, price) {
+    const perk = PERKS[perkId];
+    if (!perk) return;
+
+    // Check if can afford
+    if (gameState.coinsCollected < price) {
+        AudioManager.play('footstep', 0.5); // Error sound
+        return;
+    }
+
+    // Deduct coins
+    gameState.coinsCollected -= price;
+
+    // Add perk to player's collection
+    gameState.perks.push(perkId);
+    gameState.perksPicked++;
+
+    // Play sound
+    AudioManager.play('powerup', 0.8);
+
+    // Show celebration
+    showCelebration('perkPurchased', { perk: perk.name, price: price });
+
+    // Apply immediate effects for some perks
+    if (perkId === 'startTime') {
+        gameState.timer += 5;
+    }
+    if (perkId === 'shieldStart') {
+        gameState.player.shielded = 5;
+    }
+
+    // Close shop
+    closeShop();
+}
+
+// Skip the shop and continue
+function skipShop() {
+    showCelebration('shopSkipped');
+    closeShop();
+}
+
+// Close the shop screen and continue to level
+function closeShop() {
+    const perkScreen = document.getElementById('perkSelection');
+    if (perkScreen) {
+        perkScreen.style.display = 'none';
+    }
+
+    // Clear perk choices
+    gameState.perkChoices = null;
+
+    // Continue to level
+    initLevel();
 }
 
 function showVictoryScreen() {
@@ -7349,7 +10304,7 @@ function showVictoryScreen() {
     playerStats.totalWins++;
     playerStats.enemiesPunched += gameState.enemiesKnockedOut || 0;
     playerStats.enemiesZapped += gameState.enemiesZapped || 0;
-    playerStats.totalFloorsCleared += 23;
+    playerStats.totalFloorsCleared += 13;
     saveStats();
 
     // Update progress
@@ -7372,13 +10327,13 @@ function showVictoryScreen() {
     }
 
     // === UPDATED: Show coins and escape points ===
-    const floorsDescended = gameState.quickRunMode ? 7 : 23;
+    const floorsDescended = gameState.quickRunMode ? 5 : 13;
     const modeLabel = gameState.quickRunMode ? ' (Quick Run)' : '';
 
     stats.innerHTML = `
         <span style="font-size: 24px; color: #ffe66d;">⏱️ ${timeString}</span>${newRecord ? ' <span style="color: #4ecdc4;">NEW RECORD!</span>' : ''}${dailyInfo}<br><br>
         Floors descended: ${floorsDescended}${modeLabel}<br>
-        Coins collected: 🪙 ${gameState.coinsCollected || 0}<br>
+        Coins collected: 🪙 ${gameState.coinsCollectedCount || 0}<br>
         Coworkers punched: ${gameState.enemiesKnockedOut || 0}<br>
         Coworkers zapped: ${gameState.enemiesZapped || 0}<br>
         Best time: ${bestTimeStr}<br>
@@ -7391,7 +10346,7 @@ function showVictoryScreen() {
 
 // === NEW: Calculate escape points for display ===
 function calculateEscapePoints(won) {
-    const floorsDescended = (gameState.quickRunMode ? 7 : 23) - gameState.floor;
+    const floorsDescended = (gameState.quickRunMode ? 5 : 13) - gameState.floor;
     let points = floorsDescended * 10;
     points += Math.floor((gameState.coinsCollected || 0) / 10);
     points += (gameState.enemiesKnockedOut || 0) * 5;
@@ -7419,6 +10374,12 @@ function showGameOverScreen(message) {
     const bg = getRandomBackground('gameOver');
     gameOver.style.backgroundImage = `url('${bg}')`;
 
+    // === ENDLESS MODE: Special game over screen ===
+    if (gameState.endlessMode) {
+        showEndlessGameOverScreen(message);
+        return;
+    }
+
     // Encouraging messages (Playtest Feature #9)
     const floorNum = gameState.floor;
     const encouragingMessages = [
@@ -7436,16 +10397,99 @@ function showGameOverScreen(message) {
     statsHtml += `You made it to floor ${floorNum}`;
 
     // === NEW: Show coins and escape points earned (even on failure) ===
-    const startFloor = gameState.quickRunMode ? 7 : 23;
+    const startFloor = gameState.quickRunMode ? 5 : 13;
     const percentile = Math.min(95, Math.floor((startFloor - floorNum) / startFloor * 100) + 10);
     statsHtml += `<br><span style="color: #aaa; font-size: 12px;">That's better than ~${percentile}% of attempts!</span>`;
-    statsHtml += `<br><span style="color: #f1c40f;">🪙 Coins: ${gameState.coinsCollected || 0}</span>`;
+    statsHtml += `<br><span style="color: #f1c40f;">🪙 Coins: ${gameState.coinsCollectedCount || 0}</span>`;
     statsHtml += `<br><span style="color: #f39c12;">Escape Points: +${calculateEscapePoints(false)} (Total: ${playerStats.escapePoints || 0})</span>`;
 
     // Show continue option if checkpoint available
     if (gameState.continuesRemaining > 0 && gameState.lastCheckpoint && !gameState.zenMode) {
         statsHtml += `<br><br><button onclick="continueFromCheckpoint()" class="continue-btn" style="background: #27ae60; border: none; padding: 10px 20px; color: white; font-family: monospace; font-size: 14px; cursor: pointer; border-radius: 5px;">CONTINUE from Floor ${gameState.lastCheckpoint} (${gameState.continuesRemaining} left)</button>`;
     }
+
+    stats.innerHTML = statsHtml;
+    gameOver.style.display = 'flex';
+}
+
+// Endless mode game over screen
+function showEndlessGameOverScreen(message) {
+    const gameOver = document.getElementById('gameOver');
+    const msg = document.getElementById('gameOverMessage');
+    const stats = document.getElementById('gameOverStats');
+
+    const finalFloor = gameState.endlessFloor;
+    const finalScore = calculateEndlessScore(finalFloor, {
+        ...gameState.endlessStats,
+        enemiesKnockedOut: gameState.enemiesKnockedOut,
+        enemiesZapped: gameState.enemiesZapped,
+        coinsCollected: gameState.coinsCollected
+    });
+    const earnedEP = calculateEndlessEscapePoints(finalFloor, finalScore);
+
+    // Check for new personal best
+    const isNewBest = finalFloor > (playerStats.endlessBestFloor || 0);
+
+    // Update stats
+    playerStats.endlessTotalFloors += finalFloor;
+    if (isNewBest) {
+        playerStats.endlessBestFloor = finalFloor;
+        playerStats.endlessBestScore = finalScore;
+    }
+    const totalRuns = playerStats.endlessRuns || 1;
+    playerStats.endlessAverageFloor = Math.round(playerStats.endlessTotalFloors / totalRuns);
+
+    // Track milestones reached
+    gameState.endlessStats.milestonesReached.forEach(m => {
+        if (!playerStats.endlessMilestonesReached.includes(m)) {
+            playerStats.endlessMilestonesReached.push(m);
+        }
+    });
+
+    // Add escape points
+    playerStats.escapePoints = (playerStats.escapePoints || 0) + earnedEP;
+    saveStats();
+
+    // Build display
+    msg.innerHTML = isNewBest ?
+        `<span style="color: #ffd700;">🏆 NEW PERSONAL BEST! 🏆</span>` :
+        'GAME OVER';
+
+    let statsHtml = `<div style="font-size: 32px; color: #e74c3c; margin-bottom: 10px;">FLOOR -${finalFloor}</div>`;
+    statsHtml += `<div style="font-size: 20px; color: #4ecdc4; margin-bottom: 15px;">SCORE: ${finalScore.toLocaleString()}</div>`;
+
+    if (isNewBest) {
+        statsHtml += `<div style="color: #ffd700; margin-bottom: 10px;">You beat your previous best of Floor -${playerStats.endlessBestFloor - (finalFloor - (playerStats.endlessBestFloor || 0))}!</div>`;
+    } else {
+        statsHtml += `<div style="color: #aaa; margin-bottom: 10px;">Best: Floor -${playerStats.endlessBestFloor} | Score: ${playerStats.endlessBestScore.toLocaleString()}</div>`;
+    }
+
+    // Milestones reached
+    if (gameState.endlessStats.milestonesReached.length > 0) {
+        statsHtml += `<div style="margin: 10px 0; padding: 8px; background: rgba(0,0,0,0.3); border-radius: 5px;">`;
+        statsHtml += `<div style="color: #f39c12; font-size: 12px; margin-bottom: 5px;">MILESTONES REACHED</div>`;
+        gameState.endlessStats.milestonesReached.forEach(m => {
+            statsHtml += `<span style="color: #2ecc71; margin: 0 5px;">✓ ${m}</span>`;
+        });
+        statsHtml += `</div>`;
+    }
+
+    // Stats
+    statsHtml += `<div style="margin-top: 10px; font-size: 12px; color: #aaa;">`;
+    statsHtml += `Perfect Floors: ${gameState.endlessStats.perfectFloors} | `;
+    statsHtml += `Max Combo: ${gameState.endlessStats.maxCombo}x | `;
+    statsHtml += `Coins: ${gameState.coinsCollectedCount || 0}`;
+    statsHtml += `</div>`;
+
+    // Escape points
+    statsHtml += `<div style="margin-top: 10px; color: #f39c12;">`;
+    statsHtml += `Escape Points: +${earnedEP} (Total: ${playerStats.escapePoints})`;
+    statsHtml += `</div>`;
+
+    // Average stats
+    statsHtml += `<div style="margin-top: 5px; font-size: 11px; color: #666;">`;
+    statsHtml += `Endless Runs: ${playerStats.endlessRuns} | Avg Floor: -${playerStats.endlessAverageFloor}`;
+    statsHtml += `</div>`;
 
     stats.innerHTML = statsHtml;
     gameOver.style.display = 'flex';
@@ -7502,7 +10546,7 @@ function instantRestart() {
     dailyChallenge.active = false;
 
     // Reset game state for fresh run
-    gameState.floor = 23;
+    gameState.floor = 13;
     gameState.gameOver = false;
     gameState.won = false;
     gameState.started = true;
@@ -7636,7 +10680,7 @@ function bufferMovementInput(dx, dy) {
     if (!gameState.inputBuffer) initInputBuffer();
 
     const timeSinceMove = Date.now() - lastMove;
-    const moveDelay = MOVE_DELAY / (gameState.powerup === 'speed' ? 2 : 1);
+    const moveDelay = getEffectiveMoveDelay();
     const bufferWindow = settings.inputBufferWindow || 80;
 
     // Only buffer if we're within the buffer window before next move allowed
@@ -7658,21 +10702,24 @@ function bufferActionInput() {
 }
 
 function processInputBuffer() {
-    if (!settings.inputBufferingEnabled) return;
-    if (!gameState.inputBuffer) return;
+    if (!settings.inputBufferingEnabled) return false;
+    if (!gameState.inputBuffer) return false;
 
     const now = Date.now();
     const bufferExpiry = 150; // Buffered inputs expire after 150ms
+    let movementProcessed = false;
 
     // Process buffered movement
     if (gameState.inputBuffer.direction) {
         if (now - gameState.inputBuffer.timestamp < bufferExpiry) {
             const { dx, dy } = gameState.inputBuffer.direction;
             const timeSinceMove = now - lastMove;
-            const moveDelay = MOVE_DELAY / (gameState.powerup === 'speed' ? 2 : 1);
+            const moveDelay = getEffectiveMoveDelay();
 
             if (timeSinceMove >= moveDelay) {
-                movePlayer(dx, dy);
+                if (movePlayer(dx, dy)) {
+                    movementProcessed = true;
+                }
                 gameState.inputBuffer.direction = null;
             }
         } else {
@@ -7692,6 +10739,8 @@ function processInputBuffer() {
             gameState.inputBuffer.action = false;
         }
     }
+
+    return movementProcessed;
 }
 
 // ============================================
@@ -7974,6 +11023,19 @@ function update(deltaTime) {
         // Trigger squash when player just stopped moving (Super Meat Boy feel)
         if (characterAnimationState.player.isMoving) {
             triggerSquash();
+
+            // === LANDING PARTICLES: 3-5 dust particles when player stops ===
+            for (let p = 0; p < 3 + Math.floor(Math.random() * 3); p++) {
+                gameState.particles.push({
+                    x: gameState.player.x * TILE_SIZE + TILE_SIZE / 2 + (Math.random() - 0.5) * TILE_SIZE * 0.5,
+                    y: gameState.player.y * TILE_SIZE + TILE_SIZE * 0.85,
+                    vx: (Math.random() - 0.5) * 3,
+                    vy: -Math.random() * 1.5 - 0.5,
+                    size: 2 + Math.random() * 2,
+                    color: '#aaa',
+                    lifetime: 0.35
+                });
+            }
         }
         characterAnimationState.player.isMoving = false;
     }
@@ -7997,6 +11059,21 @@ function update(deltaTime) {
     // Update screen shake
     screenShake.update(deltaTime);
 
+    // === ENDLESS MODE: Update milestone flash decay ===
+    if (gameState.milestoneFlash && gameState.milestoneFlash > 0) {
+        gameState.milestoneFlash -= deltaTime * 2; // Fade out over 0.5s
+        if (gameState.milestoneFlash < 0) gameState.milestoneFlash = 0;
+    }
+
+    // === ENDLESS MODE: Unstable floor wall shifting ===
+    if (gameState.endlessMode && gameState.endlessDangerZone === 'unstable' && gameState.started && !gameState.gameOver) {
+        gameState.endlessWallShiftTimer -= deltaTime;
+        if (gameState.endlessWallShiftTimer <= 0) {
+            shiftUnstableWalls();
+            gameState.endlessWallShiftTimer = 20; // Reset timer
+        }
+    }
+
     if (!gameState.started || gameState.gameOver || gameState.won) return;
 
     if (gameState.imploding) {
@@ -8019,7 +11096,9 @@ function update(deltaTime) {
         const burnMultiplier = gameState.player.burning > 0 ? 2 : 1;
         // Apply game speed setting
         const speedMultiplier = settings.gameSpeed || 1.0;
-        gameState.timer -= deltaTime * cafeteriaMultiplier * burnMultiplier * speedMultiplier;
+        // === SLOW-MO: Timer ticks slower during slow-mo (player advantage) ===
+        const slowMoMultiplier = gameState.slowMoActive ? gameState.slowMoFactor : 1.0;
+        gameState.timer -= deltaTime * cafeteriaMultiplier * burnMultiplier * speedMultiplier * slowMoMultiplier;
     }
 
     // Update celebrations
@@ -8030,6 +11109,94 @@ function update(deltaTime) {
         gameState.coinComboTimer -= deltaTime;
         if (gameState.coinComboTimer <= 0) {
             gameState.coinCombo = 0;
+        }
+    }
+
+    // === COIN POP ANIMATION: Update collecting coins ===
+    for (const coin of gameState.coins) {
+        if (coin.collecting) {
+            // Shrink scale and fade out
+            coin.collectScale = (coin.collectScale || 1.3) * 0.85;
+            coin.collectAlpha = (coin.collectAlpha || 1.0) - deltaTime * 4;
+            if (coin.collectAlpha <= 0) {
+                coin.collecting = false;
+                coin.collected = true;
+            }
+        }
+    }
+
+    // === TIMER PULSE ANIMATION: Update timer scale ===
+    if (gameState.timerPulseScale > 1.0) {
+        gameState.timerPulseScale = Math.max(1.0, gameState.timerPulseScale - deltaTime * 3);
+    }
+
+    // === ENEMY SPAWN FLASH: Decay flash effect ===
+    if (gameState.enemySpawnFlash > 0) {
+        gameState.enemySpawnFlash -= deltaTime * 3;
+    }
+
+    // === COIN MAGNET PERK: Attract coins from 3 tiles away ===
+    if (gameState.perks.includes('coinMagnet')) {
+        for (const coin of gameState.coins) {
+            if (coin.collected) continue;
+
+            const dist = Math.abs(coin.x - gameState.player.x) + Math.abs(coin.y - gameState.player.y);
+            if (dist <= 3 && dist > 0) {
+                // Initialize magnet animation state if not present
+                if (!coin.magnetizing) {
+                    coin.magnetizing = true;
+                    coin.magnetTimer = 0;
+                }
+
+                // Update magnet timer
+                coin.magnetTimer += deltaTime;
+
+                // Move coin toward player every 0.15 seconds
+                if (coin.magnetTimer >= 0.15) {
+                    coin.magnetTimer = 0;
+
+                    // Move on longer axis first
+                    const dx = gameState.player.x - coin.x;
+                    const dy = gameState.player.y - coin.y;
+
+                    if (Math.abs(dx) >= Math.abs(dy) && dx !== 0) {
+                        coin.x += Math.sign(dx);
+                    } else if (dy !== 0) {
+                        coin.y += Math.sign(dy);
+                    }
+
+                    // Create attraction particle trail
+                    gameState.particles.push({
+                        x: coin.x * TILE_SIZE + TILE_SIZE / 2,
+                        y: coin.y * TILE_SIZE + TILE_SIZE / 2,
+                        vx: (Math.random() - 0.5) * 2,
+                        vy: (Math.random() - 0.5) * 2,
+                        size: 2,
+                        color: '#f1c40f',
+                        life: 0.2
+                    });
+
+                    // Auto-collect if reached player
+                    if (coin.x === gameState.player.x && coin.y === gameState.player.y) {
+                        coin.collected = true;
+                        const coinMultiplier = gameState.perks.includes('luckyCoins') ? 2 : 1;
+                        gameState.coinsCollected += coin.value * coinMultiplier;
+                        gameState.coinsCollectedCount++;
+
+                        // Coin combo
+                        if (gameState.coinComboTimer > 0) {
+                            gameState.coinCombo++;
+                        } else {
+                            gameState.coinCombo = 1;
+                        }
+                        gameState.coinComboTimer = 2.0;
+
+                        // Pitch-scaled coin sound
+                        const pitchScale = 1.0 + (gameState.coinCombo * 0.08);
+                        AudioManager.play('powerup', 0.5, Math.min(pitchScale, 2.0));
+                    }
+                }
+            }
         }
     }
 
@@ -8063,6 +11230,16 @@ function update(deltaTime) {
     // Update fires - spawn new ones and grow existing
     updateFires(deltaTime);
 
+    // Update environmental hazards (sparking wires, coffee spills, copiers)
+    // Spawn hazards after initial delay
+    if (gameState.hazardSpawnTimer > 0) {
+        gameState.hazardSpawnTimer -= deltaTime;
+        if (gameState.hazardSpawnTimer <= 0) {
+            spawnEnvironmentalHazards();
+        }
+    }
+    updateEnvironmentalHazards(deltaTime);
+
     // Update collecting powerups (suction animation)
     updateCollectingPowerups(deltaTime);
 
@@ -8083,6 +11260,46 @@ function update(deltaTime) {
     // Update stun timers
     if (gameState.player.stunned > 0) {
         gameState.player.stunned -= deltaTime;
+    }
+
+    // === DASH COOLDOWN UPDATE ===
+    if (gameState.player.dashCooldown > 0) {
+        gameState.player.dashCooldown -= deltaTime;
+    }
+    if (gameState.player.dashInvincible > 0) {
+        gameState.player.dashInvincible -= deltaTime;
+    }
+
+    // === PUNCH COOLDOWN UPDATE ===
+    if (gameState.player.punchCooldown > 0) {
+        gameState.player.punchCooldown -= deltaTime;
+    }
+
+    // === WALL BREAK COOLDOWN UPDATE ===
+    if (gameState.player.wallBreakCooldown > 0) {
+        gameState.player.wallBreakCooldown -= deltaTime;
+    }
+
+    // === COMBO TIMER DECAY ===
+    if (gameState.killComboTimer > 0) {
+        // Apply slow-mo factor to combo decay (combo lasts longer in slow-mo)
+        gameState.killComboTimer -= deltaTime * (gameState.slowMoActive ? 0.5 : 1);
+        if (gameState.killComboTimer <= 0) {
+            // Combo expired
+            if (gameState.killCombo >= 3) {
+                showCelebration('comboBreak');
+            }
+            gameState.killCombo = 0;
+        }
+    }
+
+    // === SLOW-MO SYSTEM UPDATE ===
+    if (gameState.slowMoActive) {
+        gameState.slowMoTimer -= deltaTime; // Real time, not slowed
+        if (gameState.slowMoTimer <= 0) {
+            gameState.slowMoActive = false;
+            gameState.slowMoFactor = 1.0;
+        }
     }
 
     // Ghost replay system - record and playback
@@ -8115,6 +11332,79 @@ function update(deltaTime) {
     // Update shield timer
     if (gameState.player.shielded > 0) {
         gameState.player.shielded -= deltaTime;
+    }
+
+    // Update invincibility timer
+    if (gameState.player.invincible > 0) {
+        gameState.player.invincible -= deltaTime;
+        if (gameState.player.invincible <= 0) {
+            AudioManager.play('powerupExpire');
+        }
+    }
+
+    // === UPDATE NEW POWERUP TIMERS ===
+
+    // Time Freeze - unfreeze enemies when timer expires
+    if (gameState.timeFreezeActive) {
+        gameState.timeFreezeTimer -= deltaTime;
+        if (gameState.timeFreezeTimer <= 0) {
+            gameState.timeFreezeActive = false;
+            for (const enemy of gameState.enemies) {
+                enemy.frozen = false;
+            }
+            AudioManager.play('powerupExpire');
+        }
+    }
+
+    // Coin Magnet - pull coins toward player
+    if (gameState.coinMagnetActive) {
+        gameState.coinMagnetTimer -= deltaTime;
+
+        // Pull all coins toward player
+        for (const coin of gameState.coins) {
+            const dx = gameState.player.x - coin.x;
+            const dy = gameState.player.y - coin.y;
+            const dist = Math.abs(dx) + Math.abs(dy);
+
+            if (dist > 0 && dist <= 10) { // Affect coins within 10 tiles
+                // Move coin toward player
+                if (Math.abs(dx) > Math.abs(dy)) {
+                    coin.x += dx > 0 ? 1 : -1;
+                } else if (dy !== 0) {
+                    coin.y += dy > 0 ? 1 : -1;
+                }
+            }
+        }
+
+        if (gameState.coinMagnetTimer <= 0) {
+            gameState.coinMagnetActive = false;
+            AudioManager.play('powerupExpire');
+        }
+    }
+
+    // Clone decoy - enemies chase it instead of player
+    if (gameState.clone) {
+        gameState.clone.timer -= deltaTime;
+        gameState.clone.frame += deltaTime * 8;
+        gameState.clone.blinkTimer += deltaTime;
+
+        // Make enemies target the clone instead of player
+        for (const enemy of gameState.enemies) {
+            if (enemy.stunned <= 0 && !enemy.frozen) {
+                const distToPlayer = Math.abs(enemy.x - gameState.player.x) + Math.abs(enemy.y - gameState.player.y);
+                const distToClone = Math.abs(enemy.x - gameState.clone.x) + Math.abs(enemy.y - gameState.clone.y);
+
+                // 80% of enemies chase clone, 20% still chase player
+                if (distToClone < distToPlayer || Math.random() < 0.8) {
+                    enemy.target = 'clone';
+                }
+            }
+        }
+
+        if (gameState.clone.timer <= 0) {
+            gameState.clone = null;
+            showCelebration('decoyExpired');
+        }
     }
 
     // Update dog companion
@@ -8193,20 +11483,21 @@ function update(deltaTime) {
     updateSquashStretch(deltaTime);
 
     // Process any buffered inputs first
-    processInputBuffer();
+    const bufferedMoveProcessed = processInputBuffer();
 
     // Movement using combined input (with input buffering support)
-    if (currentInput.up) {
-        if (!movePlayer(0, -1)) bufferMovementInput(0, -1);
-    }
-    if (currentInput.down) {
-        if (!movePlayer(0, 1)) bufferMovementInput(0, 1);
-    }
-    if (currentInput.left) {
-        if (!movePlayer(-1, 0)) bufferMovementInput(-1, 0);
-    }
-    if (currentInput.right) {
-        if (!movePlayer(1, 0)) bufferMovementInput(1, 0);
+    // Only process current input if no buffered move was just executed
+    // Use else-if to ensure only one direction per frame
+    if (!bufferedMoveProcessed) {
+        if (currentInput.up) {
+            if (!movePlayer(0, -1)) bufferMovementInput(0, -1);
+        } else if (currentInput.down) {
+            if (!movePlayer(0, 1)) bufferMovementInput(0, 1);
+        } else if (currentInput.left) {
+            if (!movePlayer(-1, 0)) bufferMovementInput(-1, 0);
+        } else if (currentInput.right) {
+            if (!movePlayer(1, 0)) bufferMovementInput(1, 0);
+        }
     }
 
     moveEnemies();
@@ -8283,14 +11574,40 @@ function startGame(mode = 'normal') {
 
     document.getElementById('message').style.display = 'none';
 
-    // === NEW: Quick Run Mode (7 floors instead of 23) ===
+    // === ENDLESS DESCENT MODE ===
+    const isEndless = mode === 'endless';
+    gameState.endlessMode = isEndless;
+
+    if (isEndless) {
+        // Endless mode starts at floor 1 internally, displayed as negative
+        gameState.floor = -1;  // Display as negative
+        gameState.endlessFloor = 1;  // Internal counter
+        gameState.endlessScore = 0;
+        gameState.endlessDangerZone = null;
+        gameState.endlessIsBreatherFloor = false;
+        gameState.endlessWallShiftTimer = 0;
+        gameState.endlessBlackoutRadius = 0;
+        gameState.endlessStats = {
+            totalTimeBonus: 0,
+            maxCombo: 0,
+            perfectFloors: 0,
+            milestoneBonus: 0,
+            milestonesReached: []
+        };
+        playerStats.endlessRuns++;
+        saveStats();
+    }
+
+    // === NEW: Quick Run Mode (5 floors instead of 13) ===
     // Check if mode includes 'quick' prefix
-    const isQuickRun = mode.startsWith('quick');
-    const actualMode = isQuickRun ? mode.replace('quick_', '') : mode;
+    const isQuickRun = !isEndless && mode.startsWith('quick');
+    const actualMode = isQuickRun ? mode.replace('quick_', '') : (isEndless ? 'normal' : mode);
 
     gameState.quickRunMode = isQuickRun;
-    gameState.floor = isQuickRun ? 7 : 23; // Quick run starts at floor 7
-    gameState.quickRunStartFloor = isQuickRun ? 7 : 23;
+    if (!isEndless) {
+        gameState.floor = isQuickRun ? 5 : 13; // Quick run starts at floor 5
+        gameState.quickRunStartFloor = isQuickRun ? 5 : 13;
+    }
 
     gameState.gameOver = false;
     gameState.won = false;
@@ -8299,14 +11616,35 @@ function startGame(mode = 'normal') {
     gameState.player.hitCount = 0;
     gameState.player.lastHitTime = 0;
     gameState.player.burning = 0;
+    // === DASH/PUNCH: Reset for new run ===
+    gameState.player.dashCooldown = 0;
+    gameState.player.dashInvincible = 0;
+    gameState.player.isDashing = false;
+    gameState.player.punchCooldown = 0;
+    gameState.player.isPunching = false;
+    // === COMBO/STREAK: Full reset for new run ===
+    gameState.killCombo = 0;
+    gameState.killComboTimer = 0;
+    gameState.killStreak = 0;
+    gameState.maxComboThisRun = 0;
+    gameState.lastKillTime = 0;
+    // === SLOW-MO: Reset for new run ===
+    gameState.slowMoActive = false;
+    gameState.slowMoTimer = 0;
+    gameState.slowMoFactor = 1.0;
+    // === PERKS: Reset for new run ===
+    gameState.perks = [];
+    gameState.perkChoices = null;
+    gameState.perksPicked = 0;
     gameState.enemiesKnockedOut = 0;
     gameState.enemiesZapped = 0;
     gameState.enemiesDodged = 0;
     gameState.fires = [];
     gameState.fireSpawnTimer = 0;
 
-    // === NEW: Reset coin collection ===
-    gameState.coinsCollected = 0;
+    // === SHOP ECONOMY: Start with coins to buy first upgrade ===
+    gameState.coinsCollected = 50; // Starting coins for first shop purchase
+    gameState.coinsCollectedCount = 0;
     gameState.coinCombo = 0;
     gameState.coinComboTimer = 0;
 
@@ -8476,9 +11814,37 @@ document.addEventListener('keydown', (e) => {
     if (gameState.paused) return;
 
     keys[e.code] = true;
+
+    // === DASH (Space) - Core movement skill ===
     if (e.code === 'Space') {
         e.preventDefault();
-        usePowerup();
+        if (gameState.started && !gameState.gameOver && !gameState.won) {
+            performDash();
+        }
+    }
+
+    // === PUNCH (Z or X) - Default attack, gives TIME on hit ===
+    if (e.code === 'KeyZ' || e.code === 'KeyX') {
+        e.preventDefault();
+        if (gameState.started && !gameState.gameOver && !gameState.won) {
+            performPunch();
+        }
+    }
+
+    // === USE POWERUP (E) - Use collected powerup ===
+    if (e.code === 'KeyE') {
+        e.preventDefault();
+        if (gameState.started && !gameState.gameOver && !gameState.won) {
+            usePowerup();
+        }
+    }
+
+    // === WALL BREAKER (Shift) - Secret ability unlocked by using all 4 exits ===
+    if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && gameState.hasWallBreaker) {
+        e.preventDefault();
+        if (gameState.started && !gameState.gameOver && !gameState.won) {
+            performWallBreak();
+        }
     }
 });
 
