@@ -8907,4 +8907,19 @@ initDifficultyButtons();
 addResumeButtonToTitle();
 updatePlayerColors();
 loadStats();  // Load player stats from localStorage
+
+// Watch for modal visibility changes to toggle HUD/canvas visibility
+const messageModal = document.getElementById('message');
+const modalObserver = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+        if (mutation.attributeName === 'style') {
+            const isVisible = messageModal.style.display !== 'none';
+            document.body.classList.toggle('menu-active', isVisible);
+        }
+    });
+});
+modalObserver.observe(messageModal, { attributes: true, attributeFilter: ['style'] });
+// Set initial state
+document.body.classList.add('menu-active');
+
 requestAnimationFrame(gameLoop);
