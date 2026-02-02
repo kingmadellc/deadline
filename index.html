@@ -1,0 +1,3373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DEADLINE - Floor 23</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #1a1a2e;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+        }
+
+        #gameContainer {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+
+        #hud {
+            display: flex;
+            gap: 30px;
+            color: #fff;
+            font-size: 18px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        #hud span {
+            padding: 10px 20px;
+            background: #16213e;
+            border: 3px solid #0f3460;
+            image-rendering: pixelated;
+        }
+
+        #timer {
+            color: #ff6b6b;
+        }
+
+        #floor {
+            color: #4ecdc4;
+        }
+
+        #powerup {
+            color: #ffe66d;
+        }
+
+        #gameCanvas {
+            border: 4px solid #e94560;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+
+        #message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: center center / cover no-repeat;
+            color: #fff;
+            padding: 0;
+            text-align: center;
+            border: 4px solid #e94560;
+            border-radius: 12px;
+            display: none;
+            z-index: 100;
+            width: 750px;
+            height: 680px;
+            box-shadow:
+                0 0 60px rgba(233, 69, 96, 0.6),
+                0 0 100px rgba(255, 100, 50, 0.3),
+                inset 0 0 100px rgba(0,0,0,0.5);
+            overflow: hidden;
+        }
+
+        /* Title screen uses flexbox for clean vertical layout */
+        #message .content-overlay {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(180deg,
+                rgba(0,0,0,0.7) 0%,
+                rgba(0,0,0,0.4) 30%,
+                rgba(0,0,0,0.4) 50%,
+                rgba(0,0,0,0.85) 75%,
+                rgba(0,0,0,0.95) 100%);
+            padding: 10px 30px 15px 30px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 0;
+        }
+
+        /* Logo container at top - styles moved to enhanced animation section */
+
+        /* DEADLINE Logo Image */
+        #game-title-logo {
+            width: 90%;
+            max-width: 620px;
+            height: auto;
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: crisp-edges;
+            filter: drop-shadow(0 0 30px rgba(255, 100, 0, 1))
+                    drop-shadow(0 0 60px rgba(255, 80, 0, 0.8))
+                    drop-shadow(0 0 100px rgba(255, 50, 0, 0.5))
+                    drop-shadow(0 0 150px rgba(255, 30, 0, 0.3));
+            animation: logo-fire-glow 1.2s ease-in-out infinite,
+                       logo-flicker 0.08s steps(2) infinite,
+                       logo-surge 4s ease-in-out infinite;
+            position: relative;
+            z-index: 2;
+        }
+
+        /* Hide old h1 text (screen reader fallback only) */
+        #message h1 {
+            display: none;
+        }
+
+        /* Intense fire glow breathing animation */
+        @keyframes logo-fire-glow {
+            0%, 100% {
+                filter: drop-shadow(0 0 25px rgba(255, 100, 0, 1))
+                        drop-shadow(0 0 50px rgba(255, 80, 0, 0.9))
+                        drop-shadow(0 0 80px rgba(255, 50, 0, 0.6))
+                        drop-shadow(0 0 120px rgba(255, 30, 0, 0.4));
+                transform: scale(1) translateY(0);
+            }
+            15% {
+                filter: drop-shadow(0 0 40px rgba(255, 180, 50, 1))
+                        drop-shadow(0 0 80px rgba(255, 120, 0, 1))
+                        drop-shadow(0 0 120px rgba(255, 80, 0, 0.8))
+                        drop-shadow(0 0 180px rgba(255, 50, 0, 0.5));
+            }
+            30% {
+                filter: drop-shadow(0 0 35px rgba(255, 150, 30, 1))
+                        drop-shadow(0 0 70px rgba(255, 100, 0, 0.95))
+                        drop-shadow(0 0 110px rgba(255, 70, 0, 0.7))
+                        drop-shadow(0 0 160px rgba(255, 40, 0, 0.45));
+                transform: scale(1.012) translateY(-2px);
+            }
+            50% {
+                filter: drop-shadow(0 0 50px rgba(255, 220, 100, 1))
+                        drop-shadow(0 0 100px rgba(255, 150, 0, 1))
+                        drop-shadow(0 0 160px rgba(255, 100, 0, 0.9))
+                        drop-shadow(0 0 220px rgba(255, 60, 0, 0.6));
+                transform: scale(1.02) translateY(-3px);
+            }
+            70% {
+                filter: drop-shadow(0 0 38px rgba(255, 160, 40, 1))
+                        drop-shadow(0 0 75px rgba(255, 110, 0, 0.95))
+                        drop-shadow(0 0 115px rgba(255, 75, 0, 0.75))
+                        drop-shadow(0 0 170px rgba(255, 45, 0, 0.5));
+            }
+            85% {
+                filter: drop-shadow(0 0 30px rgba(255, 120, 20, 1))
+                        drop-shadow(0 0 60px rgba(255, 90, 0, 0.9))
+                        drop-shadow(0 0 95px rgba(255, 60, 0, 0.65))
+                        drop-shadow(0 0 140px rgba(255, 35, 0, 0.4));
+                transform: scale(1.005) translateY(-1px);
+            }
+        }
+
+        /* Aggressive flicker for fire realism */
+        @keyframes logo-flicker {
+            0%, 100% {
+                opacity: 1;
+            }
+            25% {
+                opacity: 0.92;
+            }
+            50% {
+                opacity: 0.98;
+            }
+            75% {
+                opacity: 0.88;
+            }
+        }
+
+        /* Periodic intense surge */
+        @keyframes logo-surge {
+            0%, 85%, 100% {
+                filter: brightness(1);
+            }
+            90% {
+                filter: brightness(1.3);
+            }
+            95% {
+                filter: brightness(1.5);
+            }
+        }
+
+        /* Title container for ember particles */
+        #message .title-top {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding-top: 0;
+            margin-bottom: -40px;
+            flex-shrink: 0;
+            position: relative;
+            overflow: visible;
+        }
+
+        /* Canvas-based ember particle system */
+        .ember-canvas {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -45%);
+            width: 700px;
+            height: 500px;
+            pointer-events: none;
+            z-index: 4;
+        }
+
+        /* Heat shimmer/distortion effect on title container - INTENSE */
+        .title-top::before {
+            content: '';
+            position: absolute;
+            top: 40%;
+            left: 0%;
+            right: 0%;
+            height: 120px;
+            background: linear-gradient(180deg,
+                transparent 0%,
+                rgba(255, 100, 0, 0.08) 20%,
+                rgba(255, 180, 50, 0.15) 40%,
+                rgba(255, 220, 100, 0.12) 50%,
+                rgba(255, 150, 50, 0.1) 60%,
+                rgba(255, 100, 0, 0.06) 80%,
+                transparent 100%);
+            animation: heat-shimmer 0.8s ease-in-out infinite;
+            pointer-events: none;
+            z-index: 3;
+            filter: blur(6px);
+        }
+
+        @keyframes heat-shimmer {
+            0%, 100% {
+                transform: scaleY(1) translateY(0) scaleX(1);
+                opacity: 0.7;
+            }
+            20% {
+                transform: scaleY(1.15) translateY(-5px) scaleX(1.02);
+                opacity: 0.9;
+            }
+            40% {
+                transform: scaleY(0.9) translateY(3px) scaleX(0.98);
+                opacity: 0.6;
+            }
+            60% {
+                transform: scaleY(1.1) translateY(-4px) scaleX(1.01);
+                opacity: 0.85;
+            }
+            80% {
+                transform: scaleY(0.95) translateY(2px) scaleX(0.99);
+                opacity: 0.75;
+            }
+        }
+
+        /* Ambient glow beneath logo - BLAZING */
+        .title-top::after {
+            content: '';
+            position: absolute;
+            bottom: -30px;
+            left: 5%;
+            right: 5%;
+            height: 80px;
+            background: radial-gradient(ellipse at center,
+                rgba(255, 200, 50, 0.7) 0%,
+                rgba(255, 120, 0, 0.5) 30%,
+                rgba(255, 80, 0, 0.3) 50%,
+                rgba(255, 50, 0, 0.15) 70%,
+                transparent 90%);
+            animation: underglow-pulse 1.5s ease-in-out infinite, underglow-flicker 0.1s steps(3) infinite;
+            pointer-events: none;
+            z-index: 0;
+            filter: blur(12px);
+        }
+
+        @keyframes underglow-pulse {
+            0%, 100% {
+                opacity: 0.7;
+                transform: scaleX(1) scaleY(1);
+            }
+            30% {
+                opacity: 1;
+                transform: scaleX(1.15) scaleY(1.2);
+            }
+            60% {
+                opacity: 0.85;
+                transform: scaleX(1.08) scaleY(1.1);
+            }
+        }
+
+        @keyframes underglow-flicker {
+            0%, 100% { opacity: 1; }
+            33% { opacity: 0.9; }
+            66% { opacity: 0.95; }
+        }
+
+        /* Extra: Heat distortion emanating from logo */
+        .title-top .ember-particles::before {
+            content: '';
+            position: absolute;
+            top: -100px;
+            left: -200px;
+            width: 400px;
+            height: 200px;
+            background: radial-gradient(ellipse at center bottom,
+                rgba(255, 150, 50, 0.15) 0%,
+                rgba(255, 100, 0, 0.08) 30%,
+                rgba(255, 80, 0, 0.04) 50%,
+                transparent 70%);
+            animation: heat-radiate 2s ease-in-out infinite;
+            pointer-events: none;
+            filter: blur(15px);
+        }
+
+        @keyframes heat-radiate {
+            0%, 100% {
+                transform: scaleY(1) scaleX(1);
+                opacity: 0.6;
+            }
+            50% {
+                transform: scaleY(1.3) scaleX(1.15);
+                opacity: 1;
+            }
+        }
+
+        /* Secondary heat wave */
+        .title-top .ember-particles::after {
+            content: '';
+            position: absolute;
+            top: -150px;
+            left: -250px;
+            width: 500px;
+            height: 300px;
+            background: radial-gradient(ellipse at center bottom,
+                rgba(255, 180, 80, 0.08) 0%,
+                rgba(255, 120, 0, 0.04) 40%,
+                transparent 60%);
+            animation: heat-radiate-secondary 2.5s ease-in-out 0.5s infinite;
+            pointer-events: none;
+            filter: blur(25px);
+        }
+
+        @keyframes heat-radiate-secondary {
+            0%, 100% {
+                transform: scaleY(1) scaleX(1);
+                opacity: 0.4;
+            }
+            50% {
+                transform: scaleY(1.4) scaleX(1.2);
+                opacity: 0.8;
+            }
+        }
+
+        /* Middle content section */
+        #message .middle-content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex-grow: 0;
+            justify-content: flex-start;
+            gap: 2px;
+            margin: 0;
+            margin-top: 0;
+        }
+
+        #message .subtitle {
+            font-size: 15px;
+            font-weight: bold;
+            color: #fff;
+            margin: 0;
+            letter-spacing: 4px;
+            text-shadow:
+                0 0 10px rgba(0, 0, 0, 1),
+                0 0 20px rgba(0, 0, 0, 0.8),
+                2px 2px 4px rgba(0, 0, 0, 1);
+            background: rgba(0, 0, 0, 0.75);
+            padding: 8px 24px;
+            border-radius: 4px;
+            display: inline-block;
+            border: 1px solid rgba(233, 69, 96, 0.6);
+        }
+
+        #message .tagline-small {
+            font-size: 13px;
+            font-weight: 500;
+            color: #eee;
+            margin: 0;
+            line-height: 1.5;
+            text-shadow:
+                0 0 8px rgba(0, 0, 0, 1),
+                0 0 16px rgba(0, 0, 0, 0.8),
+                1px 1px 3px rgba(0, 0, 0, 1);
+            padding: 6px 16px;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 4px;
+        }
+
+        /* Bottom menu section */
+        #message .menu-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex-shrink: 0;
+            width: 100%;
+            margin-top: 20px;
+        }
+
+        /* Unified Button Grid */
+        #message .button-group {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 8px;
+            margin: 0;
+            width: 100%;
+        }
+
+        #message .button-group.main-buttons {
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 0;
+        }
+
+        /* Primary Button (Start Escape) */
+        #message button,
+        #message .menu-btn {
+            padding: 10px 24px;
+            font-size: 13px;
+            background: linear-gradient(180deg, #e94560 0%, #c73e54 100%);
+            color: #fff;
+            border: 2px solid rgba(255,255,255,0.15);
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            text-transform: uppercase;
+            border-radius: 6px;
+            letter-spacing: 2px;
+            box-shadow: 0 4px 15px rgba(233, 69, 96, 0.5);
+            transition: all 0.2s ease;
+            min-width: 180px;
+        }
+
+        #message button:hover,
+        #message .menu-btn:hover {
+            background: linear-gradient(180deg, #ff6b6b 0%, #e94560 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(233, 69, 96, 0.6);
+        }
+
+        /* Primary Start Button - Extra emphasis */
+        #message button[onclick*="startGame"],
+        #message .btn-primary {
+            padding: 12px 40px;
+            font-size: 16px;
+            letter-spacing: 3px;
+            animation: pulse-btn 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-btn {
+            0%, 100% { box-shadow: 0 3px 15px rgba(233, 69, 96, 0.5); }
+            50% { box-shadow: 0 4px 25px rgba(233, 69, 96, 0.8), 0 0 40px rgba(233, 69, 96, 0.3); }
+        }
+
+        /* Quick Play Button */
+        #message .btn-quick {
+            padding: 10px 24px;
+            font-size: 14px;
+            letter-spacing: 2px;
+            background: linear-gradient(180deg, #2ecc71 0%, #27ae60 100%);
+            box-shadow: 0 3px 12px rgba(46, 204, 113, 0.4);
+            border: 2px solid rgba(46, 204, 113, 0.6);
+        }
+
+        #message .btn-quick:hover {
+            background: linear-gradient(180deg, #3dd87e 0%, #2ecc71 100%);
+            box-shadow: 0 5px 20px rgba(46, 204, 113, 0.6);
+        }
+
+        /* Difficulty Slider */
+        #message .difficulty-slider-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 18px;
+            width: 100%;
+            max-width: 320px;
+        }
+
+        #message .difficulty-label {
+            font-size: 13px;
+            font-weight: bold;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            transition: color 0.3s ease;
+        }
+
+        #message .difficulty-desc {
+            font-size: 10px;
+            color: #888;
+            letter-spacing: 1px;
+            transition: color 0.3s ease;
+        }
+
+        #message .slider-track-container {
+            position: relative;
+            width: 100%;
+            padding: 0 10px;
+        }
+
+        #message .difficulty-slider {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 8px;
+            border-radius: 4px;
+            background: linear-gradient(90deg,
+                #b482ff 0%,
+                #64c8ff 33%,
+                #4ecdc4 50%,
+                #ff6464 75%,
+                #ff4444 100%);
+            outline: none;
+            cursor: pointer;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+
+        #message .difficulty-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #fff;
+            cursor: pointer;
+            border: 3px solid #e94560;
+            box-shadow: 0 0 10px rgba(233, 69, 96, 0.5), 0 2px 6px rgba(0,0,0,0.3);
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        #message .difficulty-slider::-webkit-slider-thumb:hover {
+            transform: scale(1.15);
+            box-shadow: 0 0 15px rgba(233, 69, 96, 0.7), 0 3px 8px rgba(0,0,0,0.4);
+        }
+
+        #message .difficulty-slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #fff;
+            cursor: pointer;
+            border: 3px solid #e94560;
+            box-shadow: 0 0 10px rgba(233, 69, 96, 0.5), 0 2px 6px rgba(0,0,0,0.3);
+        }
+
+        #message .slider-labels {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            padding: 0 5px;
+            margin-top: 2px;
+        }
+
+        #message .slider-labels span {
+            font-size: 8px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Difficulty color states */
+        #message .difficulty-label.zen { color: #b482ff; text-shadow: 0 0 10px rgba(180, 130, 255, 0.5); }
+        #message .difficulty-label.chill { color: #64c8ff; text-shadow: 0 0 10px rgba(100, 200, 255, 0.5); }
+        #message .difficulty-label.normal { color: #4ecdc4; text-shadow: 0 0 10px rgba(78, 205, 196, 0.5); }
+        #message .difficulty-label.intense { color: #ff6464; text-shadow: 0 0 10px rgba(255, 100, 100, 0.5); }
+        #message .difficulty-label.crunch { color: #ff4444; text-shadow: 0 0 10px rgba(255, 68, 68, 0.5); }
+
+        /* Main Settings Menu */
+        #mainSettingsMenu {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 200;
+        }
+
+        .main-settings-overlay {
+            background: linear-gradient(180deg, rgba(30, 30, 50, 0.98) 0%, rgba(20, 20, 35, 0.99) 100%);
+            border: 3px solid #e94560;
+            border-radius: 12px;
+            padding: 25px 35px;
+            max-width: 400px;
+            width: 90%;
+            box-shadow: 0 0 40px rgba(233, 69, 96, 0.4);
+        }
+
+        .main-settings-overlay h2 {
+            color: #fff;
+            font-size: 22px;
+            margin-bottom: 20px;
+            text-align: center;
+            letter-spacing: 3px;
+        }
+
+        .main-settings-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .menu-option-btn {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 14px 18px;
+            background: linear-gradient(180deg, rgba(50, 50, 70, 0.9) 0%, rgba(35, 35, 50, 0.95) 100%);
+            border: 2px solid rgba(78, 205, 196, 0.3);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: left;
+        }
+
+        .menu-option-btn:hover {
+            background: linear-gradient(180deg, rgba(78, 205, 196, 0.2) 0%, rgba(50, 50, 70, 0.95) 100%);
+            border-color: rgba(78, 205, 196, 0.6);
+            transform: translateX(5px);
+            box-shadow: 0 0 15px rgba(78, 205, 196, 0.2);
+        }
+
+        .menu-option-btn .menu-icon {
+            font-size: 24px;
+            width: 35px;
+            text-align: center;
+        }
+
+        .menu-option-btn .menu-text {
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            font-weight: bold;
+            color: #fff;
+            letter-spacing: 2px;
+        }
+
+        .menu-option-btn .menu-desc {
+            font-family: 'Courier New', monospace;
+            font-size: 10px;
+            color: #888;
+            display: block;
+            margin-top: 2px;
+        }
+
+        .menu-option-btn .menu-text,
+        .menu-option-btn .menu-desc {
+            display: block;
+        }
+
+        .menu-option-btn > span:nth-child(2) {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .back-btn {
+            margin-top: 20px;
+            padding: 10px 25px;
+            background: linear-gradient(180deg, rgba(100, 100, 120, 0.8) 0%, rgba(70, 70, 90, 0.9) 100%);
+            border: 2px solid rgba(150, 150, 170, 0.4);
+            border-radius: 6px;
+            color: #ccc;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            width: 100%;
+        }
+
+        .back-btn:hover {
+            background: linear-gradient(180deg, rgba(120, 120, 140, 0.8) 0%, rgba(90, 90, 110, 0.9) 100%);
+            color: #fff;
+        }
+
+        /* Daily Challenge Button - Amber/Gold, same size as PLAY */
+        #message .btn-daily-challenge {
+            padding: 12px 40px;
+            font-size: 16px;
+            letter-spacing: 3px;
+            background: linear-gradient(180deg, #f0a020 0%, #d08018 100%);
+            box-shadow: 0 4px 15px rgba(240, 160, 32, 0.5);
+            border: 2px solid rgba(255, 200, 100, 0.3);
+        }
+
+        #message .btn-daily-challenge:hover {
+            background: linear-gradient(180deg, #ffb030 0%, #f0a020 100%);
+            box-shadow: 0 5px 25px rgba(240, 160, 32, 0.7);
+            transform: translateY(-2px);
+        }
+
+        /* Milestones Button */
+        .btn-milestones {
+            padding: 10px 30px;
+            font-size: 14px;
+            letter-spacing: 2px;
+            background: linear-gradient(180deg, #9b59b6 0%, #8e44ad 100%);
+            box-shadow: 0 4px 15px rgba(155, 89, 182, 0.4);
+            border: 2px solid rgba(200, 150, 220, 0.3);
+            color: white;
+            font-family: monospace;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+        }
+
+        .btn-milestones:hover {
+            background: linear-gradient(180deg, #a86bc2 0%, #9b59b6 100%);
+            box-shadow: 0 5px 25px rgba(155, 89, 182, 0.6);
+            transform: translateY(-2px);
+        }
+
+        /* Milestones Menu Overlay */
+        .milestones-overlay {
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .milestones-content {
+            display: grid;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .milestone-card {
+            background: rgba(0, 0, 0, 0.3);
+            border: 2px solid #333;
+            border-radius: 8px;
+            padding: 15px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            transition: all 0.3s ease;
+        }
+
+        .milestone-card.unlocked {
+            border-color: #f1c40f;
+            background: rgba(241, 196, 15, 0.1);
+        }
+
+        .milestone-card.locked {
+            opacity: 0.6;
+        }
+
+        .milestone-card-icon {
+            font-size: 32px;
+            min-width: 50px;
+            text-align: center;
+        }
+
+        .milestone-card.locked .milestone-card-icon {
+            filter: grayscale(100%);
+        }
+
+        .milestone-card-info {
+            flex: 1;
+        }
+
+        .milestone-card-name {
+            font-size: 16px;
+            font-weight: bold;
+            color: #fff;
+            margin-bottom: 4px;
+        }
+
+        .milestone-card-desc {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 4px;
+        }
+
+        .milestone-card-reward {
+            font-size: 13px;
+            color: #4ecdc4;
+        }
+
+        .milestone-card-progress {
+            font-size: 11px;
+            color: #f1c40f;
+            margin-top: 4px;
+        }
+
+        .milestones-stats {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .milestones-stats h3 {
+            color: #4ecdc4;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .stat-label {
+            font-size: 10px;
+            color: #888;
+            text-transform: uppercase;
+        }
+
+        /* Milestones Menu */
+        #milestonesMenu {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 1000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* Corner Settings Button - Unassuming gear icon */
+        #message .corner-settings-btn {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            z-index: 10;
+            padding: 8px 10px;
+            font-size: 20px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            min-width: auto;
+            box-shadow: none;
+            letter-spacing: 0;
+        }
+
+        #message .corner-settings-btn:hover {
+            background: rgba(233, 69, 96, 0.4);
+            border-color: rgba(233, 69, 96, 0.6);
+            transform: rotate(45deg);
+        }
+
+        /* Tertiary Buttons (Settings, Characters, Stats, Achievements) */
+        #message .btn-tertiary {
+            padding: 10px 18px;
+            font-size: 12px;
+            background: linear-gradient(180deg, rgba(60,60,80,0.95) 0%, rgba(40,40,55,0.95) 100%);
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4);
+            min-width: 110px;
+            border: 1px solid rgba(78, 205, 196, 0.4);
+        }
+
+        #message .btn-tertiary:hover {
+            background: linear-gradient(180deg, rgba(78, 205, 196, 0.3) 0%, rgba(60,60,80,0.9) 100%);
+            box-shadow: 0 5px 20px rgba(78, 205, 196, 0.3);
+            border-color: rgba(78, 205, 196, 0.6);
+        }
+
+
+        /* Row for tertiary buttons */
+        #message .button-row-tertiary {
+            display: flex;
+            justify-content: center;
+            gap: 6px;
+            margin-top: 4px;
+            padding-top: 6px;
+            border-top: 1px solid rgba(78, 205, 196, 0.25);
+        }
+
+        #message .story {
+            font-size: 15px;
+            margin-bottom: 20px;
+            color: #aaa;
+            line-height: 1.5;
+        }
+
+        #message .powerups-title {
+            font-size: 11px;
+            color: #ffe66d;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            text-shadow: 0 0 10px rgba(255, 230, 109, 0.5);
+        }
+
+        #message .powerups {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 14px;
+        }
+
+        #message .powerup-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 10px 14px;
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 8px;
+            border: 2px solid #333;
+            min-width: 110px;
+            backdrop-filter: blur(4px);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        #message .powerup-item:hover {
+            transform: translateY(-3px);
+        }
+
+        #message .powerup-item .icon {
+            width: 48px;
+            height: 48px;
+            margin-bottom: 5px;
+            object-fit: contain;
+            image-rendering: pixelated;
+        }
+
+        #message .powerup-item .name {
+            font-size: 11px;
+            font-weight: bold;
+            margin-bottom: 3px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        #message .powerup-item .desc {
+            font-size: 9px;
+            color: #aaa;
+        }
+
+        #message .powerup-item.speed {
+            border-color: #00d2d3;
+            box-shadow: 0 0 15px rgba(0, 210, 211, 0.4), inset 0 0 20px rgba(0, 210, 211, 0.1);
+        }
+        #message .powerup-item.speed .name { color: #00d2d3; }
+        #message .powerup-item.speed:hover { box-shadow: 0 0 25px rgba(0, 210, 211, 0.6), inset 0 0 20px rgba(0, 210, 211, 0.2); }
+
+        #message .powerup-item.knockout {
+            border-color: #ee5a24;
+            box-shadow: 0 0 15px rgba(238, 90, 36, 0.4), inset 0 0 20px rgba(238, 90, 36, 0.1);
+        }
+        #message .powerup-item.knockout .name { color: #ee5a24; }
+        #message .powerup-item.knockout:hover { box-shadow: 0 0 25px rgba(238, 90, 36, 0.6), inset 0 0 20px rgba(238, 90, 36, 0.2); }
+
+        #message .powerup-item.electric {
+            border-color: #f1c40f;
+            box-shadow: 0 0 15px rgba(241, 196, 15, 0.4), inset 0 0 20px rgba(241, 196, 15, 0.1);
+        }
+        #message .powerup-item.electric .name { color: #f1c40f; }
+        #message .powerup-item.electric:hover { box-shadow: 0 0 25px rgba(241, 196, 15, 0.6), inset 0 0 20px rgba(241, 196, 15, 0.2); }
+
+        #message .tips {
+            font-size: 11px;
+            color: #999;
+            margin-bottom: 12px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+        }
+
+        #controls {
+            color: #888;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+
+        /* ==========================================
+           ACCESSIBILITY ENHANCEMENTS
+           ========================================== */
+
+        /* Focus indicators for keyboard navigation (WCAG 2.4.7) */
+        #message button:focus,
+        #message button:focus-visible,
+        .btn-tertiary:focus,
+        .btn-tertiary:focus-visible {
+            outline: 3px solid #4ecdc4;
+            outline-offset: 3px;
+            box-shadow: 0 0 0 6px rgba(78, 205, 196, 0.3), 0 4px 15px rgba(233, 69, 96, 0.4);
+        }
+
+        /* High contrast focus for better visibility */
+        *:focus-visible {
+            outline: 3px solid #4ecdc4;
+            outline-offset: 2px;
+        }
+
+        /* Reduced motion preferences (WCAG 2.3.3) */
+        @media (prefers-reduced-motion: reduce) {
+            #message h1 {
+                animation: none;
+            }
+
+            #message button,
+            .btn-primary {
+                animation: none;
+            }
+
+            @keyframes title-pulse {
+                0%, 100% { filter: none; }
+            }
+
+            @keyframes pulse-btn {
+                0%, 100% { box-shadow: 0 4px 20px rgba(233, 69, 96, 0.5); }
+            }
+
+            /* Disable all transitions for reduced motion */
+            *,
+            *::before,
+            *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+
+        /* Skip link for keyboard users (WCAG 2.4.1) */
+        .skip-link {
+            position: absolute;
+            top: -40px;
+            left: 0;
+            background: #4ecdc4;
+            color: #000;
+            padding: 8px 16px;
+            z-index: 9999;
+            font-weight: bold;
+            text-decoration: none;
+            border-radius: 0 0 4px 0;
+        }
+
+        .skip-link:focus {
+            top: 0;
+        }
+
+        /* Ensure minimum touch target size (WCAG 2.5.5) - 44x44px */
+        #message button,
+        .btn-tertiary {
+            min-height: 44px;
+            min-width: 44px;
+        }
+
+        /* Visually hidden but accessible to screen readers */
+        .visually-hidden {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        /* Level Transition Screen */
+        #levelTransition {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #0a0a15;
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            display: none;
+            z-index: 200;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #levelTransition .overlay {
+            background: rgba(0, 0, 0, 0.7);
+            padding: 60px 80px;
+            border-radius: 12px;
+            text-align: center;
+            border: 3px solid #e94560;
+            box-shadow: 0 0 60px rgba(233, 69, 96, 0.5);
+            animation: levelPop 0.5s ease-out;
+        }
+
+        @keyframes levelPop {
+            0% { transform: scale(0.5); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        #levelTransition h2 {
+            font-size: 28px;
+            color: #4ecdc4;
+            margin-bottom: 10px;
+            text-shadow: 0 0 20px rgba(78, 205, 196, 0.8);
+            letter-spacing: 3px;
+        }
+
+        #levelTransition .floor-num {
+            font-size: 72px;
+            color: #ffe66d;
+            text-shadow: 0 0 30px rgba(255, 230, 109, 0.8), 4px 4px 0 #0a1628;
+            margin: 20px 0;
+            animation: floorPulse 1s ease-in-out infinite;
+        }
+
+        @keyframes floorPulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+
+        #levelTransition .escaped {
+            font-size: 16px;
+            color: #aaa;
+            margin-bottom: 5px;
+        }
+
+        /* Game Over Screen */
+        #gameOver {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #1a0505;
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            display: none;
+            z-index: 200;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #gameOver .overlay {
+            background: linear-gradient(180deg, rgba(139, 0, 0, 0.9) 0%, rgba(40, 0, 0, 0.95) 100%);
+            padding: 60px 80px;
+            border-radius: 12px;
+            text-align: center;
+            border: 3px solid #ff4444;
+            box-shadow: 0 0 80px rgba(255, 0, 0, 0.6);
+            animation: gameOverShake 0.5s ease-out;
+        }
+
+        @keyframes gameOverShake {
+            0%, 100% { transform: translateX(0); }
+            20% { transform: translateX(-10px); }
+            40% { transform: translateX(10px); }
+            60% { transform: translateX(-5px); }
+            80% { transform: translateX(5px); }
+        }
+
+        #gameOver h2 {
+            font-size: 48px;
+            color: #ff4444;
+            margin-bottom: 15px;
+            text-shadow: 0 0 30px rgba(255, 0, 0, 0.8), 4px 4px 0 #300;
+            letter-spacing: 5px;
+        }
+
+        #gameOver .message {
+            font-size: 18px;
+            color: #ffaaaa;
+            margin-bottom: 30px;
+        }
+
+        #gameOver .stats {
+            font-size: 14px;
+            color: #888;
+            margin-bottom: 25px;
+        }
+
+        #gameOver button {
+            padding: 14px 40px;
+            font-size: 16px;
+            background: linear-gradient(180deg, #ff4444 0%, #cc0000 100%);
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            text-transform: uppercase;
+            border-radius: 4px;
+            letter-spacing: 2px;
+            box-shadow: 0 4px 20px rgba(255, 0, 0, 0.5);
+            transition: all 0.2s ease;
+        }
+
+        #gameOver button:hover {
+            background: linear-gradient(180deg, #ff6666 0%, #ff4444 100%);
+            transform: translateY(-2px);
+        }
+
+        /* Victory Screen */
+        #victory {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #051a15;
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            display: none;
+            z-index: 200;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #victory .overlay {
+            background: linear-gradient(180deg, rgba(0, 80, 60, 0.9) 0%, rgba(0, 40, 30, 0.95) 100%);
+            padding: 60px 80px;
+            border-radius: 12px;
+            text-align: center;
+            border: 3px solid #4ecdc4;
+            box-shadow: 0 0 80px rgba(78, 205, 196, 0.6);
+            animation: victoryBounce 0.6s ease-out;
+        }
+
+        @keyframes victoryBounce {
+            0% { transform: scale(0.3) rotate(-5deg); opacity: 0; }
+            50% { transform: scale(1.1) rotate(2deg); }
+            100% { transform: scale(1) rotate(0deg); opacity: 1; }
+        }
+
+        #victory h2 {
+            font-size: 48px;
+            color: #4ecdc4;
+            margin-bottom: 15px;
+            text-shadow: 0 0 30px rgba(78, 205, 196, 0.8), 4px 4px 0 #033;
+            letter-spacing: 5px;
+        }
+
+        #victory .message {
+            font-size: 18px;
+            color: #aaffee;
+            margin-bottom: 30px;
+        }
+
+        #victory .stats {
+            font-size: 14px;
+            color: #88ccbb;
+            margin-bottom: 25px;
+            line-height: 1.8;
+        }
+
+        #victory button {
+            padding: 14px 40px;
+            font-size: 16px;
+            background: linear-gradient(180deg, #4ecdc4 0%, #2a9d8f 100%);
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            text-transform: uppercase;
+            border-radius: 4px;
+            letter-spacing: 2px;
+            box-shadow: 0 4px 20px rgba(78, 205, 196, 0.5);
+            transition: all 0.2s ease;
+        }
+
+        #victory button:hover {
+            background: linear-gradient(180deg, #6ee4dc 0%, #4ecdc4 100%);
+            transform: translateY(-2px);
+        }
+
+        /* Pause Screen */
+        #pauseScreen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.75);
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            background-blend-mode: darken;
+            display: none;
+            z-index: 250;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(3px);
+        }
+
+        #pauseScreen .overlay {
+            background: linear-gradient(180deg, rgba(30, 40, 60, 0.95) 0%, rgba(15, 20, 35, 0.98) 100%);
+            padding: 50px 70px;
+            border-radius: 12px;
+            text-align: center;
+            border: 3px solid #4ecdc4;
+            box-shadow: 0 0 60px rgba(78, 205, 196, 0.4);
+        }
+
+        #pauseScreen h2 {
+            font-size: 42px;
+            color: #4ecdc4;
+            margin-bottom: 25px;
+            text-shadow: 0 0 20px rgba(78, 205, 196, 0.6);
+            letter-spacing: 5px;
+        }
+
+        #pauseScreen .pause-info {
+            font-size: 16px;
+            color: #aaa;
+            margin-bottom: 30px;
+            line-height: 1.8;
+        }
+
+        #pauseScreen .pause-controls {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 25px;
+        }
+
+        #pauseScreen button {
+            padding: 14px 40px;
+            font-size: 16px;
+            background: linear-gradient(180deg, #4ecdc4 0%, #2a9d8f 100%);
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            text-transform: uppercase;
+            border-radius: 4px;
+            letter-spacing: 2px;
+            margin: 5px 10px;
+            box-shadow: 0 4px 20px rgba(78, 205, 196, 0.4);
+            transition: all 0.2s ease;
+        }
+
+        #pauseScreen button:hover {
+            background: linear-gradient(180deg, #6ee4dc 0%, #4ecdc4 100%);
+            transform: translateY(-2px);
+        }
+
+        #pauseScreen button.quit-btn {
+            background: linear-gradient(180deg, #e94560 0%, #c73e54 100%);
+            box-shadow: 0 4px 20px rgba(233, 69, 96, 0.4);
+        }
+
+        #pauseScreen button.quit-btn:hover {
+            background: linear-gradient(180deg, #ff6b6b 0%, #e94560 100%);
+        }
+
+        /* Settings Menu */
+        #settingsMenu {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            display: none;
+            z-index: 300;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(5px);
+        }
+
+        #settingsMenu .overlay {
+            background: linear-gradient(180deg, rgba(30, 40, 60, 0.98) 0%, rgba(15, 20, 35, 0.99) 100%);
+            padding: 30px 50px;
+            border-radius: 12px;
+            text-align: left;
+            border: 3px solid #4ecdc4;
+            box-shadow: 0 0 60px rgba(78, 205, 196, 0.4);
+            max-width: 500px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        #settingsMenu h2 {
+            font-size: 32px;
+            color: #4ecdc4;
+            margin-bottom: 20px;
+            text-align: center;
+            text-shadow: 0 0 20px rgba(78, 205, 196, 0.6);
+            letter-spacing: 4px;
+        }
+
+        #settingsMenu h3 {
+            font-size: 14px;
+            color: #ffe66d;
+            margin: 20px 0 10px 0;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 5px;
+        }
+
+        .settings-section {
+            margin-bottom: 15px;
+        }
+
+        .setting-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 10px 0;
+            padding: 8px 0;
+        }
+
+        .setting-row label {
+            color: #aaa;
+            font-size: 13px;
+        }
+
+        .setting-row select,
+        .setting-row button {
+            padding: 6px 12px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            background: #2a3a5a;
+            color: #fff;
+            border: 2px solid #4ecdc4;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .setting-row select:hover,
+        .setting-row button:hover {
+            background: #3a4a6a;
+        }
+
+        .setting-row input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            accent-color: #4ecdc4;
+        }
+
+        .setting-row input[type="range"] {
+            width: 120px;
+            accent-color: #4ecdc4;
+            cursor: pointer;
+        }
+
+        .setting-row span {
+            color: #4ecdc4;
+            font-size: 12px;
+            min-width: 40px;
+            text-align: right;
+        }
+
+        .controls-info {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            color: #888;
+            line-height: 1.6;
+        }
+
+        .controls-info p {
+            margin: 4px 0;
+        }
+
+        .controls-info strong {
+            color: #4ecdc4;
+        }
+
+        .controller-status {
+            margin-top: 10px;
+            padding: 6px 10px;
+            background: rgba(231, 76, 60, 0.2);
+            border: 1px solid #e74c3c;
+            border-radius: 4px;
+            color: #e74c3c;
+            font-size: 11px;
+        }
+
+        .controller-status.connected {
+            background: rgba(46, 204, 113, 0.2);
+            border-color: #2ecc71;
+            color: #2ecc71;
+        }
+
+        /* Milestone unlock popup */
+        .milestone-popup {
+            position: fixed;
+            top: 20px;
+            right: -400px;
+            width: 350px;
+            background: linear-gradient(135deg, rgba(30, 30, 40, 0.95) 0%, rgba(50, 50, 70, 0.95) 100%);
+            border: 2px solid #f1c40f;
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            z-index: 10000;
+            box-shadow: 0 0 30px rgba(241, 196, 15, 0.3), 0 10px 40px rgba(0, 0, 0, 0.5);
+            transition: right 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        }
+
+        .milestone-popup.show {
+            right: 20px;
+        }
+
+        .milestone-icon {
+            font-size: 40px;
+            animation: milestone-bounce 0.5s ease infinite alternate;
+        }
+
+        @keyframes milestone-bounce {
+            from { transform: scale(1); }
+            to { transform: scale(1.1); }
+        }
+
+        .milestone-content {
+            flex: 1;
+        }
+
+        .milestone-title {
+            font-size: 12px;
+            color: #f1c40f;
+            letter-spacing: 2px;
+            margin-bottom: 4px;
+        }
+
+        .milestone-name {
+            font-size: 18px;
+            color: #fff;
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+
+        .milestone-reward {
+            font-size: 13px;
+            color: #4ecdc4;
+        }
+
+        .keybind-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 6px 0;
+        }
+
+        .keybind-row span {
+            color: #aaa;
+        }
+
+        .keybind-btn {
+            min-width: 80px;
+            padding: 6px 12px;
+            background: rgba(78, 205, 196, 0.2);
+            border: 1px solid #4ecdc4;
+            border-radius: 4px;
+            color: #4ecdc4;
+            font-family: monospace;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .keybind-btn:hover {
+            background: rgba(78, 205, 196, 0.3);
+            transform: scale(1.05);
+        }
+
+        .keybind-btn.capturing {
+            background: rgba(241, 196, 15, 0.3);
+            border-color: #f1c40f;
+            color: #f1c40f;
+            animation: pulse-capture 0.5s infinite alternate;
+        }
+
+        @keyframes pulse-capture {
+            from { box-shadow: 0 0 5px rgba(241, 196, 15, 0.5); }
+            to { box-shadow: 0 0 15px rgba(241, 196, 15, 0.8); }
+        }
+
+        .reset-keybinds-btn {
+            margin-top: 10px;
+            padding: 8px 16px;
+            background: rgba(231, 76, 60, 0.2);
+            border: 1px solid #e74c3c;
+            border-radius: 4px;
+            color: #e74c3c;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .reset-keybinds-btn:hover {
+            background: rgba(231, 76, 60, 0.4);
+        }
+
+        .settings-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 25px;
+        }
+
+        .settings-buttons button {
+            padding: 12px 30px;
+            font-size: 14px;
+            background: linear-gradient(180deg, #4ecdc4 0%, #2a9d8f 100%);
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            text-transform: uppercase;
+            border-radius: 4px;
+            letter-spacing: 2px;
+            box-shadow: 0 4px 20px rgba(78, 205, 196, 0.4);
+            transition: all 0.2s ease;
+        }
+
+        .settings-buttons button:hover {
+            background: linear-gradient(180deg, #6ee4dc 0%, #4ecdc4 100%);
+            transform: translateY(-2px);
+        }
+
+        .settings-buttons button:first-child {
+            background: linear-gradient(180deg, #555 0%, #333 100%);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        .settings-buttons button:first-child:hover {
+            background: linear-gradient(180deg, #666 0%, #444 100%);
+        }
+
+        /* Daily Challenge Styles */
+        .button-group {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        /* Daily button styles moved to #message .btn-secondary */
+
+        #dailyChallengeMenu {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 1000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .daily-overlay {
+            background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+            padding: 40px;
+            border-radius: 10px;
+            border: 3px solid #f39c12;
+            text-align: center;
+            max-width: 500px;
+            width: 90%;
+        }
+
+        .daily-overlay h2 {
+            color: #f39c12;
+            font-size: 32px;
+            margin-bottom: 10px;
+            text-shadow: 0 0 20px rgba(243, 156, 18, 0.5);
+        }
+
+        .daily-date {
+            color: #aaa;
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+
+        .daily-info {
+            color: #4ecdc4;
+            font-size: 16px;
+            margin-bottom: 15px;
+        }
+
+        .weekly-modifier-box {
+            background: linear-gradient(135deg, rgba(155, 89, 182, 0.2) 0%, rgba(142, 68, 173, 0.3) 100%);
+            border: 2px solid #9b59b6;
+            border-radius: 8px;
+            padding: 12px 20px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .weekly-label {
+            display: block;
+            font-size: 10px;
+            color: #9b59b6;
+            letter-spacing: 2px;
+            margin-bottom: 4px;
+        }
+
+        .weekly-name {
+            display: block;
+            font-size: 18px;
+            font-weight: bold;
+            color: #bb8fce;
+            margin-bottom: 4px;
+        }
+
+        .weekly-desc {
+            display: block;
+            font-size: 12px;
+            color: #aaa;
+        }
+
+        .daily-stats {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .daily-stats p {
+            color: #fff;
+            font-size: 18px;
+            margin: 0;
+        }
+
+        .daily-stats span {
+            color: #4ecdc4;
+            font-weight: bold;
+        }
+
+        .daily-leaderboard {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 25px;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .daily-leaderboard h3 {
+            color: #f39c12;
+            font-size: 14px;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+        }
+
+        .daily-leaderboard ol {
+            list-style: decimal;
+            padding-left: 25px;
+            margin: 0;
+        }
+
+        .daily-leaderboard li {
+            color: #ccc;
+            font-size: 14px;
+            padding: 3px 0;
+        }
+
+        .back-btn {
+            background: linear-gradient(180deg, #555 0%, #333 100%) !important;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3) !important;
+        }
+
+        .back-btn:hover {
+            background: linear-gradient(180deg, #666 0%, #444 100%) !important;
+        }
+
+        /* Main menu simplified */
+        .tagline-small {
+            color: #aaa;
+            font-size: 13px;
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+
+        .main-buttons {
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .main-buttons button {
+            width: 220px;
+            margin: 0 auto;
+        }
+
+        /* How to Play button styles moved to #message .btn-secondary */
+
+        /* How to Play Menu */
+        #howToPlayMenu {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 1000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .how-overlay {
+            background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+            padding: 30px 40px;
+            border-radius: 10px;
+            border: 3px solid #9b59b6;
+            text-align: left;
+            max-width: 600px;
+            width: 95%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .how-overlay h2 {
+            color: #9b59b6;
+            font-size: 28px;
+            margin-bottom: 20px;
+            text-align: center;
+            text-shadow: 0 0 20px rgba(155, 89, 182, 0.5);
+        }
+
+        .how-section {
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid rgba(155, 89, 182, 0.3);
+        }
+
+        .how-section:last-of-type {
+            border-bottom: none;
+        }
+
+        .how-section h3 {
+            color: #4ecdc4;
+            font-size: 14px;
+            margin-bottom: 10px;
+            letter-spacing: 2px;
+        }
+
+        .how-section p {
+            color: #ccc;
+            font-size: 13px;
+            line-height: 1.5;
+            margin: 0;
+        }
+
+        .controls-grid, .zones-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px 15px;
+            font-size: 12px;
+        }
+
+        .controls-grid span:nth-child(odd),
+        .zones-grid span:nth-child(odd) {
+            color: #4ecdc4;
+        }
+
+        .controls-grid span:nth-child(even),
+        .zones-grid span:nth-child(even) {
+            color: #aaa;
+            text-align: right;
+        }
+
+        .powerups-how {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .powerups-how .powerup-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex: 1;
+            min-width: 140px;
+            max-width: 170px;
+            padding: 12px;
+            background: linear-gradient(180deg, rgba(30, 30, 50, 0.9) 0%, rgba(20, 20, 40, 0.95) 100%);
+            border: 2px solid;
+            border-radius: 8px;
+            text-align: center;
+            overflow: hidden;
+        }
+
+        .powerups-how .powerup-item .icon {
+            width: 48px;
+            height: 48px;
+            margin-bottom: 8px;
+            object-fit: contain;
+            image-rendering: pixelated;
+        }
+
+        .powerups-how .powerup-item .name {
+            font-size: 11px;
+            font-weight: bold;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .powerups-how .powerup-item .desc {
+            font-size: 9px;
+            color: #aaa;
+            line-height: 1.3;
+        }
+
+        /* Type-specific colors for How To Play powerups */
+        .powerups-how .powerup-item.speed {
+            border-color: #00d2d3;
+            box-shadow: 0 0 15px rgba(0, 210, 211, 0.3);
+        }
+        .powerups-how .powerup-item.speed .name { color: #00d2d3; }
+
+        .powerups-how .powerup-item.knockout {
+            border-color: #ee5a24;
+            box-shadow: 0 0 15px rgba(238, 90, 36, 0.3);
+        }
+        .powerups-how .powerup-item.knockout .name { color: #ee5a24; }
+
+        .powerups-how .powerup-item.electric {
+            border-color: #f1c40f;
+            box-shadow: 0 0 15px rgba(241, 196, 15, 0.3);
+        }
+        .powerups-how .powerup-item.electric .name { color: #f1c40f; }
+
+        .tips-list {
+            color: #aaa;
+            font-size: 12px;
+            margin: 0;
+            padding-left: 20px;
+            line-height: 1.8;
+        }
+
+        .tips-list li {
+            margin-bottom: 5px;
+        }
+
+        .how-overlay .button-group {
+            margin-top: 20px;
+            justify-content: center;
+        }
+    </style>
+</head>
+<body>
+    <!-- Skip link for keyboard accessibility (WCAG 2.4.1) -->
+    <a href="#gameCanvas" class="skip-link">Skip to game</a>
+
+    <div id="gameContainer" role="main">
+        <div id="hud" role="status" aria-live="polite" aria-label="Game status">
+            <span id="floor">Floor: 23</span>
+            <span id="timer">Time: 30</span>
+            <span id="runTimer">Run: 0:00</span>
+            <span id="powerup">Power: None</span>
+        </div>
+        <canvas id="gameCanvas" width="640" height="640" role="img" aria-label="Game canvas - use WASD or arrow keys to move"></canvas>
+        <div id="controls" aria-hidden="true">WASD/Arrows to move | SPACE to use power-up | ESC/P to pause | 🎮 Controller supported</div>
+    </div>
+
+    <div id="message" role="dialog" aria-labelledby="game-title" aria-modal="true">
+        <!-- Settings gear icon in corner -->
+        <button onclick="showMainSettings()" class="corner-settings-btn" aria-label="Settings menu">⚙️</button>
+        <div class="content-overlay">
+            <!-- Top: Logo -->
+            <div class="title-top">
+                <canvas id="emberCanvas" class="ember-canvas" aria-hidden="true"></canvas>
+                <img src="DEADLINE-wordmark.png" alt="DEADLINE" id="game-title-logo">
+                <h1 id="game-title" class="visually-hidden">DEADLINE</h1>
+            </div>
+
+            <!-- Middle: Taglines -->
+            <div class="middle-content">
+                <p class="subtitle" role="doc-subtitle">CLOCK OUT. OR GET CLOCKED.</p>
+                <p class="tagline-small">Race down 23 floors of a collapsing building.<br>Sabotage rivals. Beat the clock. Escape alive.</p>
+            </div>
+
+            <!-- Bottom: Menu buttons -->
+            <div class="menu-section">
+                <!-- Difficulty slider -->
+                <div class="difficulty-slider-container" role="group" aria-label="Difficulty selection">
+                    <div class="difficulty-label normal" id="difficultyLabel">⚡ NORMAL</div>
+                    <div class="difficulty-desc" id="difficultyDesc">The intended experience</div>
+                    <div class="slider-track-container">
+                        <input type="range" min="0" max="4" value="2" class="difficulty-slider" id="difficultySlider"
+                               oninput="updateDifficultyFromSlider(this.value)"
+                               aria-label="Difficulty level">
+                        <div class="slider-labels">
+                            <span>ZEN</span>
+                            <span>CHILL</span>
+                            <span>NORMAL</span>
+                            <span>INTENSE</span>
+                            <span>CRUNCH</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="button-group main-buttons" role="navigation" aria-label="Main menu">
+                    <button onclick="startGame()" class="btn-primary" aria-describedby="game-desc">▶ PLAY</button>
+                    <span id="game-desc" class="visually-hidden">Begin a new game run</span>
+                    <button onclick="showDailyChallenge()" class="btn-daily-challenge">DAILY CHALLENGE</button>
+                </div>
+
+                <div class="button-row-secondary" style="margin-top: 15px;">
+                    <button onclick="showMilestonesMenu()" class="btn-milestones">🏆 MILESTONES</button>
+                </div>
+
+                <div class="button-row-tertiary" id="tertiaryButtons" style="display: none;">
+                    <!-- No longer used - moved to settings menu -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- How to Play Menu -->
+    <div id="howToPlayMenu" style="display: none;">
+        <div class="overlay how-overlay">
+            <h2>HOW TO PLAY</h2>
+
+            <div class="how-section">
+                <h3>🎯 OBJECTIVE</h3>
+                <p>Descend 23 floors before the building collapses. Each floor has a timer—reach an exit in time or become rubble.</p>
+            </div>
+
+            <div class="how-section">
+                <h3>🎮 CONTROLS</h3>
+                <div class="controls-grid">
+                    <span>Move</span><span>WASD / Arrow Keys / Left Stick</span>
+                    <span>Use Power-Up</span><span>SPACE / A Button</span>
+                    <span>Pause</span><span>ESC / P / Start</span>
+                </div>
+            </div>
+
+            <div class="how-section">
+                <h3>⚡ POWER-UPS</h3>
+                <div class="powerups-how">
+                    <div class="powerup-item speed">
+                        <img class="icon" src="powerup-speed.png" alt="Speed">
+                        <span class="name">Caffeine Rush</span>
+                        <span class="desc">Speed boost for 5 seconds</span>
+                    </div>
+                    <div class="powerup-item knockout">
+                        <img class="icon" src="powerup-knockout.png" alt="Knockout">
+                        <span class="name">Pink Slip Punch</span>
+                        <span class="desc">Stun the next rival you touch</span>
+                    </div>
+                    <div class="powerup-item electric">
+                        <img class="icon" src="powerup-electric.png" alt="Electric">
+                        <span class="name">Static Shock</span>
+                        <span class="desc">Zap nearby enemies</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="how-section">
+                <h3>📍 SPECIAL ZONES</h3>
+                <div class="zones-grid">
+                    <span>☕ Cafeteria</span><span>Timer slows down, enemies move slower</span>
+                    <span>🚻 Restroom</span><span>Complete safe zone</span>
+                    <span>🌿 Garden</span><span>Grab a protective shield</span>
+                    <span>🐕 Dog Park</span><span>Find a loyal companion</span>
+                    <span>🚪 Exits</span><span>Always in the corners</span>
+                </div>
+            </div>
+
+            <div class="how-section">
+                <h3>💡 TIPS</h3>
+                <ul class="tips-list">
+                    <li>Enemies get faster and smarter on lower floors</li>
+                    <li>Fire hazards appear below floor 15</li>
+                    <li>Look for secret exits on floor 13...</li>
+                </ul>
+            </div>
+
+            <div class="button-group">
+                <button onclick="hideHowToPlay()" class="back-btn">BACK TO MENU</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Daily Challenge Menu -->
+    <div id="dailyChallengeMenu" style="display: none;">
+        <div class="overlay daily-overlay">
+            <h2>DAILY CHALLENGE</h2>
+            <p class="daily-date" id="dailyDate"></p>
+            <p class="daily-info">Same seed for everyone. One maze. Race the clock.</p>
+            <div class="weekly-modifier-box" id="weeklyModifier">
+                <!-- Populated by JavaScript -->
+            </div>
+            <div class="daily-stats" id="dailyStats">
+                <p>Your Best: <span id="dailyBestTime">--:--</span></p>
+            </div>
+            <div class="daily-leaderboard" id="dailyLeaderboard">
+                <h3>Your Runs Today</h3>
+                <ol id="leaderboardList"></ol>
+            </div>
+            <div class="button-group">
+                <button onclick="startDailyChallenge()">START CHALLENGE</button>
+                <button onclick="hideDailyChallenge()" class="back-btn">BACK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Level Transition Screen -->
+    <div id="levelTransition">
+        <div class="overlay">
+            <p class="escaped">Floor cleared! Descending to...</p>
+            <h2>FLOOR</h2>
+            <div class="floor-num" id="nextFloorNum">22</div>
+        </div>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="gameOver">
+        <div class="overlay">
+            <h2>GAME OVER</h2>
+            <p class="message" id="gameOverMessage">The floor collapsed beneath you!</p>
+            <p class="stats" id="gameOverStats">You made it to floor 15</p>
+            <button onclick="restartGame()">TRY AGAIN</button>
+        </div>
+    </div>
+
+    <!-- Victory Screen -->
+    <div id="victory">
+        <div class="overlay">
+            <h2>YOU ESCAPED!</h2>
+            <p class="message">You made it out alive!</p>
+            <p class="stats" id="victoryStats">
+                Floors descended: 23<br>
+                Enemies stunned: 0<br>
+                Close calls: Many
+            </p>
+            <button onclick="restartGame()">PLAY AGAIN</button>
+        </div>
+    </div>
+
+    <!-- Main Menu Settings (Characters, Achievements, Stats) -->
+    <div id="mainSettingsMenu" style="display: none;">
+        <div class="overlay main-settings-overlay">
+            <h2>⚙️ MENU</h2>
+            <div class="main-settings-buttons">
+                <button onclick="showHowToPlay()" class="menu-option-btn">
+                    <span class="menu-icon">📖</span>
+                    <span class="menu-text">HOW TO PLAY</span>
+                    <span class="menu-desc">Learn controls & mechanics</span>
+                </button>
+                <button onclick="showCharacterSelect()" class="menu-option-btn">
+                    <span class="menu-icon">👔</span>
+                    <span class="menu-text">CHARACTERS</span>
+                    <span class="menu-desc">Choose your office survivor</span>
+                </button>
+                <button onclick="showAchievements()" class="menu-option-btn">
+                    <span class="menu-icon">🏆</span>
+                    <span class="menu-text">ACHIEVEMENTS</span>
+                    <span class="menu-desc">View your accomplishments</span>
+                </button>
+                <button onclick="showStats()" class="menu-option-btn">
+                    <span class="menu-icon">📊</span>
+                    <span class="menu-text">STATISTICS</span>
+                    <span class="menu-desc">Track your escape history</span>
+                </button>
+                <button onclick="showSettingsMenu()" class="menu-option-btn">
+                    <span class="menu-icon">⚙️</span>
+                    <span class="menu-text">SETTINGS</span>
+                    <span class="menu-desc">Display, audio & accessibility</span>
+                </button>
+            </div>
+            <button onclick="hideMainSettings()" class="back-btn">← BACK</button>
+        </div>
+    </div>
+
+    <!-- Pause Screen -->
+    <div id="pauseScreen">
+        <div class="overlay">
+            <h2>PAUSED</h2>
+            <p class="pause-info">
+                Floor: <span id="pauseFloor">23</span><br>
+                Time remaining: <span id="pauseTime">30</span>s
+            </p>
+            <p class="pause-controls">
+                Press ESC or P to resume
+            </p>
+            <button onclick="resumeGame()">RESUME</button>
+            <button onclick="showSettingsMenu()">SETTINGS</button>
+            <button onclick="saveAndQuit()" style="background:linear-gradient(180deg,#2ecc71 0%,#27ae60 100%);box-shadow:0 4px 20px rgba(46,204,113,0.4);">SAVE & QUIT</button>
+            <button class="quit-btn" onclick="quitToMenu()">QUIT (NO SAVE)</button>
+        </div>
+    </div>
+
+    <!-- Settings Menu -->
+    <div id="settingsMenu">
+        <div class="overlay">
+            <h2>SETTINGS</h2>
+            <div class="settings-content">
+                <div class="settings-section">
+                    <h3>Display</h3>
+                    <div class="setting-row">
+                        <label>Resolution:</label>
+                        <select id="resolutionSelect" onchange="changeResolution(this.value)">
+                            <optgroup label="Square (1:1)">
+                                <option value="640x640">640x640 (1x)</option>
+                                <option value="800x800">800x800 (1.25x)</option>
+                                <option value="960x960">960x960 (1.5x)</option>
+                                <option value="1024x1024">1024x1024 (1.6x)</option>
+                                <option value="1280x1280">1280x1280 (2x)</option>
+                            </optgroup>
+                            <optgroup label="Steam Deck (16:10)">
+                                <option value="1280x800">1280x800</option>
+                            </optgroup>
+                            <optgroup label="Widescreen (16:9)">
+                                <option value="1280x720">1280x720 (720p)</option>
+                                <option value="1920x1080">1920x1080 (ROG Ally)</option>
+                            </optgroup>
+                        </select>
+                    </div>
+                    <div class="setting-row">
+                        <label>Fullscreen:</label>
+                        <button id="fullscreenBtn" onclick="toggleFullscreen()">Toggle</button>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h3>Accessibility</h3>
+                    <div class="setting-row">
+                        <label>Screen Shake:</label>
+                        <input type="checkbox" id="screenShakeToggle" checked onchange="toggleScreenShake(this.checked)">
+                    </div>
+                    <div class="setting-row">
+                        <label>Colorblind Mode:</label>
+                        <select id="colorblindMode" onchange="setColorblindMode(this.value)">
+                            <option value="off">Off</option>
+                            <option value="deuteranopia">Deuteranopia (Red-Green)</option>
+                            <option value="protanopia">Protanopia (Red-Blind)</option>
+                            <option value="tritanopia">Tritanopia (Blue-Yellow)</option>
+                        </select>
+                    </div>
+                    <div class="setting-row">
+                        <label>Shape Icons:</label>
+                        <span style="font-size: 0.8em; color: #888;">Auto-enabled with colorblind mode</span>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h3>Audio</h3>
+                    <div class="setting-row">
+                        <label>Master Volume:</label>
+                        <input type="range" id="masterVolume" min="0" max="100" value="100" onchange="setMasterVolume(this.value)">
+                        <span id="masterVolumeVal">100%</span>
+                    </div>
+                    <div class="setting-row">
+                        <label>Music:</label>
+                        <input type="range" id="musicVolume" min="0" max="100" value="70" onchange="setMusicVolume(this.value)">
+                        <span id="musicVolumeVal">70%</span>
+                    </div>
+                    <div class="setting-row">
+                        <label>SFX:</label>
+                        <input type="range" id="sfxVolume" min="0" max="100" value="80" onchange="setSfxVolume(this.value)">
+                        <span id="sfxVolumeVal">80%</span>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h3>Controls</h3>
+                    <div class="controls-info">
+                        <p><strong>Keyboard Bindings:</strong></p>
+                        <div class="keybind-row">
+                            <span>Move Up:</span>
+                            <button class="keybind-btn" id="keybind-up" onclick="captureKeybind('up')">W / ↑</button>
+                        </div>
+                        <div class="keybind-row">
+                            <span>Move Down:</span>
+                            <button class="keybind-btn" id="keybind-down" onclick="captureKeybind('down')">S / ↓</button>
+                        </div>
+                        <div class="keybind-row">
+                            <span>Move Left:</span>
+                            <button class="keybind-btn" id="keybind-left" onclick="captureKeybind('left')">A / ←</button>
+                        </div>
+                        <div class="keybind-row">
+                            <span>Move Right:</span>
+                            <button class="keybind-btn" id="keybind-right" onclick="captureKeybind('right')">D / →</button>
+                        </div>
+                        <div class="keybind-row">
+                            <span>Action:</span>
+                            <button class="keybind-btn" id="keybind-action" onclick="captureKeybind('action')">Space</button>
+                        </div>
+                        <div class="keybind-row">
+                            <span>Pause:</span>
+                            <button class="keybind-btn" id="keybind-pause" onclick="captureKeybind('pause')">P / Esc</button>
+                        </div>
+                        <button class="reset-keybinds-btn" onclick="resetKeybinds()">Reset to Defaults</button>
+                        <hr style="border-color: #333; margin: 10px 0;">
+                        <p><strong>Controller:</strong></p>
+                        <p style="margin: 3px 0;">Left Stick / D-Pad - Move</p>
+                        <p style="margin: 3px 0;">A Button - Use Power-up</p>
+                        <p style="margin: 3px 0;">Start - Pause</p>
+                        <p id="controllerStatus" class="controller-status">No controller detected</p>
+                    </div>
+                </div>
+            </div>
+            <div class="settings-buttons">
+                <button onclick="resetSettings()">RESET DEFAULTS</button>
+                <button onclick="hideSettingsMenu()">BACK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Milestones Menu -->
+    <div id="milestonesMenu" style="display: none;">
+        <div class="overlay milestones-overlay">
+            <h2>🏆 MILESTONES</h2>
+            <p style="color: #888; margin-bottom: 20px;">Unlock permanent bonuses by completing challenges</p>
+            <div class="milestones-content" id="milestonesContent">
+                <!-- Populated by JavaScript -->
+            </div>
+            <div class="milestones-stats" id="milestonesStats">
+                <!-- Stats summary -->
+            </div>
+            <div class="settings-buttons">
+                <button onclick="hideMilestonesMenu()">BACK</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+    <script>
+    // ============================================
+    // FIRE EMBER PARTICLE SYSTEM
+    // Embers shoot outward from logo circumference
+    // Start large and fizzle out as they travel
+    // ============================================
+    (function() {
+        const canvas = document.getElementById('emberCanvas');
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+        const particles = [];
+        const maxParticles = 70;
+
+        // Set canvas size - extra height for bottom embers
+        function resizeCanvas() {
+            canvas.width = 700;
+            canvas.height = 500;
+        }
+        resizeCanvas();
+
+        // Wordmark dimensions - centered with room for bottom embers
+        const centerX = canvas.width / 2;
+        const centerY = 180;
+        const logoWidth = 500;
+        const logoHeight = 85;
+
+        // Random helpers
+        function rand(min, max) {
+            return Math.random() * (max - min) + min;
+        }
+        function randInt(min, max) {
+            return Math.floor(rand(min, max + 1));
+        }
+
+        // Wide variety of fire colors
+        const emberColors = [
+            // Brilliant white-hot
+            { h: [45, 60], s: [20, 50], l: [92, 99] },
+            // Bright yellow
+            { h: [50, 60], s: [95, 100], l: [70, 88] },
+            // Golden yellow
+            { h: [42, 52], s: [90, 100], l: [60, 78] },
+            // Warm orange
+            { h: [28, 42], s: [92, 100], l: [55, 72] },
+            // Deep orange
+            { h: [18, 32], s: [90, 100], l: [48, 65] },
+            // Red-orange
+            { h: [8, 22], s: [88, 100], l: [45, 60] },
+            // Deep red
+            { h: [0, 12], s: [85, 98], l: [40, 55] },
+            // Crimson
+            { h: [350, 360], s: [80, 95], l: [38, 52] },
+            // Amber glow
+            { h: [35, 48], s: [85, 100], l: [50, 68] },
+            // Pale fire
+            { h: [38, 55], s: [60, 85], l: [75, 90] },
+        ];
+
+        // Logo bounding box for collision detection
+        const logoLeft = centerX - logoWidth / 2;
+        const logoRight = centerX + logoWidth / 2;
+        const logoTop = centerY - logoHeight / 2;
+        const logoBottom = centerY + logoHeight / 2;
+
+        // Check if point is inside logo bounds
+        function isInsideLogo(x, y, padding = 0) {
+            return x > logoLeft - padding && x < logoRight + padding &&
+                   y > logoTop - padding && y < logoBottom + padding;
+        }
+
+        // Get spawn point on logo perimeter - OUTSIDE the logo
+        function getPerimeterSpawn() {
+            // Weighted edge selection
+            const edgeRoll = Math.random();
+            let edge;
+            if (edgeRoll < 0.35) {
+                edge = 'top';    // 35% top
+            } else if (edgeRoll < 0.55) {
+                edge = 'right';  // 20% right
+            } else if (edgeRoll < 0.80) {
+                edge = 'bottom'; // 25% bottom - boosted!
+            } else {
+                edge = 'left';   // 20% left
+            }
+
+            let x, y, normalAngle;
+            const edgeOffset = 8; // Spawn OUTSIDE the logo edge
+
+            // Calculate position and outward normal based on edge
+            switch (edge) {
+                case 'top':
+                    x = logoLeft + Math.random() * logoWidth;
+                    y = logoTop - edgeOffset;
+                    normalAngle = -Math.PI/2; // Points up
+                    break;
+                case 'right':
+                    x = logoRight + edgeOffset;
+                    y = logoTop + Math.random() * logoHeight;
+                    normalAngle = 0; // Points right
+                    break;
+                case 'bottom':
+                    x = logoLeft + Math.random() * logoWidth;
+                    y = logoBottom + edgeOffset;
+                    normalAngle = Math.PI/2; // Points down
+                    break;
+                case 'left':
+                    x = logoLeft - edgeOffset;
+                    y = logoTop + Math.random() * logoHeight;
+                    normalAngle = Math.PI; // Points left
+                    break;
+            }
+
+            // Add randomness to the outward angle (spread of ±40 degrees)
+            const spread = rand(-0.7, 0.7);
+            const angle = normalAngle + spread;
+
+            // Add slight position jitter along the edge only
+            if (edge === 'top' || edge === 'bottom') {
+                x += rand(-5, 5);
+            } else {
+                y += rand(-5, 5);
+            }
+
+            return { x, y, angle, normalAngle, edge };
+        }
+
+        // Create a new ember
+        function createEmber() {
+            const spawn = getPerimeterSpawn();
+            const isBottom = spawn.edge === 'bottom';
+
+            // Pick random color from wide palette
+            // Bottom embers tend to be hotter (more yellow/white)
+            let colorIdx;
+            if (isBottom && Math.random() > 0.4) {
+                colorIdx = randInt(0, 4); // Hotter colors for bottom
+            } else {
+                colorIdx = randInt(0, emberColors.length - 1);
+            }
+            const color = emberColors[colorIdx];
+
+            // Wide variety of initial sizes - START LARGE
+            // Bottom embers tend to be slightly larger (dripping molten embers)
+            const sizeCategory = Math.random();
+            let initialSize;
+            if (isBottom) {
+                // Bottom embers: bigger on average
+                if (sizeCategory > 0.85) {
+                    initialSize = rand(14, 20); // Giant dripping embers
+                } else if (sizeCategory > 0.6) {
+                    initialSize = rand(8, 14); // Large embers
+                } else if (sizeCategory > 0.25) {
+                    initialSize = rand(5, 8); // Medium embers
+                } else {
+                    initialSize = rand(2, 5); // Small sparks
+                }
+            } else {
+                if (sizeCategory > 0.92) {
+                    initialSize = rand(12, 18); // Giant embers (rare)
+                } else if (sizeCategory > 0.75) {
+                    initialSize = rand(7, 12); // Large embers
+                } else if (sizeCategory > 0.4) {
+                    initialSize = rand(4, 7); // Medium embers
+                } else {
+                    initialSize = rand(2, 4); // Small sparks
+                }
+            }
+
+            // Speed - bigger embers move slower but travel further
+            // Bottom embers fall with more gravity assist
+            const baseSpeed = isBottom ? rand(1.2, 3.5) : rand(1.5, 4.0);
+            const speed = baseSpeed * (initialSize > 10 ? 0.6 : initialSize > 6 ? 0.8 : 1.0);
+
+            // Shoot outward from spawn point
+            const vx = Math.cos(spawn.angle) * speed;
+            const vy = Math.sin(spawn.angle) * speed;
+
+            // Shape variation - bottom embers more elongated (dripping)
+            const aspectRatio = isBottom ? rand(0.3, 1.2) : rand(0.4, 1.8);
+            const irregularity = rand(0.7, 1.3);
+
+            // Physics - bottom embers have more gravity, longer travel
+            const gravity = isBottom ? rand(0.02, 0.06) : rand(-0.01, 0.02);
+            const drag = isBottom ? rand(0.99, 0.997) : rand(0.985, 0.995);
+
+            return {
+                x: spawn.x,
+                y: spawn.y,
+                spawnX: spawn.x,
+                spawnY: spawn.y,
+                vx: vx * rand(0.8, 1.2),
+                vy: vy * rand(0.8, 1.2),
+
+                // Size starts large, will shrink based on distance
+                initialSize: initialSize,
+                size: initialSize,
+                aspectRatio: aspectRatio,
+                irregularity: irregularity,
+
+                // Rotation - bottom embers rotate less (falling)
+                rotation: rand(-Math.PI, Math.PI),
+                rotationSpeed: (isBottom ? rand(-0.08, 0.08) : rand(-0.15, 0.15)) * (initialSize > 8 ? 0.5 : 1),
+
+                // Life and decay - bottom embers live slightly longer
+                life: 1,
+                maxLife: isBottom ? rand(1.0, 1.8) : rand(0.8, 1.5),
+
+                // Color with variation
+                hue: rand(color.h[0], color.h[1]),
+                sat: rand(color.s[0], color.s[1]),
+                light: rand(color.l[0], color.l[1]),
+
+                // Secondary color for variation
+                hue2: rand(color.h[0], color.h[1]) + rand(-15, 15),
+
+                // Behavior - bottom embers wobble less
+                wobble: rand(0, Math.PI * 2),
+                wobbleSpeed: isBottom ? rand(0.02, 0.06) : rand(0.03, 0.1),
+                wobbleAmp: isBottom ? rand(0.05, 0.3) : rand(0.1, 0.5),
+
+                // Flicker
+                flicker: rand(0, Math.PI * 2),
+                flickerSpeed: rand(0.1, 0.35),
+
+                // Trail - bottom embers have longer trails
+                trail: [],
+                trailLength: isBottom ? (initialSize > 8 ? 12 : initialSize > 4 ? 8 : 5) : (initialSize > 8 ? 8 : initialSize > 4 ? 5 : 3),
+
+                // Physics
+                drag: drag,
+                gravity: gravity,
+
+                // Track edge for distance calculations
+                isBottom: isBottom,
+            };
+        }
+
+        // Spawn particles
+        let spawnAcc = 0;
+        function spawnParticles(dt) {
+            // Variable spawn rate with occasional bursts
+            let rate = 22;
+            if (Math.random() > 0.96) rate *= 5; // Burst!
+            else if (Math.random() > 0.88) rate *= 2.5;
+
+            spawnAcc += rate * dt;
+            while (spawnAcc >= 1 && particles.length < maxParticles) {
+                particles.push(createEmber());
+                spawnAcc -= 1;
+            }
+        }
+
+        // Update particles
+        function updateParticles(dt) {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+
+                // Store trail
+                if (p.trail.length >= p.trailLength) p.trail.shift();
+                p.trail.push({ x: p.x, y: p.y, size: p.size });
+
+                // Wobble motion
+                p.wobble += p.wobbleSpeed;
+                const wobble = Math.sin(p.wobble) * p.wobbleAmp;
+
+                // Update position
+                p.x += p.vx + wobble;
+                p.y += p.vy;
+
+                // Apply drag and gravity
+                p.vx *= p.drag;
+                p.vy *= p.drag;
+                p.vy += p.gravity;
+
+                // Add tiny random drift
+                p.vx += rand(-0.015, 0.015);
+                p.vy += rand(-0.015, 0.015);
+
+                // Rotation
+                p.rotation += p.rotationSpeed;
+
+                // Calculate distance from spawn point
+                const dx = p.x - p.spawnX;
+                const dy = p.y - p.spawnY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                // SIZE SHRINKS based on distance traveled (fizzle out effect)
+                // Bottom embers travel further before fading
+                const maxDistance = p.isBottom
+                    ? 200 + p.initialSize * 12  // Longer travel for bottom
+                    : 150 + p.initialSize * 10;
+                const distanceRatio = Math.min(1, distance / maxDistance);
+                p.size = p.initialSize * (1 - distanceRatio * 0.85);
+
+                // Life also decays with distance
+                p.life = Math.max(0, 1 - distanceRatio);
+
+                // Flicker
+                p.flicker += p.flickerSpeed;
+
+                // Remove dead/distant particles
+                if (p.life <= 0.02 || p.size < 0.5 || distance > maxDistance * 1.2) {
+                    particles.splice(i, 1);
+                }
+            }
+        }
+
+        // Draw ember
+        function drawEmber(p) {
+            const flickerMod = 0.7 + Math.sin(p.flicker) * 0.3;
+            const alpha = p.life * flickerMod;
+            if (alpha < 0.03) return;
+
+            ctx.save();
+            ctx.translate(p.x, p.y);
+            ctx.rotate(p.rotation);
+
+            // Draw trail
+            for (let i = 0; i < p.trail.length; i++) {
+                const t = p.trail[i];
+                const trailRatio = i / p.trail.length;
+                const trailAlpha = trailRatio * alpha * 0.25;
+                const trailSize = t.size * trailRatio * 0.4;
+
+                if (trailAlpha < 0.02 || trailSize < 0.3) continue;
+
+                const rx = t.x - p.x;
+                const ry = t.y - p.y;
+
+                ctx.beginPath();
+                ctx.arc(rx, ry, trailSize, 0, Math.PI * 2);
+                ctx.fillStyle = `hsla(${p.hue - 10}, ${p.sat * 0.6}%, ${p.light * 0.6}%, ${trailAlpha})`;
+                ctx.fill();
+            }
+
+            // Ember dimensions with flicker
+            const w = p.size * p.aspectRatio * (0.8 + Math.sin(p.flicker * 1.7) * 0.2);
+            const h = p.size * (0.85 + Math.sin(p.flicker * 1.2) * 0.15);
+
+            // Create gradient
+            const gradSize = Math.max(w, h) * 2;
+            const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, gradSize);
+
+            // Color stops - hot core to cooler edge
+            grad.addColorStop(0, `hsla(55, 100%, 98%, ${alpha})`);
+            grad.addColorStop(0.12, `hsla(${p.hue + 8}, 100%, ${Math.min(98, p.light + 20)}%, ${alpha * 0.95})`);
+            grad.addColorStop(0.35, `hsla(${p.hue}, ${p.sat}%, ${p.light}%, ${alpha * 0.85})`);
+            grad.addColorStop(0.6, `hsla(${p.hue2}, ${p.sat * 0.85}%, ${p.light * 0.75}%, ${alpha * 0.6})`);
+            grad.addColorStop(0.85, `hsla(${p.hue - 20}, ${p.sat * 0.7}%, ${p.light * 0.5}%, ${alpha * 0.25})`);
+            grad.addColorStop(1, `hsla(${p.hue - 30}, 50%, 25%, 0)`);
+
+            // Draw irregular organic shape
+            const irr = p.irregularity;
+            ctx.beginPath();
+            ctx.moveTo(0, -h * 0.5 * irr);
+            ctx.bezierCurveTo(
+                w * 0.6, -h * 0.3,
+                w * 0.55, h * 0.25,
+                0, h * 0.5
+            );
+            ctx.bezierCurveTo(
+                -w * 0.55, h * 0.25,
+                -w * 0.6, -h * 0.3,
+                0, -h * 0.5 * irr
+            );
+            ctx.fillStyle = grad;
+            ctx.fill();
+
+            // Hot core for bigger embers
+            if (p.size > 4 && alpha > 0.4) {
+                ctx.beginPath();
+                const coreSize = p.size * 0.2 * flickerMod;
+                ctx.arc(0, 0, coreSize, 0, Math.PI * 2);
+                ctx.fillStyle = `hsla(55, 100%, 99%, ${alpha * 0.8})`;
+                ctx.fill();
+            }
+
+            ctx.restore();
+        }
+
+        // Render loop
+        let lastTime = performance.now();
+
+        // ============================================
+        // OFFICE DEBRIS SYSTEM
+        // Occasionally blast out office furniture!
+        // ============================================
+        const debris = [];
+        const maxDebris = 4; // Keep it rare - max 4 items at once
+
+        // Office items - consistent pixel art style with game's color palette
+        const officeItems = [
+            {
+                name: 'chair',
+                weight: 10,
+                draw: function(ctx, size, flip) {
+                    ctx.save();
+                    ctx.scale(size * 1.1, size * 1.1);
+                    if (flip) ctx.scale(-1, 1);
+
+                    // Wheel base - star pattern
+                    ctx.fillStyle = '#2a2a2a';
+                    ctx.fillRect(-10, 16, 4, 4);
+                    ctx.fillRect(6, 16, 4, 4);
+                    ctx.fillRect(-2, 18, 4, 3);
+
+                    // Center column
+                    ctx.fillStyle = '#3a3a3a';
+                    ctx.fillRect(-2, 6, 4, 12);
+
+                    // Seat cushion
+                    ctx.fillStyle = '#1a1a2e';
+                    ctx.fillRect(-12, 2, 24, 6);
+                    ctx.fillStyle = '#2d2d4a';
+                    ctx.fillRect(-10, 3, 20, 4);
+
+                    // Back rest
+                    ctx.fillStyle = '#1a1a2e';
+                    ctx.fillRect(-10, -16, 20, 18);
+                    ctx.fillStyle = '#2d2d4a';
+                    ctx.fillRect(-8, -14, 16, 14);
+
+                    // Arm rests
+                    ctx.fillStyle = '#2a2a2a';
+                    ctx.fillRect(-14, -4, 4, 8);
+                    ctx.fillRect(10, -4, 4, 8);
+
+                    ctx.restore();
+                }
+            },
+            {
+                name: 'desk',
+                weight: 8,
+                draw: function(ctx, size, flip) {
+                    ctx.save();
+                    ctx.scale(size * 0.9, size * 0.9);
+                    if (flip) ctx.scale(-1, 1);
+
+                    // Legs
+                    ctx.fillStyle = '#3a3a3a';
+                    ctx.fillRect(-22, 4, 4, 16);
+                    ctx.fillRect(18, 4, 4, 16);
+
+                    // Desktop surface
+                    ctx.fillStyle = '#6B4423';
+                    ctx.fillRect(-24, -4, 48, 8);
+                    ctx.fillStyle = '#8B5A2B';
+                    ctx.fillRect(-22, -2, 44, 4);
+
+                    // Drawer unit
+                    ctx.fillStyle = '#5a4a3a';
+                    ctx.fillRect(-18, 4, 16, 14);
+                    ctx.fillStyle = '#4a3a2a';
+                    ctx.fillRect(-16, 6, 12, 5);
+                    ctx.fillRect(-16, 12, 12, 5);
+                    // Handles
+                    ctx.fillStyle = '#888';
+                    ctx.fillRect(-11, 8, 4, 2);
+                    ctx.fillRect(-11, 14, 4, 2);
+
+                    ctx.restore();
+                }
+            },
+            {
+                name: 'fileCabinet',
+                weight: 7,
+                draw: function(ctx, size, flip) {
+                    ctx.save();
+                    ctx.scale(size * 1.0, size * 1.0);
+                    if (flip) ctx.scale(-1, 1);
+
+                    // Cabinet body
+                    ctx.fillStyle = '#4a4a4a';
+                    ctx.fillRect(-10, -20, 20, 40);
+
+                    // Top edge
+                    ctx.fillStyle = '#5a5a5a';
+                    ctx.fillRect(-10, -20, 20, 3);
+
+                    // Drawer faces
+                    ctx.fillStyle = '#555';
+                    ctx.fillRect(-8, -16, 16, 10);
+                    ctx.fillRect(-8, -4, 16, 10);
+                    ctx.fillRect(-8, 8, 16, 10);
+
+                    // Drawer handles
+                    ctx.fillStyle = '#888';
+                    ctx.fillRect(-3, -12, 6, 2);
+                    ctx.fillRect(-3, 0, 6, 2);
+                    ctx.fillRect(-3, 12, 6, 2);
+
+                    ctx.restore();
+                }
+            },
+            {
+                name: 'monitor',
+                weight: 12,
+                draw: function(ctx, size, flip) {
+                    ctx.save();
+                    ctx.scale(size * 1.1, size * 1.1);
+                    if (flip) ctx.scale(-1, 1);
+
+                    // Screen frame
+                    ctx.fillStyle = '#1a1a1a';
+                    ctx.fillRect(-14, -12, 28, 20);
+
+                    // Screen
+                    ctx.fillStyle = '#0f3460';
+                    ctx.fillRect(-12, -10, 24, 16);
+
+                    // Screen glow/content
+                    ctx.fillStyle = '#4ecdc4';
+                    ctx.fillRect(-10, -8, 10, 2);
+                    ctx.fillStyle = '#e94560';
+                    ctx.fillRect(-10, -4, 16, 2);
+                    ctx.fillStyle = '#ffe66d';
+                    ctx.fillRect(-10, 0, 8, 2);
+                    ctx.fillStyle = '#4ecdc4';
+                    ctx.fillRect(-10, 4, 12, 2);
+
+                    // Stand neck
+                    ctx.fillStyle = '#2a2a2a';
+                    ctx.fillRect(-3, 8, 6, 6);
+                    // Stand base
+                    ctx.fillStyle = '#1a1a1a';
+                    ctx.fillRect(-8, 14, 16, 3);
+
+                    ctx.restore();
+                }
+            },
+            {
+                name: 'coffee',
+                weight: 14,
+                draw: function(ctx, size, flip) {
+                    ctx.save();
+                    ctx.scale(size * 1.6, size * 1.6);
+                    if (flip) ctx.scale(-1, 1);
+
+                    // Mug body
+                    ctx.fillStyle = '#e8e8e8';
+                    ctx.fillRect(-5, -4, 10, 12);
+                    ctx.fillStyle = '#fff';
+                    ctx.fillRect(-4, -3, 8, 10);
+
+                    // Coffee
+                    ctx.fillStyle = '#3d2314';
+                    ctx.fillRect(-3, -1, 6, 7);
+
+                    // Handle
+                    ctx.fillStyle = '#e8e8e8';
+                    ctx.fillRect(5, 0, 3, 6);
+                    ctx.fillStyle = '#1a1a2e';
+                    ctx.fillRect(6, 2, 2, 2);
+
+                    // Steam wisps
+                    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+                    ctx.fillRect(-2, -7, 2, 3);
+                    ctx.fillRect(1, -9, 2, 4);
+
+                    ctx.restore();
+                }
+            },
+            {
+                name: 'plant',
+                weight: 9,
+                draw: function(ctx, size, flip) {
+                    ctx.save();
+                    ctx.scale(size * 1.3, size * 1.3);
+                    if (flip) ctx.scale(-1, 1);
+
+                    // Pot
+                    ctx.fillStyle = '#a04820';
+                    ctx.fillRect(-6, 6, 12, 8);
+                    ctx.fillStyle = '#c05828';
+                    ctx.fillRect(-7, 4, 14, 3);
+
+                    // Soil
+                    ctx.fillStyle = '#3a2a1a';
+                    ctx.fillRect(-5, 5, 10, 2);
+
+                    // Leaves - simple but clear
+                    ctx.fillStyle = '#2d6b2f';
+                    ctx.fillRect(-1, -2, 3, 7);
+                    ctx.fillRect(-5, -6, 4, 5);
+                    ctx.fillRect(2, -8, 4, 6);
+                    ctx.fillRect(-7, -2, 3, 4);
+                    ctx.fillRect(5, -4, 3, 4);
+
+                    // Highlights
+                    ctx.fillStyle = '#4a8b4c';
+                    ctx.fillRect(-4, -5, 2, 3);
+                    ctx.fillRect(3, -6, 2, 3);
+
+                    ctx.restore();
+                }
+            },
+            {
+                name: 'papers',
+                weight: 16,
+                draw: function(ctx, size, flip, rotation) {
+                    ctx.save();
+                    ctx.scale(size * 1.4, size * 1.4);
+
+                    // Scattered papers effect
+                    ctx.fillStyle = '#e8e8e0';
+                    ctx.fillRect(-8, -4, 14, 10);
+                    ctx.fillStyle = '#f0f0e8';
+                    ctx.fillRect(-6, -7, 14, 10);
+                    ctx.fillStyle = '#fff';
+                    ctx.fillRect(-4, -10, 14, 10);
+
+                    // Text lines on top paper
+                    ctx.fillStyle = '#666';
+                    ctx.fillRect(-2, -8, 8, 1);
+                    ctx.fillRect(-2, -5, 10, 1);
+                    ctx.fillRect(-2, -2, 6, 1);
+
+                    ctx.restore();
+                }
+            },
+            {
+                name: 'keyboard',
+                weight: 11,
+                draw: function(ctx, size, flip) {
+                    ctx.save();
+                    ctx.scale(size * 1.2, size * 1.2);
+                    if (flip) ctx.scale(-1, 1);
+
+                    // Keyboard frame
+                    ctx.fillStyle = '#1a1a1a';
+                    ctx.fillRect(-16, -4, 32, 10);
+
+                    // Key rows
+                    ctx.fillStyle = '#3a3a3a';
+                    ctx.fillRect(-14, -2, 28, 2);
+                    ctx.fillRect(-14, 1, 28, 2);
+                    ctx.fillRect(-14, 4, 28, 2);
+
+                    // Spacebar
+                    ctx.fillStyle = '#4a4a4a';
+                    ctx.fillRect(-6, 4, 12, 2);
+
+                    ctx.restore();
+                }
+            },
+            {
+                name: 'stapler',
+                weight: 12,
+                draw: function(ctx, size, flip) {
+                    ctx.save();
+                    ctx.scale(size * 1.8, size * 1.8);
+                    if (flip) ctx.scale(-1, 1);
+
+                    // Base
+                    ctx.fillStyle = '#1a1a1a';
+                    ctx.fillRect(-8, 2, 16, 3);
+
+                    // Top (red swingline style)
+                    ctx.fillStyle = '#c41e3a';
+                    ctx.fillRect(-7, -2, 14, 4);
+                    ctx.fillStyle = '#e94560';
+                    ctx.fillRect(-6, -1, 12, 2);
+
+                    // Metal front
+                    ctx.fillStyle = '#777';
+                    ctx.fillRect(5, 0, 3, 3);
+
+                    ctx.restore();
+                }
+            },
+            {
+                name: 'phone',
+                weight: 11,
+                draw: function(ctx, size, flip) {
+                    ctx.save();
+                    ctx.scale(size * 1.5, size * 1.5);
+
+                    // Phone body
+                    ctx.fillStyle = '#1a1a1a';
+                    ctx.fillRect(-6, -10, 12, 20);
+
+                    // Screen
+                    ctx.fillStyle = '#0f3460';
+                    ctx.fillRect(-4, -8, 8, 12);
+
+                    // Screen content
+                    ctx.fillStyle = '#4ecdc4';
+                    ctx.fillRect(-2, -6, 4, 2);
+                    ctx.fillStyle = '#e94560';
+                    ctx.fillRect(-2, -2, 4, 4);
+
+                    ctx.restore();
+                }
+            },
+            {
+                name: 'waterCooler',
+                weight: 4,
+                draw: function(ctx, size, flip) {
+                    ctx.save();
+                    ctx.scale(size * 0.85, size * 0.85);
+
+                    // Base/dispenser
+                    ctx.fillStyle = '#d0d0d0';
+                    ctx.fillRect(-8, 5, 16, 18);
+                    ctx.fillStyle = '#e8e8e8';
+                    ctx.fillRect(-6, 7, 12, 14);
+
+                    // Water jug
+                    ctx.fillStyle = '#4ecdc4';
+                    ctx.fillRect(-5, -25, 10, 30);
+                    ctx.fillStyle = '#6ee4dc';
+                    ctx.fillRect(-3, -23, 6, 26);
+
+                    // Jug cap
+                    ctx.fillStyle = '#2a9d8f';
+                    ctx.fillRect(-4, -28, 8, 4);
+
+                    // Taps
+                    ctx.fillStyle = '#e94560';
+                    ctx.fillRect(-10, 10, 3, 4);
+                    ctx.fillStyle = '#4ecdc4';
+                    ctx.fillRect(7, 10, 3, 4);
+
+                    ctx.restore();
+                }
+            },
+            {
+                name: 'trashcan',
+                weight: 9,
+                draw: function(ctx, size, flip) {
+                    ctx.save();
+                    ctx.scale(size * 1.3, size * 1.3);
+
+                    // Can body
+                    ctx.fillStyle = '#3a3a3a';
+                    ctx.fillRect(-7, -8, 14, 18);
+                    ctx.fillStyle = '#4a4a4a';
+                    ctx.fillRect(-5, -6, 10, 14);
+
+                    // Rim
+                    ctx.fillStyle = '#5a5a5a';
+                    ctx.fillRect(-8, -10, 16, 3);
+
+                    // Crumpled paper sticking out
+                    ctx.fillStyle = '#f0f0e8';
+                    ctx.fillRect(-3, -12, 4, 4);
+                    ctx.fillStyle = '#fff';
+                    ctx.fillRect(0, -14, 3, 5);
+
+                    ctx.restore();
+                }
+            },
+            {
+                name: 'lamp',
+                weight: 7,
+                draw: function(ctx, size, flip) {
+                    ctx.save();
+                    ctx.scale(size * 1.1, size * 1.1);
+                    if (flip) ctx.scale(-1, 1);
+
+                    // Base
+                    ctx.fillStyle = '#2a2a2a';
+                    ctx.fillRect(-6, 12, 12, 3);
+
+                    // Pole
+                    ctx.fillStyle = '#3a3a3a';
+                    ctx.fillRect(-2, -6, 4, 18);
+
+                    // Shade
+                    ctx.fillStyle = '#1a1a2e';
+                    ctx.fillRect(-10, -14, 20, 10);
+                    ctx.fillStyle = '#2d2d4a';
+                    ctx.fillRect(-8, -12, 16, 6);
+
+                    // Light glow
+                    ctx.fillStyle = '#ffe66d';
+                    ctx.globalAlpha = 0.6;
+                    ctx.fillRect(-6, -10, 12, 4);
+                    ctx.globalAlpha = 1;
+
+                    ctx.restore();
+                }
+            }
+        ];
+
+        // Calculate total weight for weighted random selection
+        const totalWeight = officeItems.reduce((sum, item) => sum + item.weight, 0);
+
+        function getRandomItem() {
+            let r = Math.random() * totalWeight;
+            for (const item of officeItems) {
+                r -= item.weight;
+                if (r <= 0) return item;
+            }
+            return officeItems[0];
+        }
+
+        function createDebris() {
+            const spawn = getPerimeterSpawn();
+            const item = getRandomItem();
+
+            // VARIED SPEED: Some fast, some slow enough to recognize
+            const speedRoll = Math.random();
+            let launchSpeed, gravity, drag, rotationSpeed, scale;
+
+            if (speedRoll < 0.35) {
+                // SLOW - Lazily tumbling out, very recognizable
+                launchSpeed = rand(1.5, 3.0);
+                gravity = rand(0.03, 0.06);
+                drag = 0.997;
+                rotationSpeed = rand(-0.04, 0.04);
+                scale = rand(0.9, 1.4); // Bigger so easier to see
+            } else if (speedRoll < 0.65) {
+                // MEDIUM - Moderate speed, still recognizable
+                launchSpeed = rand(3.0, 5.0);
+                gravity = rand(0.06, 0.10);
+                drag = 0.994;
+                rotationSpeed = rand(-0.08, 0.08);
+                scale = rand(0.7, 1.15);
+            } else {
+                // FAST - Explosive blast
+                launchSpeed = rand(5.5, 9);
+                gravity = rand(0.10, 0.16);
+                drag = 0.990;
+                rotationSpeed = rand(-0.15, 0.15);
+                scale = rand(0.5, 0.9);
+            }
+
+            // Launch direction: strictly outward from the edge with slight spread
+            // Use the normal angle (perpendicular to edge, pointing outward)
+            const angleSpread = rand(-0.4, 0.4); // About ±23 degrees spread
+            const launchAngle = spawn.normalAngle + angleSpread;
+
+            // Start position well outside the logo edge (25px out)
+            const spawnOffset = 25;
+            const startX = spawn.x + Math.cos(spawn.normalAngle) * spawnOffset;
+            const startY = spawn.y + Math.sin(spawn.normalAngle) * spawnOffset;
+
+            // Velocity is purely in the outward direction (no upward boost that could cause bouncing)
+            const vx = Math.cos(launchAngle) * launchSpeed;
+            const vy = Math.sin(launchAngle) * launchSpeed;
+
+            return {
+                x: startX,
+                y: startY,
+                vx: vx,
+                vy: vy,
+
+                item: item,
+                scale: scale,
+
+                rotation: rand(-Math.PI, Math.PI),
+                rotationSpeed: rotationSpeed,
+
+                life: 1,
+                flip: Math.random() > 0.5,
+
+                // Physics
+                gravity: gravity,
+                drag: drag,
+
+                // Trail embers
+                emberTimer: 0,
+            };
+        }
+
+        // Spawn debris occasionally - RARE, mysterious
+        let debrisTimer = rand(3, 6);
+        function spawnDebris(dt) {
+            debrisTimer -= dt;
+
+            if (debrisTimer <= 0 && debris.length < maxDebris) {
+                debris.push(createDebris());
+                // Longer interval between debris (4 to 8 seconds) - keep it rare and mysterious
+                debrisTimer = rand(4, 8);
+
+                // Very rare burst (only 8% chance)
+                if (Math.random() > 0.92) {
+                    setTimeout(() => {
+                        if (debris.length < maxDebris) debris.push(createDebris());
+                    }, rand(150, 400));
+                }
+            }
+        }
+
+        // Update debris
+        function updateDebris(dt) {
+            for (let i = debris.length - 1; i >= 0; i--) {
+                const d = debris[i];
+
+                // Physics - simple outward trajectory, no bouncing
+                d.x += d.vx;
+                d.y += d.vy;
+                d.vy += d.gravity;
+                d.vx *= d.drag;
+                d.vy *= d.drag;
+
+                d.rotation += d.rotationSpeed;
+                // Rotation slows down over time
+                d.rotationSpeed *= 0.99;
+
+                // Spawn trailing embers (less frequent)
+                d.emberTimer += dt;
+                if (d.emberTimer > 0.06 && particles.length < maxParticles - 5) {
+                    const trailEmber = createEmber();
+                    trailEmber.x = d.x + rand(-10, 10) * d.scale;
+                    trailEmber.y = d.y + rand(-10, 10) * d.scale;
+                    trailEmber.spawnX = trailEmber.x;
+                    trailEmber.spawnY = trailEmber.y;
+                    trailEmber.vx = d.vx * 0.15 + rand(-0.5, 0.5);
+                    trailEmber.vy = d.vy * 0.15 + rand(-0.5, 0.5);
+                    trailEmber.initialSize *= 0.4;
+                    trailEmber.size = trailEmber.initialSize;
+                    particles.push(trailEmber);
+                    d.emberTimer = 0;
+                }
+
+                // Track time alive for removal
+                d.age = (d.age || 0) + dt;
+
+                // Remove IMMEDIATELY when off canvas - no coming back
+                const offLeft = d.x < -50;
+                const offRight = d.x > canvas.width + 50;
+                const offTop = d.y < -50;
+                const offBottom = d.y > canvas.height + 50;
+                const tooOld = d.age > 8; // Max 8 seconds alive
+
+                if (offLeft || offRight || offTop || offBottom || tooOld) {
+                    debris.splice(i, 1);
+                    continue;
+                }
+
+                // Fade based on distance from center
+                const dx = d.x - centerX;
+                const dy = d.y - centerY;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                d.life = Math.max(0, 1 - (dist / 400));
+            }
+        }
+
+        // Draw debris
+        function drawDebris(d) {
+            if (d.life <= 0.05) return;
+
+            ctx.save();
+            ctx.translate(d.x, d.y);
+            ctx.rotate(d.rotation);
+            ctx.globalAlpha = Math.min(1, d.life * 1.8);
+
+            // Fire glow behind debris
+            const glowSize = 35 * d.scale;
+            const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, glowSize);
+            glow.addColorStop(0, 'rgba(255, 180, 80, 0.5)');
+            glow.addColorStop(0.4, 'rgba(255, 100, 30, 0.3)');
+            glow.addColorStop(0.7, 'rgba(255, 60, 10, 0.15)');
+            glow.addColorStop(1, 'rgba(255, 30, 0, 0)');
+            ctx.fillStyle = glow;
+            ctx.beginPath();
+            ctx.arc(0, 0, glowSize, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw the item
+            d.item.draw(ctx, d.scale, d.flip, d.rotation);
+
+            ctx.restore();
+        }
+
+        function render() {
+            const now = performance.now();
+            const dt = Math.min((now - lastTime) / 1000, 0.1);
+            lastTime = now;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            spawnParticles(dt);
+            spawnDebris(dt);
+            updateParticles(dt);
+            updateDebris(dt);
+
+            // Draw debris FIRST (behind embers for better layering)
+            ctx.globalCompositeOperation = 'source-over';
+            for (const d of debris) {
+                drawDebris(d);
+            }
+
+            // Additive blending for ember glow
+            ctx.globalCompositeOperation = 'lighter';
+
+            // Sort embers
+            particles.sort((a, b) => a.size - b.size);
+
+            for (const p of particles) {
+                drawEmber(p);
+            }
+
+            ctx.globalCompositeOperation = 'source-over';
+            requestAnimationFrame(render);
+        }
+
+        // Start
+        function start() {
+            if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+            render();
+        }
+
+        if (document.readyState === 'complete') start();
+        else window.addEventListener('load', start);
+    })();
+    </script>
+</body>
+</html>

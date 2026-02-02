@@ -1,0 +1,11 @@
+{
+  "name": "deadline-game",
+  "version": "1.0.0",
+  "description": "DEADLINE - A fast-paced competitive maze-racer where you descend a collapsing office building floor-by-floor",
+  "scripts": {
+    "start": "serve . -l 3000"
+  },
+  "dependencies": {
+    "serve": "^14.2.0"
+  }
+}
