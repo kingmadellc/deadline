@@ -6162,8 +6162,8 @@ function initLevel() {
         gameState.zones.garden = addGarden(gameState.maze);
     }
 
-    // Add dog park on floors 9, 6, 3 (gives companion powerup, rebalanced)
-    if (gameState.floor === 9 || gameState.floor === 6 || gameState.floor === 3) {
+    // Add dog park randomly (~40% chance on any floor, gives companion powerup)
+    if (gameRandom() < 0.4) {
         gameState.zones.dogPark = addDogPark(gameState.maze);
     }
 
@@ -6424,8 +6424,8 @@ function initLevel() {
         });
     }
 
-    // Add special powerup in dog park (companion)
-    if (gameState.zones.dogPark && !powerupsDisabled) {
+    // Add special powerup in dog park (companion) - ALWAYS spawn when dog park exists
+    if (gameState.zones.dogPark) {
         const dogPark = gameState.zones.dogPark;
         const companionX = dogPark.x + Math.floor(dogPark.width / 2);
         const companionY = dogPark.y + Math.floor(dogPark.height / 2);
@@ -8656,9 +8656,9 @@ function drawZoneLabels() {
         const dy = dp.y * TILE_SIZE - 8;
 
         ctx.fillStyle = 'rgba(139, 195, 74, 0.9)';
-        ctx.fillRect(dx - 40, dy - 8, 80, 12);
+        ctx.fillRect(dx - 60, dy - 8, 120, 12);
         ctx.fillStyle = '#fff';
-        ctx.fillText('🐕 DOG PARK', dx, dy);
+        ctx.fillText('🐕 ROOFTOP DOG PARK', dx, dy);
     }
 
     ctx.textAlign = 'left';
