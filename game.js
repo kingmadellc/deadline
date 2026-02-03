@@ -734,7 +734,17 @@ document.addEventListener('fullscreenchange', () => {
     displaySettings.fullscreen = !!document.fullscreenElement;
     // Re-fit canvas to use full screen space
     setTimeout(fitCanvasToViewport, 100);
+    // Update fullscreen toggle button text
+    updateFullscreenButtonText();
 });
+
+// Update fullscreen button text based on current state
+function updateFullscreenButtonText() {
+    const btn = document.getElementById('fullscreenToggleBtn');
+    if (btn) {
+        btn.textContent = document.fullscreenElement ? 'EXIT FULLSCREEN' : 'GO FULLSCREEN';
+    }
+}
 
 // Re-detect resolution on resize/orientation change (if auto-detect enabled)
 let _resDetectTimer = null;
@@ -14831,6 +14841,9 @@ function togglePause() {
         pauseScreen.style.backgroundImage = `url('${bg}')`;
         pauseScreen.style.backgroundSize = 'cover';
         pauseScreen.style.backgroundPosition = 'center';
+
+        // Update fullscreen button text
+        updateFullscreenButtonText();
 
         pauseScreen.style.display = 'flex';
         Haptics.pulse('pause', 0.18, 0.28, 80, 150);
