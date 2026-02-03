@@ -4849,7 +4849,6 @@ function showStatsScreen() {
         { label: 'Coworkers Zapped', value: playerProgress.totalZaps, icon: '⚡' },
         { label: 'Secret Exit Found', value: playerProgress.secretExitFound ? 'Yes' : 'Not yet', icon: '🔮' },
         { label: 'Perfect Run', value: playerProgress.perfectRunAchieved ? 'Filed' : 'Not yet', icon: '✨' },
-        { label: 'Staff Unlocked', value: `${playerProgress.unlockedCharacters.length}/${Object.keys(CHARACTERS).length}`, icon: '👥' },
         { label: 'Audits Cleared', value: `${playerProgress.achievements.length}/${Object.keys(ACHIEVEMENTS).length}`, icon: '🏅' }
     ];
 
@@ -4878,8 +4877,8 @@ function showStatsScreen() {
 function resetAllProgress() {
     if (confirm('Are you sure you want to reset ALL progress? This cannot be undone!')) {
         playerProgress = {
-            selectedCharacter: 'default',
-            unlockedCharacters: ['default'],
+            unlockedStatusThemes: ['core'],
+            selectedStatusTheme: 'auto',
             totalRuns: 0,
             totalWins: 0,
             totalPunches: 0,
@@ -14388,6 +14387,13 @@ function addResumeButtonToTitle() {
 }
 
 document.addEventListener('keydown', (e) => {
+    // F11 key - toggle fullscreen (works anytime)
+    if (e.code === 'F11') {
+        e.preventDefault();
+        toggleFullscreen();
+        return;
+    }
+
     // Escape key behavior
     if (e.code === 'Escape') {
         e.preventDefault();
