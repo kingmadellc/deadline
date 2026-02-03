@@ -4,7 +4,29 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DEADLINE - Floor 13</title>
+
+    <!-- Open Graph / Social Media Preview -->
+    <meta property="og:title" content="DEADLINE">
+    <meta property="og:description" content="Clock out. Or get clocked. Race down 13 floors of a collapsing building.">
+    <meta property="og:image" content="https://kingmadellc.github.io/deadline-html5/DEADLINE-cover.png">
+    <meta property="og:url" content="https://kingmadellc.github.io/deadline-html5/">
+    <meta property="og:type" content="website">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="DEADLINE">
+    <meta name="twitter:description" content="Clock out. Or get clocked. Race down 13 floors of a collapsing building.">
+    <meta name="twitter:image" content="https://kingmadellc.github.io/deadline-html5/DEADLINE-cover.png">
+    <!-- Google Fonts: Press Start 2P for 8-bit aesthetic -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
     <style>
+        /* Font definitions */
+        :root {
+            --font-pixel: 'Press Start 2P', cursive;
+            --font-ui: 'Courier New', monospace;
+        }
         * {
             margin: 0;
             padding: 0;
@@ -19,6 +41,7 @@
             min-height: 100vh;
             font-family: 'Courier New', monospace;
             overflow: hidden;
+            touch-action: none;
         }
 
         #gameContainer {
@@ -45,6 +68,76 @@
 
         body.menu-active #gameCanvas {
             border-color: transparent;
+        }
+        body.menu-active #touchControls {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        /* Touch Controls (shown on coarse pointers) */
+        #touchControls {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            padding: 12px 16px 18px;
+            display: none;
+            justify-content: space-between;
+            align-items: flex-end;
+            gap: 12px;
+            z-index: 500;
+            pointer-events: none;
+        }
+
+        @media (pointer: coarse) {
+            #touchControls {
+                display: flex;
+                pointer-events: auto;
+            }
+        }
+
+        .touch-pad, .touch-buttons {
+            display: grid;
+            gap: 8px;
+        }
+
+        .touch-pad {
+            grid-template-columns: 56px 56px 56px;
+            grid-template-rows: 56px 56px 56px;
+        }
+
+        .touch-buttons {
+            grid-template-columns: 72px 72px;
+            grid-template-rows: 56px 56px 56px;
+        }
+
+        .touch-btn {
+            width: 56px;
+            height: 56px;
+            border-radius: 12px;
+            border: 2px solid rgba(255,255,255,0.2);
+            background: rgba(10, 10, 20, 0.75);
+            color: #fff;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+            box-shadow: 0 0 18px rgba(0,0,0,0.35);
+        }
+
+        .touch-btn:active {
+            transform: scale(0.96);
+            border-color: rgba(255, 255, 255, 0.5);
+        }
+
+        .touch-btn.wide {
+            width: 72px;
         }
 
         #hud span {
@@ -90,7 +183,7 @@
             display: none;
             z-index: 100;
             width: 750px;
-            height: 680px;
+            height: 620px;
             box-shadow:
                 0 0 60px rgba(233, 69, 96, 0.6),
                 0 0 100px rgba(255, 100, 50, 0.3),
@@ -397,33 +490,34 @@
         }
 
         #message .subtitle {
-            font-size: 15px;
-            font-weight: bold;
+            font-family: var(--font-pixel);
+            font-size: 11px;
+            font-weight: normal;
             color: #fff;
             margin: 0;
-            letter-spacing: 4px;
+            letter-spacing: 1px;
             text-shadow:
-                0 0 10px rgba(0, 0, 0, 1),
-                0 0 20px rgba(0, 0, 0, 0.8),
+                0 0 10px rgba(233, 69, 96, 0.8),
+                0 0 20px rgba(233, 69, 96, 0.4),
                 2px 2px 4px rgba(0, 0, 0, 1);
             background: rgba(0, 0, 0, 0.75);
-            padding: 8px 24px;
+            padding: 10px 20px;
             border-radius: 4px;
             display: inline-block;
             border: 1px solid rgba(233, 69, 96, 0.6);
         }
 
         #message .tagline-small {
-            font-size: 13px;
+            font-family: var(--font-ui);
+            font-size: 12px;
             font-weight: 500;
-            color: #eee;
+            color: #ccc;
             margin: 0;
-            line-height: 1.5;
+            line-height: 1.6;
             text-shadow:
                 0 0 8px rgba(0, 0, 0, 1),
-                0 0 16px rgba(0, 0, 0, 0.8),
                 1px 1px 3px rgba(0, 0, 0, 1);
-            padding: 6px 16px;
+            padding: 8px 16px;
             background: rgba(0, 0, 0, 0.5);
             border-radius: 4px;
         }
@@ -459,16 +553,16 @@
         /* Primary Button (Start Escape) */
         #message button,
         #message .menu-btn {
-            padding: 10px 24px;
-            font-size: 13px;
+            padding: 12px 24px;
+            font-family: var(--font-pixel);
+            font-size: 10px;
             background: linear-gradient(180deg, #e94560 0%, #c73e54 100%);
             color: #fff;
             border: 2px solid rgba(255,255,255,0.15);
             cursor: pointer;
-            font-family: 'Courier New', monospace;
             text-transform: uppercase;
             border-radius: 6px;
-            letter-spacing: 2px;
+            letter-spacing: 1px;
             box-shadow: 0 4px 15px rgba(233, 69, 96, 0.5);
             transition: all 0.2s ease;
             min-width: 180px;
@@ -484,15 +578,12 @@
         /* Primary Start Button - Extra emphasis */
         #message button[onclick*="startGame"],
         #message .btn-primary {
-            padding: 12px 40px;
-            font-size: 16px;
-            letter-spacing: 3px;
-            animation: pulse-btn 2s ease-in-out infinite;
-        }
-
-        @keyframes pulse-btn {
-            0%, 100% { box-shadow: 0 3px 15px rgba(233, 69, 96, 0.5); }
-            50% { box-shadow: 0 4px 25px rgba(233, 69, 96, 0.8), 0 0 40px rgba(233, 69, 96, 0.3); }
+            padding: 14px 0;
+            font-size: 12px;
+            letter-spacing: 2px;
+            width: 220px;
+            min-width: 220px;
+            box-shadow: 0 4px 20px rgba(233, 69, 96, 0.5);
         }
 
         /* Primary Action Group - Contains Resume + Play */
@@ -507,17 +598,18 @@
 
         /* Resume Button - Green, prominent when visible */
         #message .btn-resume {
-            padding: 12px 50px;
-            font-size: 16px;
-            letter-spacing: 3px;
+            padding: 14px 0;
+            font-size: 12px;
+            letter-spacing: 2px;
+            width: 220px;
+            min-width: 220px;
             background: linear-gradient(180deg, #2ecc71 0%, #27ae60 100%);
             box-shadow: 0 4px 20px rgba(46, 204, 113, 0.5);
             border: 2px solid rgba(46, 204, 113, 0.6);
-            animation: pulse-resume 2s ease-in-out infinite;
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 2px;
+            gap: 4px;
         }
 
         #message .btn-resume:hover {
@@ -526,15 +618,11 @@
             transform: translateY(-2px);
         }
 
-        @keyframes pulse-resume {
-            0%, 100% { box-shadow: 0 3px 15px rgba(46, 204, 113, 0.5); }
-            50% { box-shadow: 0 4px 25px rgba(46, 204, 113, 0.8), 0 0 40px rgba(46, 204, 113, 0.3); }
-        }
-
         /* Floor info subtitle for Resume button */
         #message .resume-floor-info {
-            font-size: 10px;
-            opacity: 0.85;
+            font-family: var(--font-ui);
+            font-size: 9px;
+            opacity: 0.9;
             letter-spacing: 1px;
             font-weight: normal;
         }
@@ -562,10 +650,10 @@
         }
 
         #message .btn-secondary {
-            padding: 8px 18px;
+            padding: 10px 20px;
             font-size: 12px;
             letter-spacing: 2px;
-            min-width: 125px;
+            min-width: 145px;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -613,9 +701,10 @@
 
         /* Endless Descent Button - Fiery red/orange theme with pulsing glow */
         #message .btn-endless {
-            padding: 10px 28px;
-            font-size: 13px;
+            padding: 10px 20px;
+            font-size: 12px;
             letter-spacing: 2px;
+            min-width: 145px;
             background: linear-gradient(180deg, #c0392b 0%, #8e2020 100%);
             border: 2px solid rgba(255, 100, 50, 0.6);
             box-shadow:
@@ -658,6 +747,28 @@
             color: #ffcc80;
         }
 
+        /* Vault Badge - Shows when player has discovered the vault */
+        #message .vault-badge {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            font-size: 16px;
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+            border-radius: 50%;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 10px #3498db, 0 0 20px rgba(52, 152, 219, 0.5);
+            animation: vault-badge-pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes vault-badge-pulse {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 10px #3498db, 0 0 20px rgba(52, 152, 219, 0.5); }
+            50% { transform: scale(1.1); box-shadow: 0 0 15px #3498db, 0 0 30px rgba(52, 152, 219, 0.7); }
+        }
+
         /* Tertiary Actions Row - Smaller, separated */
         #message .tertiary-actions-row {
             margin-top: 6px;
@@ -666,19 +777,19 @@
         }
 
         #message .btn-tertiary {
-            padding: 8px 24px;
-            font-size: 12px;
+            padding: 10px 20px;
+            font-size: 11px;
             letter-spacing: 2px;
             background: linear-gradient(180deg, rgba(60, 60, 80, 0.95) 0%, rgba(40, 40, 55, 0.95) 100%);
-            border: 1px solid rgba(155, 89, 182, 0.4);
+            border: 1px solid rgba(78, 205, 196, 0.4);
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-            min-width: auto;
+            min-width: 130px;
         }
 
         #message .btn-tertiary:hover {
-            background: linear-gradient(180deg, rgba(155, 89, 182, 0.3) 0%, rgba(60, 60, 80, 0.95) 100%);
-            border-color: rgba(155, 89, 182, 0.6);
-            box-shadow: 0 4px 15px rgba(155, 89, 182, 0.3);
+            background: linear-gradient(180deg, rgba(78, 205, 196, 0.3) 0%, rgba(60, 60, 80, 0.95) 100%);
+            border-color: rgba(78, 205, 196, 0.6);
+            box-shadow: 0 4px 15px rgba(78, 205, 196, 0.3);
         }
 
         /* Quick Play Button */
@@ -709,14 +820,16 @@
         }
 
         #message .difficulty-label {
-            font-size: 13px;
-            font-weight: bold;
-            letter-spacing: 2px;
+            font-family: var(--font-pixel);
+            font-size: 10px;
+            font-weight: normal;
+            letter-spacing: 1px;
             text-transform: uppercase;
             transition: color 0.3s ease;
         }
 
         #message .difficulty-desc {
+            font-family: var(--font-ui);
             font-size: 10px;
             color: #888;
             letter-spacing: 1px;
@@ -783,10 +896,11 @@
         }
 
         #message .slider-labels span {
-            font-size: 8px;
+            font-family: var(--font-pixel);
+            font-size: 6px;
             color: #666;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
+            letter-spacing: 0px;
         }
 
         /* Difficulty color states */
@@ -814,15 +928,35 @@
             background: linear-gradient(180deg, rgba(30, 30, 50, 0.98) 0%, rgba(20, 20, 35, 0.99) 100%);
             border: 3px solid #e94560;
             border-radius: 12px;
-            padding: 25px 35px;
-            max-width: 400px;
+            padding: 20px 30px;
+            max-width: 420px;
             width: 90%;
+            max-height: 85vh;
+            overflow-y: auto;
             box-shadow: 0 0 40px rgba(233, 69, 96, 0.4);
         }
 
+        /* Section labels in menu */
+        .menu-section-label {
+            font-family: var(--font-pixel);
+            font-size: 8px;
+            color: #e94560;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            margin-top: 16px;
+            margin-bottom: 8px;
+            padding-left: 8px;
+            border-left: 2px solid #e94560;
+        }
+
+        .menu-section-label:first-child {
+            margin-top: 0;
+        }
+
         .main-settings-overlay h2 {
+            font-family: var(--font-pixel);
             color: #fff;
-            font-size: 22px;
+            font-size: 14px;
             margin-bottom: 20px;
             text-align: center;
             letter-spacing: 3px;
@@ -831,14 +965,14 @@
         .main-settings-buttons {
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 8px;
         }
 
         .menu-option-btn {
             display: flex;
             align-items: center;
-            gap: 15px;
-            padding: 14px 18px;
+            gap: 12px;
+            padding: 12px 16px;
             background: linear-gradient(180deg, rgba(50, 50, 70, 0.9) 0%, rgba(35, 35, 50, 0.95) 100%);
             border: 2px solid rgba(78, 205, 196, 0.3);
             border-radius: 8px;
@@ -855,21 +989,21 @@
         }
 
         .menu-option-btn .menu-icon {
-            font-size: 24px;
-            width: 35px;
+            font-size: 20px;
+            width: 30px;
             text-align: center;
         }
 
         .menu-option-btn .menu-text {
-            font-family: 'Courier New', monospace;
-            font-size: 14px;
-            font-weight: bold;
+            font-family: var(--font-pixel);
+            font-size: 9px;
+            font-weight: normal;
             color: #fff;
-            letter-spacing: 2px;
+            letter-spacing: 1px;
         }
 
         .menu-option-btn .menu-desc {
-            font-family: 'Courier New', monospace;
+            font-family: var(--font-ui);
             font-size: 10px;
             color: #888;
             display: block;
@@ -887,14 +1021,14 @@
         }
 
         .back-btn {
-            margin-top: 20px;
-            padding: 10px 25px;
+            margin-top: 16px;
+            padding: 12px 25px;
             background: linear-gradient(180deg, rgba(100, 100, 120, 0.8) 0%, rgba(70, 70, 90, 0.9) 100%);
             border: 2px solid rgba(150, 150, 170, 0.4);
             border-radius: 6px;
             color: #ccc;
-            font-family: 'Courier New', monospace;
-            font-size: 12px;
+            font-family: var(--font-pixel);
+            font-size: 8px;
             letter-spacing: 1px;
             cursor: pointer;
             transition: all 0.2s ease;
@@ -1050,6 +1184,44 @@
             text-transform: uppercase;
         }
 
+        /* Vault Discovery Section in Milestones */
+        .vault-discovery-section {
+            margin-top: 20px;
+            padding: 15px;
+            background: linear-gradient(135deg, rgba(52, 152, 219, 0.2) 0%, rgba(41, 128, 185, 0.1) 100%);
+            border: 2px solid #3498db;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .vault-discovery-section h3 {
+            color: #3498db;
+            margin-bottom: 10px;
+            font-size: 16px;
+            text-shadow: 0 0 10px rgba(52, 152, 219, 0.5);
+        }
+
+        .vault-info {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .vault-status {
+            color: #f1c40f;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .vault-date, .vault-coins {
+            color: #95a5a6;
+            font-size: 11px;
+        }
+
+        .vault-coins {
+            color: #f1c40f;
+        }
+
         /* Milestones Menu */
         #milestonesMenu {
             position: fixed;
@@ -1087,23 +1259,6 @@
             border-color: rgba(233, 69, 96, 0.6);
             transform: rotate(45deg);
         }
-
-        /* Tertiary Buttons (Settings, Characters, Stats, Achievements) */
-        #message .btn-tertiary {
-            padding: 10px 18px;
-            font-size: 12px;
-            background: linear-gradient(180deg, rgba(60,60,80,0.95) 0%, rgba(40,40,55,0.95) 100%);
-            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4);
-            min-width: 110px;
-            border: 1px solid rgba(78, 205, 196, 0.4);
-        }
-
-        #message .btn-tertiary:hover {
-            background: linear-gradient(180deg, rgba(78, 205, 196, 0.3) 0%, rgba(60,60,80,0.9) 100%);
-            box-shadow: 0 5px 20px rgba(78, 205, 196, 0.3);
-            border-color: rgba(78, 205, 196, 0.6);
-        }
-
 
         /* Row for tertiary buttons */
         #message .button-row-tertiary {
@@ -1994,6 +2149,28 @@
             padding: 3px 0;
         }
 
+        /* Daily Challenge primary button - match main button style */
+        .daily-overlay .button-group button:first-child {
+            padding: 12px 32px;
+            font-size: 14px;
+            letter-spacing: 2px;
+            background: linear-gradient(180deg, #f0a020 0%, #d08018 100%);
+            color: #fff;
+            border: 2px solid rgba(255, 200, 100, 0.4);
+            border-radius: 6px;
+            box-shadow: 0 4px 15px rgba(240, 160, 32, 0.5);
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            text-transform: uppercase;
+            transition: all 0.2s ease;
+        }
+
+        .daily-overlay .button-group button:first-child:hover {
+            background: linear-gradient(180deg, #ffb030 0%, #f0a020 100%);
+            box-shadow: 0 5px 20px rgba(240, 160, 32, 0.7);
+            transform: translateY(-2px);
+        }
+
         .back-btn {
             background: linear-gradient(180deg, #555 0%, #333 100%) !important;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3) !important;
@@ -2199,6 +2376,29 @@
         <div id="controls" aria-hidden="true">WASD/Arrows to move | SPACE to dash | Z to punch (gives TIME!) | E for power-up | ESC pause</div>
     </div>
 
+    <!-- Touch Controls (mobile) -->
+    <div id="touchControls" aria-hidden="true">
+        <div class="touch-pad">
+            <div></div>
+            <button class="touch-btn" id="touchUp">▲</button>
+            <div></div>
+            <button class="touch-btn" id="touchLeft">◀</button>
+            <div></div>
+            <button class="touch-btn" id="touchRight">▶</button>
+            <div></div>
+            <button class="touch-btn" id="touchDown">▼</button>
+            <div></div>
+        </div>
+        <div class="touch-buttons">
+            <button class="touch-btn wide" id="touchDash">DASH</button>
+            <button class="touch-btn wide" id="touchPunch">PUNCH</button>
+            <button class="touch-btn wide" id="touchPower">POWER</button>
+            <button class="touch-btn wide" id="touchPause">PAUSE</button>
+            <div></div>
+            <div></div>
+        </div>
+    </div>
+
     <div id="message" role="dialog" aria-labelledby="game-title" aria-modal="true">
         <!-- Settings gear icon in corner -->
         <button onclick="showMainSettings()" class="corner-settings-btn" aria-label="Settings menu">⚙️</button>
@@ -2246,30 +2446,7 @@
                     </div>
                 </div>
 
-                <!-- Secondary Actions Row - Quick Run + Daily Challenge side-by-side -->
-                <div class="secondary-actions-row">
-                    <button onclick="startGame('quick_normal')" class="btn-secondary btn-quick-run">
-                        ⚡ QUICK RUN
-                        <span class="btn-subtitle">7 FLOORS</span>
-                    </button>
-                    <button onclick="showDailyChallenge()" class="btn-secondary btn-daily">
-                        📅 DAILY
-                        <span class="btn-subtitle">CHALLENGE</span>
-                    </button>
-                </div>
-
-                <!-- Endless Descent Mode -->
-                <div class="endless-mode-row">
-                    <button onclick="startGame('endless')" class="btn-endless">
-                        🔥 ENDLESS DESCENT
-                        <span class="btn-subtitle">HOW DEEP CAN YOU GO?</span>
-                    </button>
-                </div>
-
-                <!-- Tertiary Actions Row - Milestones -->
-                <div class="tertiary-actions-row">
-                    <button onclick="showMilestonesMenu()" class="btn-tertiary">🏆 MILESTONES</button>
-                </div>
+                <!-- Other game modes available via Menu (gear icon) -->
             </div>
         </div>
     </div>
@@ -2288,7 +2465,9 @@
                 <h3>🎮 CONTROLS</h3>
                 <div class="controls-grid">
                     <span>Move</span><span>WASD / Arrow Keys / Left Stick</span>
-                    <span>Use Power-Up</span><span>SPACE / A Button</span>
+                    <span>Dash</span><span>SPACE</span>
+                    <span>Punch</span><span>Z / X</span>
+                    <span>Use Power-Up</span><span>E / A Button</span>
                     <span>Pause</span><span>ESC / P / Start</span>
                 </div>
             </div>
@@ -2396,30 +2575,48 @@
         </div>
     </div>
 
-    <!-- Main Menu Settings (Characters, Achievements, Stats) -->
+    <!-- Main Menu Settings (Game Modes, Characters, Achievements, Stats) -->
     <div id="mainSettingsMenu" style="display: none;">
         <div class="overlay main-settings-overlay">
             <h2>⚙️ MENU</h2>
             <div class="main-settings-buttons">
-                <button onclick="showHowToPlay()" class="menu-option-btn">
-                    <span class="menu-icon">📖</span>
-                    <span class="menu-text">HOW TO PLAY</span>
-                    <span class="menu-desc">Learn controls & mechanics</span>
+                <!-- Game Modes Section -->
+                <div class="menu-section-label">GAME MODES</div>
+                <button onclick="hideMainSettings(); startGame('quick_normal')" class="menu-option-btn">
+                    <span class="menu-icon">⚡</span>
+                    <span class="menu-text">QUICK RUN</span>
+                    <span class="menu-desc">5 floors — fast-paced escape</span>
                 </button>
-                <button onclick="showCharacterSelect()" class="menu-option-btn">
-                    <span class="menu-icon">👔</span>
-                    <span class="menu-text">CHARACTERS</span>
-                    <span class="menu-desc">Choose your office survivor</span>
+                <button onclick="hideMainSettings(); showDailyChallenge()" class="menu-option-btn">
+                    <span class="menu-icon">📅</span>
+                    <span class="menu-text">DAILY CHALLENGE</span>
+                    <span class="menu-desc">Same seed for everyone</span>
                 </button>
-                <button onclick="showAchievements()" class="menu-option-btn">
+                <button onclick="hideMainSettings(); startGame('endless')" class="menu-option-btn">
+                    <span class="menu-icon">🔥</span>
+                    <span class="menu-text">ENDLESS DESCENT</span>
+                    <span class="menu-desc">How deep can you go?</span>
+                </button>
+
+                <!-- Progress Section -->
+                <div class="menu-section-label">PROGRESS</div>
+                <button onclick="showMilestonesMenu()" class="menu-option-btn">
                     <span class="menu-icon">🏆</span>
-                    <span class="menu-text">ACHIEVEMENTS</span>
-                    <span class="menu-desc">View your accomplishments</span>
+                    <span class="menu-text">MILESTONES</span>
+                    <span class="menu-desc">Track your achievements</span>
                 </button>
                 <button onclick="showStats()" class="menu-option-btn">
                     <span class="menu-icon">📊</span>
                     <span class="menu-text">STATISTICS</span>
-                    <span class="menu-desc">Track your escape history</span>
+                    <span class="menu-desc">Your escape history</span>
+                </button>
+
+                <!-- Help & Settings Section -->
+                <div class="menu-section-label">OPTIONS</div>
+                <button onclick="showHowToPlay()" class="menu-option-btn">
+                    <span class="menu-icon">📖</span>
+                    <span class="menu-text">HOW TO PLAY</span>
+                    <span class="menu-desc">Controls & mechanics</span>
                 </button>
                 <button onclick="showSettingsMenu()" class="menu-option-btn">
                     <span class="menu-icon">⚙️</span>
@@ -2456,6 +2653,18 @@
             <div class="settings-content">
                 <div class="settings-section">
                     <h3>Display</h3>
+                    <div class="setting-row">
+                        <label>Device Profile:</label>
+                        <span id="deviceProfileLabel" style="font-size: 0.8em; color: #aaa;">Detecting…</span>
+                    </div>
+                    <div class="setting-row">
+                        <label>Auto Detect:</label>
+                        <input type="checkbox" id="autoDetectToggle" checked onchange="toggleAutoDetectResolution(this.checked)">
+                    </div>
+                    <div class="setting-row">
+                        <label>Re-detect:</label>
+                        <button id="redetectBtn" onclick="redetectResolution()">Re-detect</button>
+                    </div>
                     <div class="setting-row">
                         <label>Resolution:</label>
                         <select id="resolutionSelect" onchange="changeResolution(this.value)">
@@ -2576,8 +2785,8 @@
                             <button class="keybind-btn" id="keybind-right" onclick="captureKeybind('right')">D / →</button>
                         </div>
                         <div class="keybind-row">
-                            <span>Action:</span>
-                            <button class="keybind-btn" id="keybind-action" onclick="captureKeybind('action')">Space</button>
+                            <span>Power-Up:</span>
+                            <button class="keybind-btn" id="keybind-action" onclick="captureKeybind('action')">E</button>
                         </div>
                         <div class="keybind-row">
                             <span>Pause:</span>
