@@ -2387,15 +2387,15 @@
 
     <div id="gameContainer" role="main">
         <div id="hud" role="status" aria-live="polite" aria-label="Game status">
-            <span id="floor">Floor: 13</span>
-            <span id="timer">Time: 30</span>
+            <span id="floor">FLOOR 13</span>
+            <span id="timer">TIMER 30</span>
             <span id="coinDisplay" style="color: #f1c40f;">🪙 0</span>
-            <span id="runTimer">Run: 0:00</span>
-            <span id="powerup">Power: None</span>
+            <span id="runTimer">RUN 0:00</span>
+            <span id="powerup">POWER NONE</span>
             <span id="skillCooldowns" style="font-size: 12px;">🏃 DASH [SPACE] | 👊 PUNCH [Z]</span>
         </div>
         <canvas id="gameCanvas" width="640" height="640" role="img" aria-label="Game canvas - use WASD or arrow keys to move"></canvas>
-        <div id="controls" aria-hidden="true">WASD/Arrows to move | SPACE to dash | Z to punch (gives TIME!) | E for power-up | ESC pause</div>
+        <div id="controls" aria-hidden="true">WASD/Arrows to move | SPACE to dash | Z to punch (earns TIME) | E for power-up | ESC pause</div>
     </div>
 
     <!-- Touch Controls (mobile) -->
@@ -2415,7 +2415,7 @@
             <button class="touch-btn wide" id="touchDash">DASH</button>
             <button class="touch-btn wide" id="touchPunch">PUNCH</button>
             <button class="touch-btn wide" id="touchPower">POWER</button>
-            <button class="touch-btn wide" id="touchPause">PAUSE</button>
+            <button class="touch-btn wide" id="touchPause">HOLD</button>
             <!-- Special ability buttons - hidden until unlocked -->
             <button class="touch-btn wide special-btn" id="touchWallBreak" style="display:none;">SMASH</button>
             <button class="touch-btn wide special-btn" id="touchSeverance" style="display:none;">SEVER</button>
@@ -2436,7 +2436,7 @@
             <!-- Middle: Taglines -->
             <div class="middle-content">
                 <p class="subtitle" role="doc-subtitle">CLOCK OUT. OR GET CLOCKED.</p>
-                <p class="tagline-small">Race down 13 floors of a collapsing building.<br>Sabotage rivals. Beat the clock. Escape alive.</p>
+                <p class="tagline-small">Race down 13 collapsing floors.<br>Sabotage rivals. Beat the clock. Clock out alive.</p>
             </div>
 
             <!-- Bottom: Menu buttons -->
@@ -2444,17 +2444,17 @@
                 <!-- Primary Action Group - Resume + Play -->
                 <div class="primary-action-group" id="primaryActionGroup" role="navigation" aria-label="Main menu">
                     <button onclick="resumeGame()" class="btn-resume" id="menuResumeBtn" style="display: none;">
-                        ▶ RESUME
+                        ▶ CLOCK BACK IN
                         <span class="resume-floor-info" id="resumeFloorInfo"></span>
                     </button>
-                    <button onclick="startGame()" class="btn-primary" id="menuPlayBtn" aria-describedby="game-desc">▶ PLAY</button>
-                    <span id="game-desc" class="visually-hidden">Begin a new game run</span>
+                    <button onclick="startGame()" class="btn-primary" id="menuPlayBtn" aria-describedby="game-desc">▶ START RUN</button>
+                    <span id="game-desc" class="visually-hidden">Begin a new run</span>
                 </div>
 
                 <!-- Difficulty slider (below primary action) -->
                 <div class="difficulty-slider-container" role="group" aria-label="Difficulty selection">
                     <div class="difficulty-label normal" id="difficultyLabel">⚡ NORMAL</div>
-                    <div class="difficulty-desc" id="difficultyDesc">The intended experience</div>
+                    <div class="difficulty-desc" id="difficultyDesc">The approved experience</div>
                     <div class="slider-track-container">
                         <input type="range" min="0" max="4" value="2" class="difficulty-slider" id="difficultySlider"
                                oninput="updateDifficultyFromSlider(this.value)"
@@ -2537,7 +2537,7 @@
             </div>
 
             <div class="button-group">
-                <button onclick="hideHowToPlay()" class="back-btn">BACK TO MENU</button>
+                <button onclick="hideHowToPlay()" class="back-btn">BACK TO OPS</button>
             </div>
         </div>
     </div>
@@ -2552,10 +2552,10 @@
                 <!-- Populated by JavaScript -->
             </div>
             <div class="daily-stats" id="dailyStats">
-                <p>Your Best: <span id="dailyBestTime">--:--</span></p>
+                <p>Best on file: <span id="dailyBestTime">--:--</span></p>
             </div>
             <div class="daily-leaderboard" id="dailyLeaderboard">
-                <h3>Your Runs Today</h3>
+                <h3>Runs on Record</h3>
                 <ol id="leaderboardList"></ol>
             </div>
             <div class="button-group">
@@ -2568,7 +2568,7 @@
     <!-- Level Transition Screen -->
     <div id="levelTransition">
         <div class="overlay">
-            <p class="escaped">Floor cleared! Descending to...</p>
+            <p class="escaped">Floor cleared. Dropping to...</p>
             <h2>FLOOR</h2>
             <div class="floor-num" id="nextFloorNum">22</div>
         </div>
@@ -2577,24 +2577,24 @@
     <!-- Game Over Screen -->
     <div id="gameOver">
         <div class="overlay">
-            <h2>GAME OVER</h2>
-            <p class="message" id="gameOverMessage">The floor collapsed beneath you!</p>
-            <p class="stats" id="gameOverStats">You made it to floor 15</p>
-            <button onclick="restartGame()">TRY AGAIN</button>
+            <h2>CLOCKED OUT</h2>
+            <p class="message" id="gameOverMessage">The floor filed you under rubble.</p>
+            <p class="stats" id="gameOverStats">Clocked out on floor 15</p>
+            <button onclick="restartGame()">RUN IT BACK</button>
         </div>
     </div>
 
     <!-- Victory Screen -->
     <div id="victory">
         <div class="overlay">
-            <h2>YOU ESCAPED!</h2>
-            <p class="message">You made it out alive!</p>
+            <h2>YOU CLOCKED OUT!</h2>
+            <p class="message">You made it out alive.</p>
             <p class="stats" id="victoryStats">
                 Floors descended: 13<br>
                 Enemies stunned: 0<br>
                 Close calls: Many
             </p>
-            <button onclick="restartGame()">PLAY AGAIN</button>
+            <button onclick="restartGame()">RUN AGAIN</button>
         </div>
     </div>
 
@@ -2625,12 +2625,12 @@
                 <div class="menu-section-label">RECORDS</div>
                 <button onclick="showMilestonesMenu()" class="menu-option-btn">
                     <span class="menu-icon">🏆</span>
-                    <span class="menu-text">MILESTONES</span>
+                    <span class="menu-text">AUDITS</span>
                     <span class="menu-desc">Track your paperwork</span>
                 </button>
                 <button onclick="showStats()" class="menu-option-btn">
                     <span class="menu-icon">📊</span>
-                    <span class="menu-text">STATISTICS</span>
+                    <span class="menu-text">RECORDS</span>
                     <span class="menu-desc">Your escape history</span>
                 </button>
 
@@ -2840,8 +2840,8 @@
     <!-- Milestones Menu -->
     <div id="milestonesMenu" style="display: none;">
         <div class="overlay milestones-overlay">
-            <h2>🏆 MILESTONES</h2>
-            <p style="color: #888; margin-bottom: 20px;">Unlock permanent bonuses by completing challenges</p>
+            <h2>🏆 AUDITS</h2>
+            <p style="color: #888; margin-bottom: 20px;">Unlock permanent perks by clearing audits</p>
             <div class="milestones-content" id="milestonesContent">
                 <!-- Populated by JavaScript -->
             </div>

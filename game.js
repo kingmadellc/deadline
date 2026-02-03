@@ -3222,8 +3222,20 @@ const menuNavigation = {
     lastAButton: false,
     lastBButton: false,
     lastUpDown: false,
-    lastLeftRight: false
+    lastLeftRight: false,
+    lastMenuVisible: false  // Track menu visibility transitions
 };
+
+// Reset menu navigation state (called on menu close or transitions)
+function resetMenuNavigationState() {
+    menuNavigation.enabled = false;
+    menuNavigation.buttons = [];
+    menuNavigation.currentIndex = 0;
+    menuNavigation.lastAButton = false;
+    menuNavigation.lastBButton = false;
+    menuNavigation.lastUpDown = false;
+    menuNavigation.lastLeftRight = false;
+}
 
 // Helper to check if element is visible (works with both CSS and inline styles)
 function isElementVisible(el) {
@@ -3240,8 +3252,39 @@ function getMenuButtons() {
     const dailyChallengeEl = document.getElementById('dailyChallengeMenu');
     const settingsMenuEl = document.getElementById('settingsMenu');
     const milestonesMenuEl = document.getElementById('milestonesMenu');
+    const perkSelectionEl = document.getElementById('perkSelection');
+    const pauseScreenEl = document.getElementById('pauseScreen');
+    const gameOverEl = document.getElementById('gameOver');
+    const victoryEl = document.getElementById('victory');
 
     // Check which menu is visible (order matters - check sub-menus first)
+
+    // Perk selection screen (between floors)
+    if (perkSelectionEl && isElementVisible(perkSelectionEl)) {
+        const buttons = [];
+        // Get affordable perk cards (those without data-disabled="true")
+        const perkCards = perkSelectionEl.querySelectorAll('.perk-card:not([data-disabled="true"])');
+        perkCards.forEach(card => buttons.push(card));
+        // Get the skip button
+        const skipBtn = perkSelectionEl.querySelector('button');
+        if (skipBtn && isElementVisible(skipBtn)) buttons.push(skipBtn);
+        return buttons;
+    }
+
+    // Pause screen
+    if (pauseScreenEl && isElementVisible(pauseScreenEl)) {
+        return Array.from(pauseScreenEl.querySelectorAll('button')).filter(btn => isElementVisible(btn));
+    }
+
+    // Game over screen
+    if (gameOverEl && isElementVisible(gameOverEl)) {
+        return Array.from(gameOverEl.querySelectorAll('button')).filter(btn => isElementVisible(btn));
+    }
+
+    // Victory screen
+    if (victoryEl && isElementVisible(victoryEl)) {
+        return Array.from(victoryEl.querySelectorAll('button')).filter(btn => isElementVisible(btn));
+    }
 
     // Settings menu (Display, Audio, Controls, etc.)
     if (settingsMenuEl && isElementVisible(settingsMenuEl)) {
@@ -3340,16 +3383,33 @@ function updateGamepadMenuNavigation() {
     const dailyChallengeEl = document.getElementById('dailyChallengeMenu');
     const settingsMenuEl = document.getElementById('settingsMenu');
     const milestonesMenuEl = document.getElementById('milestonesMenu');
+    const perkSelectionEl = document.getElementById('perkSelection');
+    const pauseScreenEl = document.getElementById('pauseScreen');
+    const gameOverEl = document.getElementById('gameOver');
+    const victoryEl = document.getElementById('victory');
 
     const menuVisible = isElementVisible(messageEl) ||
                         isElementVisible(mainSettingsEl) ||
                         isElementVisible(howToPlayEl) ||
                         isElementVisible(dailyChallengeEl) ||
                         isElementVisible(settingsMenuEl) ||
-                        isElementVisible(milestonesMenuEl);
+                        isElementVisible(milestonesMenuEl) ||
+                        isElementVisible(perkSelectionEl) ||
+                        isElementVisible(pauseScreenEl) ||
+                        isElementVisible(gameOverEl) ||
+                        isElementVisible(victoryEl);
+
+    // Reset input flags when menu visibility changes to avoid ghost inputs
+    if (menuVisible && !menuNavigation.lastMenuVisible) {
+        menuNavigation.lastAButton = false;
+        menuNavigation.lastBButton = false;
+        menuNavigation.lastUpDown = false;
+        menuNavigation.lastLeftRight = false;
+    }
+    menuNavigation.lastMenuVisible = menuVisible;
 
     if (!menuVisible) {
-        menuNavigation.enabled = false;
+        resetMenuNavigationState();
         return;
     }
 
@@ -4665,7 +4725,7 @@ function showAchievementUnlock(achievement) {
     notification.innerHTML = `<div style="display:flex;align-items:center;gap:15px;">
         <div style="font-size:36px">${achievement.icon}</div>
         <div>
-            <div style="font-size:11px;color:#ffe66d;letter-spacing:2px;margin-bottom:3px">ACHIEVEMENT UNLOCKED</div>
+            <div style="font-size:11px;color:#ffe66d;letter-spacing:2px;margin-bottom:3px">AUDIT CLEARED</div>
             <div style="font-size:16px;color:#fff;font-weight:bold">${achievement.name}</div>
             <div style="font-size:11px;color:#aaa">${achievement.description}</div>
         </div>
@@ -4697,8 +4757,8 @@ function showAchievementsScreen() {
     const total = Object.keys(ACHIEVEMENTS).length;
 
     let html = `<div style="background:linear-gradient(180deg,rgba(30,40,60,0.98) 0%,rgba(15,20,35,0.99) 100%);padding:30px;border-radius:12px;border:3px solid #ffe66d;max-width:600px;max-height:80vh;overflow-y:auto;">
-        <h2 style="color:#ffe66d;text-align:center;margin-bottom:5px;letter-spacing:3px;">ACHIEVEMENTS</h2>
-        <div style="color:#888;text-align:center;margin-bottom:20px;font-size:12px;">${unlocked}/${total} Unlocked</div>
+        <h2 style="color:#ffe66d;text-align:center;margin-bottom:5px;letter-spacing:3px;">AUDITS</h2>
+        <div style="color:#888;text-align:center;margin-bottom:20px;font-size:12px;">${unlocked}/${total} On file</div>
         <div style="display:grid;gap:10px;">`;
 
     for (const [id, achievement] of Object.entries(ACHIEVEMENTS)) {
@@ -4732,7 +4792,7 @@ function addAchievementsToTitle() {
         const achieveBtn = document.createElement('button');
         achieveBtn.id = 'titleAchievementsBtn';
         achieveBtn.className = 'btn-tertiary';
-        achieveBtn.textContent = 'ACHIEVEMENTS';
+        achieveBtn.textContent = 'AUDITS';
         achieveBtn.onclick = showAchievementsScreen;
         tertiaryRow.appendChild(achieveBtn);
     }
@@ -4754,22 +4814,22 @@ function showStatsScreen() {
     const avgFloorsPerRun = playerProgress.totalRuns > 0 ? (playerProgress.totalFloorsCleared / playerProgress.totalRuns).toFixed(1) : 0;
 
     const stats = [
-        { label: 'Total Runs', value: playerProgress.totalRuns, icon: '🎮' },
-        { label: 'Total Wins', value: playerProgress.totalWins, icon: '🏆' },
+        { label: 'Runs on File', value: playerProgress.totalRuns, icon: '🎮' },
+        { label: 'Wins on File', value: playerProgress.totalWins, icon: '🏆' },
         { label: 'Win Rate', value: winRate + '%', icon: '📊' },
-        { label: 'Best Floor Reached', value: playerProgress.bestFloor === 13 ? 'N/A' : `Floor ${playerProgress.bestFloor}`, icon: '⬇️' },
-        { label: 'Total Floors Cleared', value: playerProgress.totalFloorsCleared, icon: '🏢' },
+        { label: 'Best Floor on File', value: playerProgress.bestFloor === 13 ? 'N/A' : `Floor ${playerProgress.bestFloor}`, icon: '⬇️' },
+        { label: 'Floors Cleared', value: playerProgress.totalFloorsCleared, icon: '🏢' },
         { label: 'Avg Floors/Run', value: avgFloorsPerRun, icon: '📈' },
         { label: 'Coworkers Punched', value: playerProgress.totalPunches, icon: '🥊' },
         { label: 'Coworkers Zapped', value: playerProgress.totalZaps, icon: '⚡' },
-        { label: 'Secret Exit Found', value: playerProgress.secretExitFound ? 'Yes!' : 'Not yet', icon: '🔮' },
-        { label: 'Perfect Run', value: playerProgress.perfectRunAchieved ? 'Achieved!' : 'Not yet', icon: '✨' },
-        { label: 'Characters Unlocked', value: `${playerProgress.unlockedCharacters.length}/${Object.keys(CHARACTERS).length}`, icon: '👥' },
-        { label: 'Achievements Earned', value: `${playerProgress.achievements.length}/${Object.keys(ACHIEVEMENTS).length}`, icon: '🏅' }
+        { label: 'Secret Exit Found', value: playerProgress.secretExitFound ? 'Yes' : 'Not yet', icon: '🔮' },
+        { label: 'Perfect Run', value: playerProgress.perfectRunAchieved ? 'Filed' : 'Not yet', icon: '✨' },
+        { label: 'Staff Unlocked', value: `${playerProgress.unlockedCharacters.length}/${Object.keys(CHARACTERS).length}`, icon: '👥' },
+        { label: 'Audits Cleared', value: `${playerProgress.achievements.length}/${Object.keys(ACHIEVEMENTS).length}`, icon: '🏅' }
     ];
 
     let html = `<div style="background:linear-gradient(180deg,rgba(30,40,60,0.98) 0%,rgba(15,20,35,0.99) 100%);padding:30px 40px;border-radius:12px;border:3px solid #3498db;max-width:500px;max-height:80vh;overflow-y:auto;">
-        <h2 style="color:#3498db;text-align:center;margin-bottom:20px;letter-spacing:3px;">STATISTICS</h2>
+        <h2 style="color:#3498db;text-align:center;margin-bottom:20px;letter-spacing:3px;">RECORDS</h2>
         <div style="display:grid;gap:8px;">`;
 
     for (const stat of stats) {
@@ -4781,7 +4841,7 @@ function showStatsScreen() {
 
     html += `</div>
         <div style="text-align:center;margin-top:25px;">
-            <button onclick="resetAllProgress()" style="padding:10px 20px;font-size:12px;background:linear-gradient(180deg,#e74c3c 0%,#c0392b 100%);color:#fff;border:none;cursor:pointer;font-family:'Courier New',monospace;text-transform:uppercase;border-radius:4px;letter-spacing:1px;margin-right:15px;">RESET ALL DATA</button>
+            <button onclick="resetAllProgress()" style="padding:10px 20px;font-size:12px;background:linear-gradient(180deg,#e74c3c 0%,#c0392b 100%);color:#fff;border:none;cursor:pointer;font-family:'Courier New',monospace;text-transform:uppercase;border-radius:4px;letter-spacing:1px;margin-right:15px;">PURGE RECORDS</button>
             <button onclick="document.getElementById('statsModal').style.display='none'" style="padding:10px 25px;font-size:14px;background:linear-gradient(180deg,#3498db 0%,#2980b9 100%);color:#fff;border:none;cursor:pointer;font-family:'Courier New',monospace;text-transform:uppercase;border-radius:4px;letter-spacing:2px;">BACK</button>
         </div>
     </div>`;
@@ -4819,7 +4879,7 @@ function addStatsToTitle() {
         const statsBtn = document.createElement('button');
         statsBtn.id = 'titleStatsBtn';
         statsBtn.className = 'btn-tertiary';
-        statsBtn.textContent = 'STATS';
+        statsBtn.textContent = 'RECORDS';
         statsBtn.onclick = showStatsScreen;
         tertiaryRow.appendChild(statsBtn);
     }
@@ -9688,6 +9748,8 @@ function updateSpatialAudio() {
     const floorFactor = gameState.endlessMode
         ? Math.min(1, (gameState.endlessFloor || 1) / 50)
         : Math.min(1, Math.max(0, (13 - gameState.floor) / 12));
+    let closeEnemy = false;
+    let closeFire = false;
 
     // Throttle audio updates to prevent overwhelming
     if (!gameState.lastSpatialAudioTime) gameState.lastSpatialAudioTime = 0;
@@ -9703,6 +9765,7 @@ function updateSpatialAudio() {
             const volume = 0.2 + sizeBoost + timerUrgency * 0.2;
             AudioManager.playPositional('fireCrackle', fire.x, fire.y, px, py, volume, 8);
         }
+        if (dist <= 3) closeFire = true;
     }
 
     // Play enemy footstep sounds for nearby enemies
@@ -9714,6 +9777,7 @@ function updateSpatialAudio() {
             const volume = 0.18 + timerUrgency * 0.18;
             AudioManager.playPositional('enemyStep', enemy.x, enemy.y, px, py, volume, 10);
         }
+        if (dist <= 3) closeEnemy = true;
     }
 
     // Play exit hum when near an exit
@@ -9724,6 +9788,12 @@ function updateSpatialAudio() {
             const volume = 0.12 + timerUrgency * 0.25;
             AudioManager.playPositional('exitHum', exit.x, exit.y, px, py, volume, 6);
         }
+    }
+
+    // Accessibility: subtle proximity haptics for hazards
+    if (closeEnemy || closeFire) {
+        const dangerLevel = (closeEnemy && closeFire) ? 0.12 : 0.08;
+        Haptics.pulse('hazardNear', dangerLevel, dangerLevel + 0.04, 50, 250);
     }
 }
 
@@ -10304,6 +10374,12 @@ function movePlayer(dx, dy) {
                 const pitchScale = 1.0 + (gameState.coinCombo * 0.08); // Higher pitch per combo
                 AudioManager.play('powerup', 0.5, Math.min(pitchScale, 2.0)); // Cap at 2x pitch
                 Haptics.pulse('coin', 0.12, 0.25, 40, 40);
+                if (gameState.coinCombo >= 5) {
+                    Haptics.sequence('coinCombo', [
+                        { strong: 0.12, weak: 0.2, duration: 35 },
+                        { strong: 0.2, weak: 0.25, duration: 45 }
+                    ], 120);
+                }
 
                 // Visual feedback - small particle burst
                 for (let j = 0; j < 4; j++) {
@@ -12153,7 +12229,13 @@ function showPerkSelection(floor) {
                 const price = getPerkPrice(perk.rarity, floor);
                 const canAfford = gameState.coinsCollected >= price;
                 return `
-                <div class="perk-card" onclick="${canAfford ? `purchasePerk('${perk.id}', ${price})` : ''}" style="
+                <div class="perk-card"
+                    data-perk-id="${perk.id}"
+                    data-perk-price="${price}"
+                    data-disabled="${!canAfford}"
+                    data-rarity="${perk.rarity}"
+                    tabindex="${canAfford ? '0' : '-1'}"
+                    style="
                     background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
                     border: 3px solid ${canAfford ? rarityColors[perk.rarity] : '#444'};
                     border-radius: 15px;
@@ -12164,7 +12246,7 @@ function showPerkSelection(floor) {
                     text-align: center;
                     opacity: ${canAfford ? 1 : 0.5};
                     ${perk.rarity === 'legendary' ? 'box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);' : ''}
-                " ${canAfford ? `onmouseover="this.style.transform='scale(1.05)';this.style.boxShadow='0 0 30px ${rarityColors[perk.rarity]}'" onmouseout="this.style.transform='scale(1)';this.style.boxShadow='${perk.rarity === 'legendary' ? '0 0 20px rgba(255, 215, 0, 0.3)' : 'none'}'"` : ''}>
+                ">
                     <div style="font-size: 40px; margin-bottom: 12px;">${perk.icon}</div>
                     <div style="color: ${canAfford ? rarityColors[perk.rarity] : '#666'}; font-size: 10px; text-transform: uppercase; margin-bottom: 6px; ${perk.rarity === 'legendary' ? 'text-shadow: 0 0 10px #ffd700;' : ''}">${perk.rarity}</div>
                     <div style="color: #fff; font-size: 16px; font-weight: bold; margin-bottom: 8px;">${perk.name}</div>
@@ -12174,7 +12256,7 @@ function showPerkSelection(floor) {
                 </div>
             `;}).join('')}
         </div>
-        <button onclick="skipShop()" style="
+        <button class="skip-shop-btn" style="
             margin-top: 30px;
             padding: 15px 40px;
             font-size: 16px;
@@ -12184,13 +12266,61 @@ function showPerkSelection(floor) {
             cursor: pointer;
             border-radius: 8px;
             transition: all 0.2s ease;
-        " onmouseover="this.style.borderColor='#fff';this.style.color='#fff'" onmouseout="this.style.borderColor='#666';this.style.color='#888'">
+        ">
             SKIP (Save coins) [Space]
         </button>
         <p style="color: #444; margin-top: 20px; font-size: 11px;">Current perks: ${gameState.perks.length > 0 ? gameState.perks.map(p => PERKS[p]?.icon || '?').join(' ') : 'None'}</p>
     `;
 
     perkScreen.style.display = 'flex';
+
+    // Add click/keyboard handlers to perk cards for gamepad/keyboard navigation
+    perkScreen.querySelectorAll('.perk-card').forEach(card => {
+        const canAfford = card.dataset.disabled !== 'true';
+        const rarity = card.dataset.rarity;
+        const rarityColor = rarityColors[rarity];
+
+        if (canAfford) {
+            // Click handler
+            card.addEventListener('click', () => {
+                purchasePerk(card.dataset.perkId, parseInt(card.dataset.perkPrice));
+            });
+            // Keyboard handler (Enter/Space)
+            card.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    purchasePerk(card.dataset.perkId, parseInt(card.dataset.perkPrice));
+                }
+            });
+            // Mouse hover effects
+            card.addEventListener('mouseover', () => {
+                card.style.transform = 'scale(1.05)';
+                card.style.boxShadow = `0 0 30px ${rarityColor}`;
+            });
+            card.addEventListener('mouseout', () => {
+                if (!card.classList.contains('gamepad-focus')) {
+                    card.style.transform = 'scale(1)';
+                    card.style.boxShadow = rarity === 'legendary' ? '0 0 20px rgba(255, 215, 0, 0.3)' : 'none';
+                }
+            });
+        }
+    });
+
+    // Add skip button handler
+    const skipBtn = perkScreen.querySelector('.skip-shop-btn');
+    if (skipBtn) {
+        skipBtn.addEventListener('click', skipShop);
+        skipBtn.addEventListener('mouseover', () => {
+            skipBtn.style.borderColor = '#fff';
+            skipBtn.style.color = '#fff';
+        });
+        skipBtn.addEventListener('mouseout', () => {
+            if (!skipBtn.classList.contains('gamepad-focus')) {
+                skipBtn.style.borderColor = '#666';
+                skipBtn.style.color = '#888';
+            }
+        });
+    }
 
     // Keyboard shortcuts for shop (supports up to 6 perks)
     const shopKeyHandler = (e) => {
@@ -13387,6 +13517,12 @@ function update(deltaTime) {
                         const pitchScale = 1.0 + (gameState.coinCombo * 0.08);
                         AudioManager.play('powerup', 0.5, Math.min(pitchScale, 2.0));
                         Haptics.pulse('coin', 0.12, 0.25, 40, 40);
+                        if (gameState.coinCombo >= 5) {
+                            Haptics.sequence('coinCombo', [
+                                { strong: 0.12, weak: 0.2, duration: 35 },
+                                { strong: 0.2, weak: 0.25, duration: 45 }
+                            ], 120);
+                        }
                     }
                 }
             }
@@ -13402,6 +13538,16 @@ function update(deltaTime) {
             AudioManager.play('warning', volume, pitch);
             Haptics.pulse('timerWarning', 0.2 + urgency * 0.25, 0.25 + urgency * 0.3, 80, 350);
             gameState.lastWarningTime = Date.now();
+        }
+    }
+
+    // Low-timer ramp rumble for accessibility (continuous tension cue)
+    if (gameState.timer <= 5 && gameState.timer > 0 && !gameState.lastChance) {
+        const urgency = Math.max(0, Math.min(1, (5 - gameState.timer) / 5));
+        const interval = gameState.timer <= 3 ? 400 : 600;
+        if (!gameState.lastLowTimerRumble || Date.now() - gameState.lastLowTimerRumble > interval) {
+            Haptics.pulse('lowTimerRamp', 0.12 + urgency * 0.18, 0.18 + urgency * 0.2, 70, interval - 50);
+            gameState.lastLowTimerRumble = Date.now();
         }
     }
 
@@ -13435,6 +13581,20 @@ function update(deltaTime) {
     // Update burn effect
     if (gameState.player.burning > 0) {
         gameState.player.burning -= deltaTime;
+    }
+
+    // Accessibility: periodic rumble while stunned or shielded
+    if (gameState.player.stunned > 0) {
+        if (!gameState.lastStunRumble || Date.now() - gameState.lastStunRumble > 500) {
+            Haptics.pulse('stunned', 0.15, 0.2, 70, 450);
+            gameState.lastStunRumble = Date.now();
+        }
+    }
+    if (gameState.player.shielded > 0) {
+        if (!gameState.lastShieldRumble || Date.now() - gameState.lastShieldRumble > 800) {
+            Haptics.pulse('shielded', 0.1, 0.18, 60, 700);
+            gameState.lastShieldRumble = Date.now();
+        }
     }
 
     // Update fires - spawn new ones and grow existing
@@ -14479,6 +14639,7 @@ function setMasterVolume(value) {
     document.getElementById('masterVolumeVal').textContent = value + '%';
     saveSettings();
     AudioManager.setMasterVolume(settings.masterVolume);
+    Haptics.pulse('menuSlider', 0.05, 0.08, 25, 40);
 }
 
 function setMusicVolume(value) {
@@ -14486,6 +14647,7 @@ function setMusicVolume(value) {
     document.getElementById('musicVolumeVal').textContent = value + '%';
     saveSettings();
     AudioManager.setMusicVolume(settings.musicVolume);
+    Haptics.pulse('menuSlider', 0.05, 0.08, 25, 40);
 }
 
 function setSfxVolume(value) {
@@ -14493,6 +14655,7 @@ function setSfxVolume(value) {
     document.getElementById('sfxVolumeVal').textContent = value + '%';
     saveSettings();
     AudioManager.setSfxVolume(settings.sfxVolume);
+    Haptics.pulse('menuSlider', 0.05, 0.08, 25, 40);
 }
 
 function setHapticsStrength(value) {
@@ -14501,6 +14664,7 @@ function setHapticsStrength(value) {
     const span = document.getElementById('hapticsStrengthVal');
     if (span) span.textContent = value + '%';
     saveSettings();
+    Haptics.pulse('menuSlider', 0.05, 0.08, 25, 40);
 }
 
 // Add settings button to title screen
@@ -14613,7 +14777,7 @@ function addCharacterSelectToTitle() {
         const charBtn = document.createElement('button');
         charBtn.id = 'titleCharacterBtn';
         charBtn.className = 'btn-tertiary';
-        charBtn.textContent = 'CHARACTERS';
+        charBtn.textContent = 'STAFF';
         charBtn.onclick = showCharacterSelect;
         tertiaryRow.appendChild(charBtn);
     }
