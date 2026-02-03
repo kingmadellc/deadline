@@ -585,6 +585,57 @@ function setResolution(resKey) {
     console.log(`Resolution set to ${resKey}, tile size: ${TILE_SIZE}`);
 }
 
+function getDeviceProfileInfo() {
+    const ua = navigator.userAgent || '';
+    const screenWidth = window.innerWidth;
+    const screenHeight = window.innerHeight;
+    const aspectRatio = screenWidth / screenHeight;
+    const dpr = window.devicePixelRatio || 1;
+
+    const isIOS = /iPhone|iPad|iPod/i.test(ua);
+    const isAndroid = /Android/i.test(ua);
+    const isMobile = isIOS || isAndroid || ('ontouchstart' in window && screenWidth < 900);
+
+    if (isIOS) {
+        return { label: 'iPhone/iPad (iOS)', suggested: autoDetectResolution() };
+    }
+    if (/ROG Ally/i.test(ua)) {
+        const suggested = (screenHeight >= 1080 && dpr <= 1.5) ? '1920x1080' : '1280x720';
+        return { label: 'ROG Ally', suggested };
+    }
+    if (/Steam Deck/i.test(ua)) {
+        return { label: 'Steam Deck', suggested: '1280x800' };
+    }
+    if (isAndroid) {
+        return { label: 'Android (Mobile)', suggested: autoDetectResolution() };
+    }
+    if (aspectRatio >= 1.7 && aspectRatio <= 1.8) {
+        return { label: 'Desktop 16:9', suggested: autoDetectResolution() };
+    }
+    if (aspectRatio >= 1.55 && aspectRatio < 1.7) {
+        return { label: 'Desktop 16:10', suggested: autoDetectResolution() };
+    }
+    return { label: 'Desktop', suggested: autoDetectResolution() };
+}
+
+function toggleAutoDetectResolution(enabled) {
+    settings.autoDetectResolution = enabled;
+    if (enabled) {
+        const detected = autoDetectResolution();
+        setResolution(detected);
+    }
+    saveSettings();
+    updateSettingsUI();
+}
+
+function redetectResolution() {
+    settings.autoDetectResolution = true;
+    const detected = autoDetectResolution();
+    setResolution(detected);
+    saveSettings();
+    updateSettingsUI();
+}
+
 function toggleFullscreen() {
     if (!document.fullscreenElement) {
         document.documentElement.requestFullscreen().catch(err => {
@@ -603,6 +654,18 @@ document.addEventListener('fullscreenchange', () => {
     displaySettings.fullscreen = !!document.fullscreenElement;
 });
 
+// Re-detect resolution on resize/orientation change (if auto-detect enabled)
+let _resDetectTimer = null;
+window.addEventListener('resize', () => {
+    if (!settings.autoDetectResolution) return;
+    if (_resDetectTimer) clearTimeout(_resDetectTimer);
+    _resDetectTimer = setTimeout(() => {
+        const detected = autoDetectResolution();
+        setResolution(detected);
+        updateSettingsUI();
+    }, 250);
+});
+
 // ============================================
 // AUDIO SYSTEM
 // ============================================
@@ -619,6 +682,7 @@ const AudioManager = {
     musicBuffers: {},
     currentTrack: null,
     musicFadeTimeout: null,
+    sfxMixBoost: 1.15, // Slightly SFX-forward relative to music
 
     // Initialize audio context (must be called after user interaction)
     init() {
@@ -652,420 +716,435 @@ const AudioManager = {
         }
     },
 
-    // Generate procedural AAA CINEMATIC sounds (professional game audio design)
+
+    // Generate procedural INDUSTRIAL/NOIR sounds (deadline pressure)
     generateSounds() {
-        // Footstep - muffled carpet thud (low freq, quick decay)
+        const noise01 = () => (Math.random() * 2 - 1);
+        const clamp01 = (v) => Math.max(0, Math.min(1, v));
+
+        // FOOTSTEP - carpeted office jog (heel + toe)
         this.sounds.footstep = this.createSound((t) => {
-            const freq = 180 + Math.random() * 40;
-            const thud = Math.sin(t * freq * Math.PI * 2) * Math.exp(-t * 50);
-            const carpet = (Math.random() * 2 - 1) * Math.exp(-t * 80) * 0.3;
-            return thud * 0.5 + carpet;
-        }, 0.1);
+            const heelFreq = 90 + Math.random() * 20;
+            const toeFreq = 140 + Math.random() * 30;
+            const heel = Math.sin(t * heelFreq * Math.PI * 2);
+            const toe = Math.sin((t - 0.02) * toeFreq * Math.PI * 2);
+            const heelEnv = Math.exp(-t * 35);
+            const toeEnv = Math.exp(-Math.max(0, t - 0.02) * 60);
+            const carpet = noise01() * Math.sin(t * 800 * Math.PI * 2) * 0.2;
+            const carpetEnv = Math.exp(-t * 50);
+            const attack = Math.min(1, t * 600);
+            return attack * (heel * heelEnv * 0.55 + toe * toeEnv * 0.25 + carpet * carpetEnv * 0.2) * 0.6;
+        }, 0.09);
 
-        // Powerup collect - tactical acquisition (descending, slightly ominous)
+        // Powerup collect - soft tech shimmer (neutral)
         this.sounds.powerup = this.createSound((t) => {
-            const baseFreq = 500 - t * 300;
-            const main = Math.sin(t * baseFreq * Math.PI * 2);
-            const dissonance = Math.sin(t * (baseFreq * 1.414) * Math.PI * 2) * 0.2;
-            const envelope = Math.exp(-t * 4) * Math.min(1, t * 20);
-            return (main * 0.6 + dissonance) * envelope;
-        }, 0.35);
-
-        // === PUNCH VARIANTS - AAA Cinematic Impact Design ===
-        // 5-layer surgical frequency separation: Click (5-8kHz) + Thwack (120-180Hz) + Meat (300-600Hz) + Noise + Sub (40-60Hz)
-
-        // PUNCH 1 - HEAVY DEVASTATOR (0.25s)
-        this.sounds.punch1 = this.createSound((t) => {
-            // === TRANSIENT CLICK (5-8 kHz) - The "snap" ===
-            const clickFreq = 6000 + Math.random() * 1000;
-            const click = Math.sin(t * clickFreq * Math.PI * 2);
-            const clickEnv = Math.exp(-t * 80);
-
-            // === BODY THWACK (120-180 Hz) - The "felt" impact ===
-            const thwackFreq = 150 - t * 40;
-            const thwack = Math.sin(t * thwackFreq * Math.PI * 2);
-            const thwack2 = Math.sin(t * thwackFreq * 2 * Math.PI * 2) * 0.3;
-            const thwackEnv = Math.exp(-t * 15);
-
-            // === MID MEAT (300-600 Hz) - Character/tone with saturation ===
-            const meatFreq = 400 - t * 150;
-            const meat = Math.sin(t * meatFreq * Math.PI * 2) * 0.7;
-            const meatSat = Math.tanh(meat * 1.5) * 0.8;
-            const meatEnv = Math.exp(-t * 20);
-
-            // === PINK NOISE TEXTURE - Realism ===
-            const noise = (Math.random() * 2 - 1);
-            const pinkNoise = noise * (1 / (1 + t * 50));
-            const noiseEnv = Math.exp(-t * 30);
-
-            // === SUB IMPACT (40-60 Hz) - Felt not heard ===
-            const sub = Math.sin(t * 50 * Math.PI * 2);
-            const subEnv = Math.exp(-t * 12);
-
-            // ATTACK: 3ms to full (professional standard)
-            const attack = Math.min(1, t * 333);
-
-            return attack * (
-                click * clickEnv * 0.25 +
-                (thwack + thwack2) * thwackEnv * 0.35 +
-                meatSat * meatEnv * 0.2 +
-                pinkNoise * noiseEnv * 0.1 +
-                sub * subEnv * 0.1
-            );
+            const rise = 480 + Math.pow(t / 0.25, 1.4) * 360;
+            const tone = Math.sin(t * rise * Math.PI * 2);
+            const chime = Math.sin(t * 1600 * Math.PI * 2) * 0.35;
+            const noise = noise01() * Math.sin(t * 2200 * Math.PI * 2) * 0.15;
+            const env = (1 - Math.exp(-t * 40)) * Math.exp(-t * 6);
+            return (tone * 0.6 + chime + noise) * env * 0.7;
         }, 0.25);
 
-        // PUNCH 2 - QUICK SNAP JAB (0.15s)
+        // === PUNCH VARIANTS - meaty impact with office grit ===
+        this.sounds.punch1 = this.createSound((t) => {
+            const thump = Math.sin(t * 90 * Math.PI * 2);
+            const thumpEnv = Math.exp(-t * 8);
+            const smack = Math.sin(t * 260 * Math.PI * 2);
+            const smackEnv = Math.exp(-t * 18);
+            const crack = Math.sin(t * 2800 * Math.PI * 2);
+            const crackEnv = Math.exp(-t * 80);
+            const grit = noise01() * Math.sin(t * 1200 * Math.PI * 2) * 0.2;
+            const gritEnv = Math.exp(-t * 30);
+            const env = Math.min(1, t * 500);
+            return env * (thump * thumpEnv * 0.45 + smack * smackEnv * 0.25 + crack * crackEnv * 0.2 + grit * gritEnv * 0.1) * 0.8;
+        }, 0.28);
+
         this.sounds.punch2 = this.createSound((t) => {
-            const click = Math.sin(t * 7500 * Math.PI * 2) * Math.exp(-t * 120);
-            const thwack = Math.sin(t * 180 * Math.PI * 2) * Math.exp(-t * 25);
-            const meat = Math.tanh(Math.sin(t * 600 * Math.PI * 2) * 1.3) * Math.exp(-t * 35);
-            const noise = (Math.random() * 2 - 1) * Math.exp(-t * 50) * 0.15;
-            const attack = Math.min(1, t * 500);
-
-            return attack * (click * 0.3 + thwack * 0.35 + meat * 0.25 + noise);
-        }, 0.15);
-
-        // PUNCH 3 - MEATY BODY BLOW (0.22s)
-        this.sounds.punch3 = this.createSound((t) => {
-            const click = Math.sin(t * 4500 * Math.PI * 2) * Math.exp(-t * 60);
-            const thwack = Math.sin(t * 100 * Math.PI * 2) * Math.exp(-t * 10);
-            const thwack2 = Math.sin(t * 200 * Math.PI * 2) * 0.4 * Math.exp(-t * 14);
-            const meat = Math.tanh(Math.sin(t * 280 * Math.PI * 2) * 1.8) * Math.exp(-t * 16);
-            const sub = Math.sin(t * 40 * Math.PI * 2) * Math.exp(-t * 8);
-            const cloth = Math.sin(t * 800 * Math.PI * 2) * (Math.random() * 0.5 + 0.5) * Math.exp(-t * 20);
-            const attack = Math.min(1, t * 400);
-
-            return attack * (click * 0.15 + (thwack + thwack2) * 0.35 + meat * 0.2 + sub * 0.15 + cloth * 0.15);
+            const thump = Math.sin(t * 110 * Math.PI * 2);
+            const thumpEnv = Math.exp(-t * 10);
+            const crack = Math.sin(t * 3200 * Math.PI * 2) * Math.exp(-t * 90);
+            const grit = noise01() * Math.sin(t * 1600 * Math.PI * 2) * 0.18;
+            const gritEnv = Math.exp(-t * 35);
+            const env = Math.min(1, t * 600);
+            return env * (thump * thumpEnv * 0.5 + crack * 0.25 + grit * gritEnv) * 0.7;
         }, 0.22);
 
-        // Punch - legacy/fallback
-        this.sounds.punch = this.sounds.punch1;
-
-        // Electric zap - harsh industrial crackle
-        this.sounds.zap = this.createSound((t) => {
-            const buzz = Math.sin(t * 55 * Math.PI * 2) * Math.sin(t * 2800 * Math.PI * 2);
-            const crackle = Math.pow(Math.random(), 2.5) * 2 - 1;
-            const hum = Math.sin(t * 110 * Math.PI * 2);
-            const envelope = Math.exp(-t * 2.5) * Math.min(1, t * 15);
-            return (buzz * 0.35 + crackle * 0.4 + hum * 0.25) * envelope;
-        }, 0.35);
-
-        // Timer warning - dread-building tritone pulse
-        this.sounds.warning = this.createSound((t) => {
-            const note1 = Math.sin(t * 392 * Math.PI * 2);
-            const note2 = Math.sin(t * 554 * Math.PI * 2);
-            const pulse = Math.sin(t * 6 * Math.PI * 2) * 0.4 + 0.6;
-            const envelope = Math.exp(-t * 1.5);
-            return (note1 + note2 * 0.7) * pulse * envelope * 0.4;
-        }, 0.4);
-
-        // Floor collapse - deep sub-bass rumble with debris
-        this.sounds.collapse = this.createSound((t) => {
-            const subBass = Math.sin(t * 22 * Math.PI * 2);
-            const rumble = Math.sin(t * 45 * Math.PI * 2) + Math.sin(t * 65 * Math.PI * 2);
-            const debris = Math.pow(Math.random(), 1.8) * 2 - 1;
-            const creak = Math.sin(t * 200 * Math.PI * 2) * Math.exp(-t * 3) * 0.2;
-            const envelope = Math.min(1, t * 2.5) * Math.exp(-t * 0.7);
-            return (subBass * 0.35 + rumble * 0.25 + debris * 0.3 + creak) * envelope;
-        }, 1.2);
-
-        // === EXIT DOOR - Cinematic Horror Creak (1.0s) ===
-        this.sounds.exit = this.createSound((t) => {
-            // === SUB-BASS DREAD (25-40 Hz) ===
-            const subFreq = 30 + Math.sin(t * 0.8 * Math.PI * 2) * 5;
-            const sub = Math.sin(t * subFreq * Math.PI * 2) * 0.2;
-            const subEnv = Math.pow(Math.max(0, 1 - t / 1.0), 0.3);
-
-            // === WOOD CREAK (150-400 Hz) - Friction stick-slip ===
-            const creakBase = 180 + t * 80;
-            const warble = Math.sin(t * 4.2 * Math.PI * 2) * 20 +
-                           Math.sin(t * 7.3 * Math.PI * 2) * 12;
-            const creakFreq = creakBase + warble;
-
-            // Odd harmonics = harsh wooden timbre
-            let creak = Math.sin(t * creakFreq * Math.PI * 2) * 0.4;
-            creak += Math.sin(t * creakFreq * 3 * Math.PI * 2) * 0.2;
-            creak += Math.sin(t * creakFreq * 5 * Math.PI * 2) * 0.1;
-            creak += Math.sin(t * creakFreq * 7 * Math.PI * 2) * 0.05;
-
-            // Soft saturation for wood resonance
-            creak = Math.tanh(creak * 2) * 0.6;
-
-            // === MULTIPLE CREAK EVENTS ===
-            const creak1Env = (1 - Math.exp(-t * 8)) * Math.exp(-Math.max(0, t - 0.2) * 3);
-            const creak2Start = 0.3;
-            const creak2Env = (1 - Math.exp(-Math.max(0, t - creak2Start) * 6)) *
-                              Math.exp(-Math.max(0, t - creak2Start - 0.15) * 2.5) *
-                              (t > creak2Start ? 0.7 : 0);
-            const creak3Start = 0.6;
-            const creak3Env = (1 - Math.exp(-Math.max(0, t - creak3Start) * 5)) *
-                              Math.exp(-Math.max(0, t - creak3Start - 0.1) * 2) *
-                              (t > creak3Start ? 0.5 : 0);
-
-            const creakEnv = creak1Env + creak2Env + creak3Env;
-
-            // === HIGH FREQUENCY SQUEAK (2-4 kHz) - Hinge ===
-            const squeakFreq = 2800 + Math.sin(t * 11 * Math.PI * 2) * 400;
-            const squeak = Math.sin(t * squeakFreq * Math.PI * 2) * 0.15;
-            const squeakEnv = Math.exp(-Math.pow((t - 0.4) * 8, 2)) * 0.4;
-
-            // === AIR MOVEMENT ===
-            const airNoise = (Math.random() * 2 - 1);
-            const air = airNoise * Math.sin(t * 600 * Math.PI * 2) * 0.1;
-            const airEnv = Math.sin(t * Math.PI) * Math.max(0, 1 - t);
-
-            return (
-                sub * subEnv +
-                creak * creakEnv * 0.5 +
-                squeak * squeakEnv +
-                air * airEnv
-            ) * 0.9;
-        }, 1.0);
-
-        // Player hit - visceral impact with dissonant ring
-        this.sounds.hit = this.createSound((t) => {
-            const impact = Math.sin(t * 80 * Math.PI * 2) * Math.exp(-t * 8);
-            const dissonant = Math.sin(t * 180 * Math.PI * 2) * Math.sin(t * 195 * Math.PI * 2);
-            const noise = (Math.random() * 2 - 1) * Math.exp(-t * 20);
-            return impact * 0.5 + dissonant * Math.exp(-t * 10) * 0.3 + noise * 0.2;
+        this.sounds.punch3 = this.createSound((t) => {
+            const thump = Math.sin(t * 100 * Math.PI * 2);
+            const thumpEnv = Math.exp(-t * 9);
+            const smack = Math.sin(t * 220 * Math.PI * 2);
+            const smackEnv = Math.exp(-t * 16);
+            const crack = Math.sin(t * 2400 * Math.PI * 2) * Math.exp(-t * 70);
+            const env = Math.min(1, t * 550);
+            return env * (thump * thumpEnv * 0.5 + smack * smackEnv * 0.25 + crack * 0.25) * 0.75;
         }, 0.25);
 
-        // Menu select - subtle mechanical click
-        this.sounds.select = this.createSound((t) => {
-            const click = Math.sin(t * 450 * Math.PI * 2) * Math.exp(-t * 25);
-            const resonance = Math.sin(t * 900 * Math.PI * 2) * Math.exp(-t * 40) * 0.3;
-            return click + resonance;
-        }, 0.08);
+        this.sounds.punch = this.sounds.punch1;
 
-        // Victory - tense relief in minor key
-        this.sounds.victory = this.createSound((t) => {
-            const notes = [220, 262, 330, 392];
-            const noteIndex = Math.floor(t * 5) % 4;
-            const freq = notes[noteIndex];
-            const vibrato = Math.sin(t * 5 * Math.PI * 2) * 3;
-            const tone = Math.sin(t * (freq + vibrato) * Math.PI * 2);
-            const envelope = (1 - (t % 0.2) * 3) * Math.min(1, (0.8 - t) * 3) * Math.max(0, 1 - t * 0.8);
-            return tone * envelope * 0.6;
-        }, 0.8);
-
-        // === POWERUP-SPECIFIC SOUNDS ===
-
-        // === SPEED COLLECT - Doppler Acceleration (0.35s) ===
-        this.sounds.speedCollect = this.createSound((t) => {
-            // Triple ascending tones with exponential sweep
-            const freq1 = 300 + Math.pow(t / 0.35, 1.5) * 600;
-            const tone1 = Math.sin(t * freq1 * Math.PI * 2);
-            const env1 = (1 - Math.exp(-t * 50)) * Math.exp(-Math.max(0, t - 0.25) * 10);
-
-            const t2 = Math.max(0, t - 0.05);
-            const freq2 = 500 + Math.pow(t2 / 0.3, 1.5) * 1000;
-            const tone2 = Math.sin(t * freq2 * Math.PI * 2) * (t > 0.05 ? 1 : 0);
-            const env2 = (1 - Math.exp(-t2 * 40)) * Math.exp(-Math.max(0, t2 - 0.2) * 8);
-
-            const t3 = Math.max(0, t - 0.1);
-            const freq3 = 800 + Math.pow(t3 / 0.25, 1.5) * 2200;
-            const tone3 = Math.sin(t * freq3 * Math.PI * 2) * (t > 0.1 ? 1 : 0);
-            const env3 = (1 - Math.exp(-t3 * 35)) * Math.exp(-Math.max(0, t3 - 0.15) * 6);
-
-            // Doppler whoosh
-            const whooshFreq = 1200 + Math.sin(t * 6 * Math.PI * 2) * 400;
-            const whoosh = (Math.random() * 2 - 1) * Math.sin(t * whooshFreq * Math.PI * 2);
-            const whooshEnv = Math.sin(t / 0.35 * Math.PI) * 0.15;
-
-            // Sparkle transients
-            const sparkle = Math.sin(t * 8000 * Math.PI * 2) *
-                            (Math.sin(t * 23 * Math.PI * 2) > 0.7 ? 1 : 0);
-            const sparkleEnv = Math.exp(-t * 4) * 0.1;
-
-            // Soft saturation for warmth
-            const tones = tone1 * env1 * 0.35 + tone2 * env2 * 0.3 + tone3 * env3 * 0.25;
-            const saturated = Math.tanh(tones * 1.5) * 0.7;
-
-            return saturated + whoosh * whooshEnv + sparkle * sparkleEnv;
-        }, 0.35);
-
-        // === ELECTRIC COLLECT - Tesla Coil Discharge (0.3s) ===
-        this.sounds.electricCollect = this.createSound((t) => {
-            // Arc discharge crackle (6-12 kHz)
-            const arcFreq = 8000 + Math.sin(t * 200 * Math.PI * 2) * 3000;
-            const arc = Math.sin(t * arcFreq * Math.PI * 2);
-            const arcEnv = Math.exp(-t * 5);
-
-            // Stochastic zap bursts
-            const zap1 = Math.sin(t * 9000 * Math.PI * 2) * Math.exp(-Math.pow((t - 0.015) * 60, 2));
-            const zap2 = Math.sin(t * 11000 * Math.PI * 2) * Math.exp(-Math.pow((t - 0.06) * 50, 2));
-            const zap3 = Math.sin(t * 7000 * Math.PI * 2) * Math.exp(-Math.pow((t - 0.11) * 45, 2));
-            const zap4 = Math.sin(t * 10000 * Math.PI * 2) * Math.exp(-Math.pow((t - 0.17) * 40, 2));
-            const zap5 = Math.sin(t * 8500 * Math.PI * 2) * Math.exp(-Math.pow((t - 0.23) * 35, 2));
-
-            // Crackling noise
-            const noise = Math.pow(Math.random(), 2) * 2 - 1;
-            const noiseGate = Math.abs(Math.sin(t * 120 * Math.PI * 2));
-            const crackle = noise * noiseGate;
-            const crackleEnv = Math.exp(-t * 6) * 0.4;
-
-            // 60 Hz power hum
-            const hum = Math.sin(t * 60 * Math.PI * 2);
-            const hum2 = Math.sin(t * 120 * Math.PI * 2) * 0.5;
-            const humEnv = Math.exp(-t * 3) * 0.15;
-
-            // Amplitude flutter
-            const flutter = 0.6 + Math.sin(t * 300 * Math.PI * 2) * 0.4;
-
-            // Positive feedback tone (reward feel)
-            const rewardFreq = 1000 + t * 800;
-            const reward = Math.sin(t * rewardFreq * Math.PI * 2);
-            const rewardEnv = (1 - Math.exp(-t * 30)) * Math.exp(-Math.max(0, t - 0.2) * 8) * 0.2;
-
-            return flutter * (
-                arc * arcEnv * 0.2 +
-                (zap1 + zap2 + zap3 + zap4 + zap5) * 0.35 +
-                crackle * crackleEnv +
-                (hum + hum2) * humEnv +
-                reward * rewardEnv
-            ) * 0.8;
+        // Electric zap - sparking arc
+        this.sounds.zap = this.createSound((t) => {
+            const arc = Math.sin(t * (900 + Math.sin(t * 60 * Math.PI * 2) * 700) * Math.PI * 2);
+            const crackle = noise01() * Math.sin(t * 3500 * Math.PI * 2);
+            const hum = Math.sin(t * 60 * Math.PI * 2) * 0.3;
+            const env = Math.exp(-t * 3) * Math.min(1, t * 20);
+            return (arc * 0.35 + crackle * 0.45 + hum * 0.2) * env * 0.9;
         }, 0.3);
 
-        // === GHOST COLLECT - Ethereal Phase (0.5s) ===
-        this.sounds.ghostCollect = this.createSound((t) => {
-            // Slow attack (~200ms)
-            const attack = 1 - Math.exp(-t * 5);
+        // Timer warning - anxious pulse (short)
+        this.sounds.warning = this.createSound((t) => {
+            const pulse = Math.sin(t * 6 * Math.PI * 2) * 0.4 + 0.6;
+            const tone = Math.sin(t * 520 * Math.PI * 2);
+            const dissonance = Math.sin(t * 655 * Math.PI * 2) * 0.6;
+            const env = Math.exp(-t * 2.4);
+            return (tone + dissonance) * pulse * env * 0.35;
+        }, 0.35);
 
-            // Hollow resonance (pure sines, 5th intervals)
-            const baseFreq = 800 + Math.sin(t * 1.5 * Math.PI * 2) * 50;
-            const tone1 = Math.sin(t * baseFreq * Math.PI * 2);
-            const tone2 = Math.sin(t * baseFreq * 1.5 * Math.PI * 2) * 0.5;
-            const tone3 = Math.sin(t * baseFreq * 2 * Math.PI * 2) * 0.25;
-            const tone4 = Math.sin(t * baseFreq * 3 * Math.PI * 2) * 0.1;
+        // Timer warning alias (used in game loop)
+        this.sounds.timerWarning = this.sounds.warning;
 
-            // Phase chorus (detuned)
-            const detune = 8;
-            const chorus1 = Math.sin(t * (baseFreq + detune) * Math.PI * 2) * 0.3;
-            const chorus2 = Math.sin(t * (baseFreq - detune) * Math.PI * 2) * 0.3;
+        // Floor collapse - deep rumble + debris
+        this.sounds.collapse = this.createSound((t) => {
+            const sub = Math.sin(t * 24 * Math.PI * 2);
+            const rumble = Math.sin(t * 50 * Math.PI * 2) + Math.sin(t * 70 * Math.PI * 2);
+            const debris = noise01() * Math.sin(t * 900 * Math.PI * 2) * 0.35;
+            const creak = Math.sin(t * 160 * Math.PI * 2) * Math.exp(-t * 3) * 0.2;
+            const env = Math.min(1, t * 2.5) * Math.exp(-t * 0.7);
+            return (sub * 0.4 + rumble * 0.25 + debris * 0.25 + creak * 0.1) * env;
+        }, 1.1);
 
-            // Breathy whisper
-            const breath = (Math.random() * 2 - 1);
-            const whisper = breath * Math.sin(t * 3000 * Math.PI * 2) * 0.1;
-            const whisperEnv = Math.sin(t / 0.5 * Math.PI) * attack;
+        // EXIT DOOR - Door Open & Close (0.5s)
+        this.sounds.exit = this.createSound((t) => {
+            // Door handle click (latch release)
+            const latch = Math.sin(t * 2000 * Math.PI * 2);
+            const latchEnv = Math.exp(-t * 150) * 0.4;
 
-            // Shimmer
-            const shimmer = Math.sin(t * 6000 * Math.PI * 2) *
-                            (0.5 + Math.sin(t * 8 * Math.PI * 2) * 0.5) * 0.05;
+            // Door opening creak (brief, not horror)
+            const creakFreq = 300 + t * 100;
+            const creak = Math.sin(t * creakFreq * Math.PI * 2);
+            const creak2 = Math.sin(t * creakFreq * 1.5 * Math.PI * 2) * 0.3;
+            const creakEnv = (t > 0.02 && t < 0.15) ? Math.exp(-(t - 0.08) * 30) : 0;
 
-            // Envelope
-            const sustain = Math.exp(-Math.max(0, t - 0.3) * 3);
-            const wobble = 1 + Math.sin(t * 4 * Math.PI * 2) * 0.05;
-            const env = attack * sustain * wobble;
+            // Whoosh (air through doorway)
+            const whooshNoise = (Math.random() * 2 - 1);
+            const whoosh = whooshNoise * Math.sin(t * 600 * Math.PI * 2);
+            const whooshEnv = (t > 0.05 && t < 0.3) ? Math.sin((t - 0.05) / 0.25 * Math.PI) * 0.25 : 0;
 
-            const tones = (tone1 + tone2 + tone3 + tone4 + chorus1 + chorus2);
+            // Door slam (the satisfying close)
+            const slamTime = Math.max(0, t - 0.3);
+            const slam = Math.sin(slamTime * 80 * Math.PI * 2);
+            const slam2 = Math.sin(slamTime * 160 * Math.PI * 2) * 0.4;
+            const slamEnv = (t > 0.3) ? Math.exp(-slamTime * 20) : 0;
 
-            return (tones * env * 0.4 + whisper * whisperEnv + shimmer * env) * 0.8;
+            // Latch click (door catching)
+            const catchTime = Math.max(0, t - 0.35);
+            const catch1 = Math.sin(catchTime * 3000 * Math.PI * 2);
+            const catchEnv = (t > 0.35) ? Math.exp(-catchTime * 100) * 0.3 : 0;
+
+            // Frame rattle (resonance after slam)
+            const rattleTime = Math.max(0, t - 0.32);
+            const rattle = Math.sin(rattleTime * 400 * Math.PI * 2) * Math.sin(rattleTime * 25 * Math.PI * 2);
+            const rattleEnv = (t > 0.32) ? Math.exp(-rattleTime * 8) * 0.15 : 0;
+
+            return (
+                latch * latchEnv +
+                (creak + creak2) * creakEnv * 0.3 +
+                whoosh * whooshEnv +
+                (slam + slam2) * slamEnv * 0.5 +
+                catch1 * catchEnv +
+                rattle * rattleEnv
+            ) * 0.85;
         }, 0.5);
 
-        // === KNOCKOUT COLLECT - Power Charge (0.4s) ===
+        // Player hit - harsh impact + sting
+        this.sounds.hit = this.createSound((t) => {
+            const thump = Math.sin(t * 95 * Math.PI * 2) * Math.exp(-t * 9);
+            const sting = Math.sin(t * 1100 * Math.PI * 2) * Math.exp(-t * 20) * 0.4;
+            const grit = noise01() * Math.sin(t * 1500 * Math.PI * 2) * Math.exp(-t * 25) * 0.2;
+            return (thump * 0.6 + sting + grit) * 0.8;
+        }, 0.22);
+
+        // Menu select - subtle click
+        this.sounds.select = this.createSound((t) => {
+            const click = Math.sin(t * 600 * Math.PI * 2) * Math.exp(-t * 30);
+            const tick = Math.sin(t * 1600 * Math.PI * 2) * Math.exp(-t * 60) * 0.3;
+            return (click + tick) * 0.6;
+        }, 0.07);
+
+        // Victory - restrained lift (survival)
+        this.sounds.victory = this.createSound((t) => {
+            const note1 = Math.sin(t * 262 * Math.PI * 2);
+            const note2 = Math.sin(t * 330 * Math.PI * 2) * 0.7;
+            const note3 = Math.sin(t * 392 * Math.PI * 2) * 0.5;
+            const env = (1 - Math.exp(-t * 20)) * Math.exp(-t * 3);
+            return (note1 + note2 + note3) * env * 0.6;
+        }, 0.6);
+
+        // Floor clear stinger - triumphant but brief
+        this.sounds.floorClear = this.createSound((t) => {
+            const a = Math.sin(t * 392 * Math.PI * 2);
+            const c = Math.sin(t * 523.25 * Math.PI * 2) * 0.7;
+            const e = Math.sin(t * 659.25 * Math.PI * 2) * 0.5;
+            const rise = 1 - Math.exp(-t * 25);
+            const env = rise * Math.exp(-t * 4);
+            return (a + c + e) * env * 0.7;
+        }, 0.5);
+
+        // === POWERUP-SPECIFIC SOUNDS ===
+        this.sounds.speedCollect = this.createSound((t) => {
+            const sweep = 300 + Math.pow(t / 0.25, 2) * 1100;
+            const tone = Math.sin(t * sweep * Math.PI * 2);
+            const wind = noise01() * Math.sin(t * 1800 * Math.PI * 2) * 0.25;
+            const env = (1 - Math.exp(-t * 50)) * Math.exp(-t * 8);
+            return (tone * 0.6 + wind) * env * 0.75;
+        }, 0.25);
+
+        this.sounds.electricCollect = this.createSound((t) => {
+            const tick = Math.sin(t * 1200 * Math.PI * 2) * Math.exp(-t * 30);
+            const chime = Math.sin(t * 900 * Math.PI * 2) * Math.exp(-t * 10);
+            const zap = Math.sin(t * 3200 * Math.PI * 2) * Math.exp(-t * 50) * 0.2;
+            const env = (1 - Math.exp(-t * 40)) * Math.exp(-t * 6);
+            return (tick * 0.35 + chime * 0.45 + zap) * env * 0.7;
+        }, 0.28);
+
+        this.sounds.ghostCollect = this.createSound((t) => {
+            const shimmer = Math.sin(t * 1200 * Math.PI * 2) * 0.3;
+            const detune = Math.sin(t * 1180 * Math.PI * 2) * 0.3;
+            const breath = noise01() * Math.sin(t * 2400 * Math.PI * 2) * 0.15;
+            const env = (1 - Math.exp(-t * 16)) * Math.exp(-t * 6);
+            return (shimmer + detune + breath) * env * 0.6;
+        }, 0.32);
+
         this.sounds.knockoutCollect = this.createSound((t) => {
-            // Rising fundamental (100->600 Hz exponential)
-            const baseFreq = 100 + Math.pow(t / 0.4, 2) * 500;
-            const fundamental = Math.sin(t * baseFreq * Math.PI * 2);
+            const strap = Math.sin(t * 280 * Math.PI * 2) * Math.exp(-t * 18);
+            const click = Math.sin(t * 1800 * Math.PI * 2) * Math.exp(-t * 60) * 0.4;
+            const thump = Math.sin(t * 140 * Math.PI * 2) * Math.exp(-t * 25) * 0.3;
+            return (strap * 0.4 + click + thump) * 0.7;
+        }, 0.25);
 
-            // Harmonics building in
-            const h2Gain = Math.min(1, t * 3);
-            const h3Gain = Math.min(1, Math.max(0, t - 0.1) * 4);
-            const h4Gain = Math.min(1, Math.max(0, t - 0.2) * 5);
-            const h5Gain = Math.min(1, Math.max(0, t - 0.25) * 6);
-
-            const harm2 = Math.sin(t * baseFreq * 2 * Math.PI * 2) * h2Gain * 0.4;
-            const harm3 = Math.sin(t * baseFreq * 3 * Math.PI * 2) * h3Gain * 0.25;
-            const harm4 = Math.sin(t * baseFreq * 4 * Math.PI * 2) * h4Gain * 0.15;
-            const harm5 = Math.sin(t * baseFreq * 5 * Math.PI * 2) * h5Gain * 0.1;
-
-            // Accelerating pulse (6->36 Hz)
-            const pulseRate = 6 + Math.pow(t / 0.4, 2) * 30;
-            const pulse = 0.5 + Math.sin(t * pulseRate * Math.PI * 2) * 0.5;
-
-            // Bass rumble
-            const rumble = Math.sin(t * 50 * Math.PI * 2) * 0.2;
-            const rumbleEnv = Math.max(0, 1 - t * 2);
-
-            // Climax burst (final 0.08s)
-            const climaxT = Math.max(0, t - 0.32);
-            const climaxFreq = 2000 + climaxT * 4000;
-            const climax = Math.sin(t * climaxFreq * Math.PI * 2);
-            const climaxEnv = (1 - Math.exp(-climaxT * 40)) * Math.exp(-climaxT * 15) * (t > 0.32 ? 0.4 : 0);
-
-            // Energy crackle
-            const crackle = (Math.random() * 2 - 1) * Math.sin(t * 4000 * Math.PI * 2);
-            const crackleEnv = Math.min(1, t * 5) * 0.1;
-
-            // Saturate combined signal
-            const charge = fundamental * 0.3 + harm2 + harm3 + harm4 + harm5;
-            const saturated = Math.tanh(charge * pulse * 2) * 0.5;
-
-            const env = (1 - Math.exp(-t * 15)) * Math.exp(-Math.max(0, t - 0.35) * 10);
-
-            return (
-                saturated * env +
-                rumble * rumbleEnv +
-                climax * climaxEnv +
-                crackle * crackleEnv
-            ) * 0.85;
-        }, 0.4);
-
-        // === POWERUP EXPIRE - System Failure (0.4s) ===
         this.sounds.powerupExpire = this.createSound((t) => {
-            // Descending fundamental (600->80 Hz)
-            const dropCurve = Math.exp(-t * 5);
-            const baseFreq = 80 + 520 * dropCurve;
-            const fundamental = Math.sin(t * baseFreq * Math.PI * 2);
+            const drop = Math.sin(t * (600 - t * 350) * Math.PI * 2);
+            const air = noise01() * Math.sin(t * 900 * Math.PI * 2) * 0.2;
+            const env = Math.exp(-t * 5);
+            return (drop * 0.5 + air) * env * 0.6;
+        }, 0.3);
 
-            // Harmonics dropping out
-            const h2Decay = Math.max(0, 1 - t * 4);
-            const h3Decay = Math.max(0, 1 - t * 6);
-            const h4Decay = Math.max(0, 1 - t * 8);
+        this.sounds.coin = this.createSound((t) => {
+            const ding = Math.sin(t * 2400 * Math.PI * 2);
+            const ring = Math.sin(t * 3600 * Math.PI * 2) * 0.5;
+            const env = Math.exp(-t * 18);
+            return (ding + ring) * env * 0.6;
+        }, 0.14);
 
-            const harm2 = Math.sin(t * baseFreq * 2 * Math.PI * 2) * h2Decay * 0.4;
-            const harm3 = Math.sin(t * baseFreq * 3 * Math.PI * 2) * h3Decay * 0.25;
-            const harm4 = Math.sin(t * baseFreq * 4 * Math.PI * 2) * h4Decay * 0.15;
+        this.sounds.countdown = this.createSound((t) => {
+            const tick = Math.sin(t * 1400 * Math.PI * 2);
+            const env = Math.exp(-t * 70);
+            return tick * env * 0.7;
+        }, 0.09);
 
-            // Slowing warble (power failing)
-            const warbleRate = Math.max(2, 20 - t * 45);
-            const warble = 1 + Math.sin(t * warbleRate * Math.PI * 2) * 0.15;
+        this.sounds.wallBump = this.createSound((t) => {
+            const thud = Math.sin(t * 130 * Math.PI * 2);
+            const env = Math.exp(-t * 60);
+            const grit = noise01() * Math.sin(t * 900 * Math.PI * 2) * 0.1;
+            return (thud * 0.7 + grit) * env * 0.5;
+        }, 0.08);
 
-            // Stutter (power cutting after 0.2s)
-            const stutter = t > 0.2 ?
-                (Math.sin(t * 50 * Math.PI * 2) > 0 ? 1 : 0.2) : 1;
+        this.sounds.alert = this.createSound((t) => {
+            const tone = Math.sin(t * 880 * Math.PI * 2);
+            const tone2 = Math.sin(t * 660 * Math.PI * 2) * 0.6;
+            const env = (1 - Math.exp(-t * 50)) * Math.exp(-t * 8);
+            return (tone + tone2) * env * 0.45;
+        }, 0.2);
 
-            // Final thunk (system off)
-            const thunkT = Math.max(0, t - 0.32);
-            const thunk = Math.sin(thunkT * 60 * Math.PI * 2);
-            const thunkEnv = (1 - Math.exp(-thunkT * 50)) * Math.exp(-thunkT * 12) * (t > 0.32 ? 0.4 : 0);
+        this.sounds.doorOpen = this.createSound((t) => {
+            const slide = Math.sin(t * (70 + t * 120) * Math.PI * 2) * 0.4;
+            const hiss = noise01() * Math.sin(t * 2000 * Math.PI * 2) * 0.25;
+            const hissEnv = Math.exp(-t * 6);
+            const click = Math.sin(t * 500 * Math.PI * 2) * Math.exp(-Math.pow((t - 0.28) * 30, 2)) * 0.4;
+            return (slide + hiss * hissEnv + click) * Math.exp(-t * 3.2);
+        }, 0.35);
 
-            // Dying crackle
-            const crackle = (Math.random() * 2 - 1) * 0.15;
-            const crackleEnv = Math.exp(-t * 3) * stutter;
+        // HEARTBEAT - used for low timer tension
+        this.sounds.heartbeat = this.createSound((t) => {
+            const beat1 = Math.sin(t * 70 * Math.PI * 2) * Math.exp(-t * 25);
+            const beat2 = Math.sin((t - 0.18) * 90 * Math.PI * 2) * Math.exp(-Math.max(0, t - 0.18) * 28);
+            const body = (beat1 * 0.8 + beat2 * 0.6) * 0.8;
+            return body;
+        }, 0.35);
 
-            // Envelope
-            const env = Math.exp(-t * 3) * warble * stutter;
+        // PANIC STINGER - timer <= 3s (short, urgent)
+        this.sounds.panicStinger = this.createSound((t) => {
+            const rise = 700 + t * 900;
+            const tone = Math.sin(t * rise * Math.PI * 2);
+            const dissonance = Math.sin(t * (rise * 1.414) * Math.PI * 2) * 0.6;
+            const grit = noise01() * Math.sin(t * 2200 * Math.PI * 2) * 0.2;
+            const env = Math.exp(-t * 8) * Math.min(1, t * 20);
+            return (tone + dissonance + grit) * env * 0.6;
+        }, 0.18);
 
-            const tones = fundamental * 0.35 + harm2 + harm3 + harm4;
+        // === POSITIONAL AMBIENCE ===
+        this.sounds.fireCrackle = this.createSound((t) => {
+            const hiss = noise01() * Math.sin(t * 2200 * Math.PI * 2) * 0.3;
+            const pop = Math.sin(t * 300 * Math.PI * 2) * Math.exp(-Math.pow((t - 0.06) * 35, 2)) * 0.4;
+            const env = Math.exp(-t * 3);
+            return (hiss + pop) * env * 0.6;
+        }, 0.4);
+
+        this.sounds.enemyStep = this.createSound((t) => {
+            const thump = Math.sin(t * 85 * Math.PI * 2);
+            const thumpEnv = Math.exp(-t * 30);
+            const grit = noise01() * Math.sin(t * 900 * Math.PI * 2) * 0.1;
+            const gritEnv = Math.exp(-t * 45);
+            return (thump * thumpEnv * 0.6 + grit * gritEnv) * 0.5;
+        }, 0.08);
+
+        this.sounds.exitHum = this.createSound((t) => {
+            const hum = Math.sin(t * 120 * Math.PI * 2) * 0.4;
+            const shimmer = Math.sin(t * 480 * Math.PI * 2) * 0.15;
+            const air = noise01() * Math.sin(t * 1500 * Math.PI * 2) * 0.08;
+            const env = clamp01(1 - t / 0.9);
+            return (hum + shimmer + air) * env * 0.5;
+        }, 0.9);
+
+        // === LEVEL TRANSITION SOUNDS (4 variants for variety) ===
+
+        // Variant 1: Building collapse descent (0.8s)
+        this.sounds.levelTransition = this.createSound((t) => {
+            // Descending tone (going down floors)
+            const descentFreq = 200 - t * 80;
+            const descent = Math.sin(t * descentFreq * Math.PI * 2);
+            const descent2 = Math.sin(t * descentFreq * 0.5 * Math.PI * 2) * 0.4;
+            const descentEnv = (1 - Math.exp(-t * 5)) * Math.exp(-Math.max(0, t - 0.6) * 3);
+
+            // Tension pulse (heartbeat-like)
+            const pulseRate = 2.5;
+            const pulse = Math.sin(t * pulseRate * Math.PI * 2);
+            const pulseEnv = (pulse > 0.7 ? 1 : 0.3) * descentEnv;
+
+            // Building rumble
+            const rumble = Math.sin(t * 35 * Math.PI * 2) + Math.sin(t * 45 * Math.PI * 2) * 0.6;
+            const rumbleNoise = (Math.random() * 2 - 1) * 0.15;
+            const rumbleEnv = Math.min(1, t * 3) * Math.exp(-Math.max(0, t - 0.5) * 2);
+
+            // Metallic stress (building creaking)
+            const stressFreq = 600 + Math.sin(t * 3 * Math.PI * 2) * 100;
+            const stress = Math.sin(t * stressFreq * Math.PI * 2);
+            const stressGate = (Math.sin(t * 4.5 * Math.PI * 2) > 0.8) ? 1 : 0;
+            const stressEnv = stressGate * Math.exp(-t * 2) * 0.2;
+
+            // Debris falling
+            const debrisGate = (Math.sin(t * 17 * Math.PI * 2) > 0.95) ? 1 : 0;
+            const debris = Math.sin(t * 2500 * Math.PI * 2) * debrisGate;
+            const debrisEnv = Math.exp(-t * 3) * 0.15;
+
+            // Final impact
+            const impactTime = Math.max(0, t - 0.7);
+            const impact = Math.sin(impactTime * 60 * Math.PI * 2);
+            const impactEnv = (t > 0.7) ? Math.exp(-impactTime * 15) * 0.4 : 0;
 
             return (
-                tones * env +
-                thunk * thunkEnv +
-                crackle * crackleEnv
+                (descent + descent2) * descentEnv * pulseEnv * 0.3 +
+                (rumble + rumbleNoise) * rumbleEnv * 0.25 +
+                stress * stressEnv +
+                debris * debrisEnv +
+                impact * impactEnv
+            ) * 0.8;
+        }, 0.8);
+
+        // Variant 2: Elevator descent (0.8s)
+        this.sounds.levelTransition2 = this.createSound((t) => {
+            // Elevator motor hum (descending pitch)
+            const motorFreq = 120 - t * 30;
+            const motor = Math.sin(t * motorFreq * Math.PI * 2);
+            const motor2 = Math.sin(t * motorFreq * 2 * Math.PI * 2) * 0.3;
+            const motorEnv = (1 - Math.exp(-t * 8)) * Math.exp(-Math.max(0, t - 0.6) * 4);
+
+            // Cable tension whine
+            const cableFreq = 800 + Math.sin(t * 2 * Math.PI * 2) * 200;
+            const cable = Math.sin(t * cableFreq * Math.PI * 2);
+            const cableEnv = Math.sin(t / 0.8 * Math.PI) * 0.1;
+
+            // Floor number dings (passing floors)
+            const ding1 = Math.sin(t * 1500 * Math.PI * 2) * ((t > 0.2 && t < 0.22) ? 1 : 0);
+            const ding2 = Math.sin(t * 1500 * Math.PI * 2) * ((t > 0.45 && t < 0.47) ? 1 : 0);
+            const dingEnv = 0.25;
+
+            // Arrival thud
+            const arriveTime = Math.max(0, t - 0.72);
+            const arrive = Math.sin(arriveTime * 70 * Math.PI * 2);
+            const arriveEnv = (t > 0.72) ? Math.exp(-arriveTime * 12) * 0.35 : 0;
+
+            return (
+                (motor + motor2) * motorEnv * 0.35 +
+                cable * cableEnv +
+                (ding1 + ding2) * dingEnv +
+                arrive * arriveEnv
             ) * 0.75;
-        }, 0.4);
+        }, 0.8);
 
-        // Door open - mechanical slide with pneumatic hiss
-        this.sounds.doorOpen = this.createSound((t) => {
-            const slide = Math.sin(t * (60.0 + t * 100.0) * Math.PI * 2) * 0.4;
-            const hiss = Math.sin(t * 31.0) * Math.sin(t * 2000.0 * Math.PI * 2) * 0.3 * Math.exp(-t * 6.0);
-            const click = Math.sin(t * 400.0 * Math.PI * 2) * Math.exp(-Math.pow((t - 0.35) * 30.0, 2)) * 0.5;
-            return (slide + hiss + click) * Math.exp(-t * 3.0);
-        }, 0.4);
+        // Variant 3: Stairwell echo descent (0.8s)
+        this.sounds.levelTransition3 = this.createSound((t) => {
+            // Footsteps descending (fast paced)
+            const stepRate = 6;
+            const stepPhase = (t * stepRate) % 1;
+            const step = (stepPhase < 0.1) ? Math.sin(stepPhase * 10 * 150 * Math.PI * 2) : 0;
+            const stepEnv = Math.exp(-stepPhase * 30) * 0.4;
 
-        console.log('AAA cinematic sounds generated');
+            // Stairwell reverb tail
+            const reverbFreq = 200 + Math.sin(t * stepRate * Math.PI * 2) * 50;
+            const reverb = Math.sin(t * reverbFreq * Math.PI * 2);
+            const reverbEnv = Math.exp(-t * 2) * 0.2;
+
+            // Breathing (urgency)
+            const breathRate = 1.5;
+            const breath = (Math.random() * 2 - 1) * 0.1;
+            const breathEnv = (Math.sin(t * breathRate * Math.PI * 2) > 0.5) ? 0.15 : 0.05;
+
+            // Door burst at end
+            const burstTime = Math.max(0, t - 0.7);
+            const burst = Math.sin(burstTime * 100 * Math.PI * 2);
+            const burstEnv = (t > 0.7) ? Math.exp(-burstTime * 10) * 0.3 : 0;
+
+            return (
+                step * stepEnv +
+                reverb * reverbEnv +
+                breath * breathEnv +
+                burst * burstEnv
+            ) * 0.8;
+        }, 0.8);
+
+        // Variant 4: Ominous silence to impact (0.8s)
+        this.sounds.levelTransition4 = this.createSound((t) => {
+            // Eerie silence (filtered noise)
+            const silence = (Math.random() * 2 - 1) * 0.05;
+            const silenceEnv = Math.exp(-t * 0.5);
+
+            // Building sub-bass dread
+            const dread = Math.sin(t * 25 * Math.PI * 2);
+            const dreadEnv = Math.pow(t / 0.8, 2) * 0.3;
+
+            // Tension riser (ascending noise)
+            const riserFreq = 200 + Math.pow(t / 0.8, 2) * 2000;
+            const riser = (Math.random() * 2 - 1) * Math.sin(t * riserFreq * Math.PI * 2);
+            const riserEnv = Math.pow(t / 0.8, 3) * 0.2;
+
+            // SUDDEN IMPACT (startling)
+            const impactTime = Math.max(0, t - 0.75);
+            const impact = Math.sin(impactTime * 50 * Math.PI * 2);
+            const impact2 = Math.sin(impactTime * 100 * Math.PI * 2) * 0.5;
+            const impactEnv = (t > 0.75) ? Math.exp(-impactTime * 8) * 0.6 : 0;
+
+            return (
+                silence * silenceEnv +
+                dread * dreadEnv +
+                riser * riserEnv +
+                (impact + impact2) * impactEnv
+            ) * 0.85;
+        }, 0.8);
+
+        console.log('Industrial/noir sounds generated');
     },
+
 
 
     // Create a sound buffer from a generator function
@@ -1092,10 +1171,13 @@ const AudioManager = {
         try {
             const source = this.context.createBufferSource();
             source.buffer = this.sounds[soundName];
-            source.playbackRate.value = pitch; // Pitch scaling for variety
+            const variation = this.getSfxVariation(soundName);
+            const palette = this.getFloorPalette();
+            source.playbackRate.value = pitch * variation.rate * palette.rate; // Pitch scaling with subtle variation
 
             const gainNode = this.context.createGain();
-            gainNode.gain.value = volume;
+            const boosted = volume * this.sfxMixBoost * variation.gain * palette.gain;
+            gainNode.gain.value = Math.min(1.0, boosted);
 
             source.connect(gainNode);
             gainNode.connect(this.sfxGain);
@@ -1125,15 +1207,27 @@ const AudioManager = {
 
             const source = this.context.createBufferSource();
             source.buffer = this.sounds[soundName];
+            const variation = this.getSfxVariation(soundName);
+            const palette = this.getFloorPalette();
+            source.playbackRate.value = variation.rate * palette.rate;
 
             const gainNode = this.context.createGain();
-            gainNode.gain.value = volume * distanceFactor;
+            const boosted = volume * distanceFactor * this.sfxMixBoost * variation.gain * palette.gain;
+            gainNode.gain.value = Math.min(1.0, boosted);
 
             // Create stereo panner for spatial effect
             const panner = this.context.createStereoPanner();
             panner.pan.value = pan;
 
-            source.connect(gainNode);
+            // Distance damping: low-pass filter for far sounds
+            const filter = this.context.createBiquadFilter();
+            filter.type = 'lowpass';
+            const baseCutoff = 7000;
+            const cutoff = Math.max(600, Math.min(9000, (baseCutoff * (0.4 + 0.6 * distanceFactor)) * palette.lowpass));
+            filter.frequency.value = cutoff;
+
+            source.connect(filter);
+            filter.connect(gainNode);
             gainNode.connect(panner);
             panner.connect(this.sfxGain);
             source.start();
@@ -1152,7 +1246,7 @@ const AudioManager = {
             source.buffer = this.sounds.heartbeat;
 
             const gainNode = this.context.createGain();
-            gainNode.gain.value = 0.4 * intensity;
+            gainNode.gain.value = Math.min(1.0, 0.45 * intensity * this.sfxMixBoost);
 
             source.connect(gainNode);
             gainNode.connect(this.sfxGain);
@@ -1162,11 +1256,189 @@ const AudioManager = {
         }
     },
 
+    // === PROCEDURAL BACKGROUND MUSIC SYSTEM ===
+    proceduralMusic: {
+        playing: false,
+        oscillators: [],
+        gainNodes: [],
+        tempo: 120, // BPM
+        currentBeat: 0,
+        lastBeatTime: 0,
+        bassPattern: [0, 0, 7, 0, 5, 0, 3, 0], // Semitones from root
+        melodyPattern: [12, 15, 17, 19, 17, 15, 12, 10], // Higher octave
+        intensity: 0.5 // 0-1 based on timer
+    },
+
+    // Start procedural background music
+    startProceduralMusic() {
+        if (!this.initialized || this.proceduralMusic.playing) return;
+        this.proceduralMusic.playing = true;
+        this.proceduralMusic.currentBeat = 0;
+        this.proceduralMusic.lastBeatTime = this.context.currentTime;
+        this.proceduralMusic.tempo = 120; // Starting tempo
+        this.updateProceduralMusic();
+    },
+
+    // Stop procedural background music
+    stopProceduralMusic() {
+        this.proceduralMusic.playing = false;
+        // Stop all oscillators
+        for (const osc of this.proceduralMusic.oscillators) {
+            try { osc.stop(); } catch (e) {}
+        }
+        this.proceduralMusic.oscillators = [];
+        this.proceduralMusic.gainNodes = [];
+    },
+
+    // Update tempo based on timer (higher urgency = faster tempo)
+    setMusicTempo(timer) {
+        if (timer <= 5) {
+            this.proceduralMusic.tempo = 180; // Very urgent
+            this.proceduralMusic.intensity = 1.0;
+        } else if (timer <= 15) {
+            this.proceduralMusic.tempo = 150; // Urgent
+            this.proceduralMusic.intensity = 0.8;
+        } else if (timer <= 30) {
+            this.proceduralMusic.tempo = 135; // Moderate tension
+            this.proceduralMusic.intensity = 0.6;
+        } else {
+            this.proceduralMusic.tempo = 120; // Relaxed
+            this.proceduralMusic.intensity = 0.4;
+        }
+    },
+
+    // Update procedural music (called from game loop)
+    updateProceduralMusic() {
+        if (!this.proceduralMusic.playing || !this.initialized) return;
+
+        const now = this.context.currentTime;
+        const beatDuration = 60 / this.proceduralMusic.tempo; // Seconds per beat
+
+        // Check if it's time for next beat
+        if (now - this.proceduralMusic.lastBeatTime >= beatDuration * 0.5) {
+            this.proceduralMusic.lastBeatTime = now;
+            this.proceduralMusic.currentBeat = (this.proceduralMusic.currentBeat + 1) % 8;
+
+            // Play bass note
+            this.playProceduralNote(
+                55 + this.proceduralMusic.bassPattern[this.proceduralMusic.currentBeat], // A1 = 55Hz + pattern
+                0.15,
+                0.2 * this.proceduralMusic.intensity,
+                'square'
+            );
+
+            // Play melody note (every other beat)
+            if (this.proceduralMusic.currentBeat % 2 === 0) {
+                const melodyNote = 220 * Math.pow(2, this.proceduralMusic.melodyPattern[this.proceduralMusic.currentBeat / 2] / 12);
+                this.playProceduralNote(
+                    melodyNote,
+                    0.1,
+                    0.15 * this.proceduralMusic.intensity,
+                    'triangle'
+                );
+            }
+
+            // Percussion on beats 0 and 4
+            if (this.proceduralMusic.currentBeat === 0 || this.proceduralMusic.currentBeat === 4) {
+                this.playProceduralNoise(0.05, 0.25 * this.proceduralMusic.intensity);
+            }
+        }
+    },
+
+    // Play a single procedural note
+    playProceduralNote(frequency, duration, volume, waveType = 'square') {
+        if (!this.initialized) return;
+
+        try {
+            const osc = this.context.createOscillator();
+            const gain = this.context.createGain();
+
+            osc.type = waveType;
+            osc.frequency.value = frequency;
+
+            // Quick attack, sustain, quick release envelope
+            gain.gain.setValueAtTime(0, this.context.currentTime);
+            gain.gain.linearRampToValueAtTime(volume, this.context.currentTime + 0.01);
+            gain.gain.linearRampToValueAtTime(volume * 0.7, this.context.currentTime + duration * 0.5);
+            gain.gain.linearRampToValueAtTime(0, this.context.currentTime + duration);
+
+            osc.connect(gain);
+            gain.connect(this.musicGain);
+
+            osc.start();
+            osc.stop(this.context.currentTime + duration);
+        } catch (e) {}
+    },
+
+    // Play procedural noise (for percussion)
+    playProceduralNoise(duration, volume) {
+        if (!this.initialized) return;
+
+        try {
+            const bufferSize = this.context.sampleRate * duration;
+            const buffer = this.context.createBuffer(1, bufferSize, this.context.sampleRate);
+            const data = buffer.getChannelData(0);
+
+            for (let i = 0; i < bufferSize; i++) {
+                data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.3));
+            }
+
+            const source = this.context.createBufferSource();
+            source.buffer = buffer;
+
+            const gain = this.context.createGain();
+            gain.gain.value = volume;
+
+            source.connect(gain);
+            gain.connect(this.musicGain);
+            source.start();
+        } catch (e) {}
+    },
+
     // Play a random punch variant for variety
     playRandomPunch(volume = 1.0) {
         const variants = ['punch1', 'punch2', 'punch3'];
         const randomVariant = variants[Math.floor(Math.random() * variants.length)];
         this.play(randomVariant, volume);
+    },
+
+    // Subtle variation for frequent SFX (avoid repetition)
+    getSfxVariation(soundName) {
+        const rand = (min, max) => min + Math.random() * (max - min);
+        switch (soundName) {
+            case 'footstep':
+            case 'enemyStep':
+                return { rate: rand(0.96, 1.04), gain: rand(0.9, 1.05) };
+            case 'coin':
+                return { rate: rand(0.97, 1.05), gain: rand(0.9, 1.02) };
+            case 'punch1':
+            case 'punch2':
+            case 'punch3':
+                return { rate: rand(0.97, 1.03), gain: rand(0.95, 1.05) };
+            default:
+                return { rate: 1.0, gain: 1.0 };
+        }
+    },
+
+    // Per-floor tonal palette (subtle)
+    getFloorPalette() {
+        try {
+            if (typeof gameState === 'undefined') return { rate: 1.0, gain: 1.0, lowpass: 1.0 };
+            if (gameState.endlessMode) {
+                const f = Math.max(1, gameState.endlessFloor || 1);
+                const darken = Math.min(0.2, f / 200);
+                return {
+                    rate: 1.0 - Math.min(0.04, f / 200),
+                    gain: 1.0 + Math.min(0.1, f / 100),
+                    lowpass: 1.0 - darken
+                };
+            }
+            if (gameState.floor >= 10) return { rate: 1.02, gain: 1.0, lowpass: 1.05 };
+            if (gameState.floor >= 6) return { rate: 1.0, gain: 1.0, lowpass: 1.0 };
+            return { rate: 0.98, gain: 1.05, lowpass: 0.85 };
+        } catch (e) {
+            return { rate: 1.0, gain: 1.0, lowpass: 1.0 };
+        }
     },
 
     // Set master volume (0-1)
@@ -1339,11 +1611,23 @@ function autoDetectResolution() {
     const screenWidth = window.innerWidth;
     const screenHeight = window.innerHeight;
     const aspectRatio = screenWidth / screenHeight;
+    const dpr = window.devicePixelRatio || 1;
+    const ua = navigator.userAgent || '';
+
+    const isIOS = /iPhone|iPad|iPod/i.test(ua);
+    const isAndroid = /Android/i.test(ua);
+    const isMobile = isIOS || isAndroid || ('ontouchstart' in window && screenWidth < 900);
+
+    // iOS / mobile browsers: keep internal resolution conservative
+    if (isIOS || isMobile) {
+        if (Math.min(screenWidth, screenHeight) >= 900 || dpr > 2) return '800x800';
+        return '640x640';
+    }
 
     // Detect widescreen aspect ratios
     if (aspectRatio >= 1.7 && aspectRatio <= 1.8) {
         // 16:9 aspect ratio (ROG Ally, standard monitors)
-        if (screenHeight >= 1080) return '1920x1080';
+        if (screenHeight >= 1080 && dpr <= 1.5) return '1920x1080';
         return '1280x720';
     } else if (aspectRatio >= 1.55 && aspectRatio < 1.7) {
         // 16:10 aspect ratio (Steam Deck)
@@ -1419,11 +1703,29 @@ function getEnemyCountForFloor(floor) {
 // Get number of fires that can spawn on floor (rebalanced for 13-floor game)
 function getMaxFiresForFloor(floor) {
     // Fires start from floor 13 with gradual increase - INCREASED for more intensity
-    if (floor >= 12) return 2;   // Floors 13-12: 2 fires (intro to mechanic)
-    if (floor >= 10) return 4;   // Floors 11-10: 4 fires
-    if (floor >= 7) return 6;    // Floors 9-7: 6 fires
-    if (floor >= 4) return 10;   // Floors 6-4: 10 fires
-    return 14;                    // Floors 3-1: 14 fires (inferno finale)
+    // First-run tutorial easing: no fires on floors 13-12, minimal on 11
+    if (gameState && gameState.firstRunTutorial) {
+        if (floor >= 12) return 0;
+        if (floor === 11) return 1;
+    }
+
+    let baseMax;
+    if (floor >= 12) baseMax = 2;   // Floors 13-12: 2 fires (intro to mechanic)
+    else if (floor >= 10) baseMax = 4;   // Floors 11-10: 4 fires
+    else if (floor >= 7) baseMax = 6;    // Floors 9-7: 6 fires
+    else if (floor >= 4) baseMax = 10;   // Floors 6-4: 10 fires
+    else baseMax = 14;                    // Floors 3-1: 14 fires (inferno finale)
+
+    // Weekly modifier (daily challenge): fire multiplier
+    if (dailyChallenge.active && gameState && gameState.weeklyChallenge) {
+        const mods = gameState.weeklyChallenge.modifiers || {};
+        if (mods.fireMultiplier) {
+            baseMax = Math.ceil(baseMax * mods.fireMultiplier);
+        }
+    }
+
+    // Safety cap for standard mode
+    return Math.min(baseMax, 18);
 }
 
 // ============================================
@@ -1985,18 +2287,114 @@ const PERKS = {
         icon: '💣',
         category: 'punch',
         rarity: 'epic'
+    },
+    // NEW COMPLEMENTARY PERKS (economy balance)
+    coinHoarder: {
+        id: 'coinHoarder',
+        name: 'Penny Pincher',
+        description: '15% discount on all shop purchases',
+        icon: '💰',
+        category: 'passive',
+        rarity: 'common'
+    },
+    deskVault: {
+        id: 'deskVault',
+        name: 'Desk Vault',
+        description: 'Dash through desks (but not walls)',
+        icon: '🪑',
+        category: 'dash',
+        rarity: 'rare'
+    },
+    ghostTrail: {
+        id: 'ghostTrail',
+        name: 'Spectral Echo',
+        description: 'Ghost Walk power-ups last 50% longer',
+        icon: '✨',
+        category: 'passive',
+        rarity: 'epic'
+    },
+    // NEW LEGENDARY PERKS (Floor 4+)
+    ghostPhase: {
+        id: 'ghostPhase',
+        name: 'Phase Dash',
+        description: 'Dash phases through walls and desks',
+        icon: '👻',
+        category: 'dash',
+        rarity: 'legendary'
+    },
+    timeLord: {
+        id: 'timeLord',
+        name: 'Time Lord',
+        description: '+15s at floor start, knockouts give +100% time',
+        icon: '⏳',
+        category: 'passive',
+        rarity: 'legendary'
+    },
+    omnipunch: {
+        id: 'omnipunch',
+        name: 'Omnipunch',
+        description: 'Punch hits ALL enemies in range simultaneously',
+        icon: '💢',
+        category: 'punch',
+        rarity: 'legendary'
     }
 };
 
+// Tier unlock floors - higher tier perks only appear on deeper floors
+const PERK_TIER_UNLOCK = {
+    common: 13,    // Available from floor 13 (start)
+    rare: 10,      // Unlock at floor 10 or below
+    epic: 7,       // Unlock at floor 7 or below
+    legendary: 4   // Unlock at floor 4 or below
+};
+
+// Get number of shop slots based on floor (more choices on later floors)
+function getShopSlotCount(floor) {
+    if (floor >= 10) return 3;  // Floors 13-10: 3 choices
+    if (floor >= 7) return 4;   // Floors 9-7: 4 choices
+    if (floor >= 4) return 5;   // Floors 6-4: 5 choices
+    return 6;                    // Floors 3-1: 6 choices (includes legendary)
+}
+
 // Get random perks for floor selection (no duplicates from current perks)
 function getRandomPerkChoices(count = 3) {
-    const availablePerks = Object.values(PERKS).filter(perk =>
-        !gameState.perks.includes(perk.id)
-    );
+    const currentFloor = gameState.floor;
+
+    const availablePerks = Object.values(PERKS).filter(perk => {
+        // Don't offer already-owned perks
+        if (gameState.perks.includes(perk.id)) return false;
+
+        // Check tier unlock based on floor
+        const unlockFloor = PERK_TIER_UNLOCK[perk.rarity];
+        if (unlockFloor === undefined) return true; // Unknown rarity, allow
+        return currentFloor <= unlockFloor;
+    });
+
+    // Weight towards floor-appropriate tiers (bias toward newly unlocked tiers)
+    const weighted = [];
+    for (const perk of availablePerks) {
+        let weight = 1;
+        // Boost weight for tiers that just unlocked (exciting new options!)
+        if (perk.rarity === 'rare' && currentFloor === 10) weight = 2;
+        if (perk.rarity === 'epic' && currentFloor === 7) weight = 2;
+        if (perk.rarity === 'legendary' && currentFloor === 4) weight = 3;
+        // Legendary always has higher weight when available (reward for late game)
+        if (perk.rarity === 'legendary') weight = 2;
+        for (let i = 0; i < weight; i++) weighted.push(perk);
+    }
 
     // Shuffle and take first 'count'
-    const shuffled = availablePerks.sort(() => Math.random() - 0.5);
-    return shuffled.slice(0, Math.min(count, shuffled.length));
+    const shuffled = weighted.sort(() => Math.random() - 0.5);
+    // Remove duplicates (from weighting)
+    const unique = [];
+    const seen = new Set();
+    for (const perk of shuffled) {
+        if (!seen.has(perk.id)) {
+            seen.add(perk.id);
+            unique.push(perk);
+        }
+    }
+    return unique.slice(0, Math.min(count, unique.length));
 }
 
 // === ENEMY TYPE SELECTION ===
@@ -2046,6 +2444,8 @@ let gameState = {
     player: {
         x: 10, y: 10, speed: 1, stunned: 0,
         frame: 0, direction: 0,
+        // === SMOOTH MOVEMENT: Visual position for lerping ===
+        visualX: 10, visualY: 10, // Visual position (separate from logical grid position)
         hitCount: 0,  // Track number of times hit
         lastHitTime: 0,  // For resetting hit count after a while
         burning: 0,  // Burn effect timer (drains time 2x faster)
@@ -2102,6 +2502,8 @@ let gameState = {
     runStartTime: 0,  // When the run started
     runTotalTime: 0,  // Total time for completed run
     floorTimes: [],    // Time spent on each floor
+    floorStartTime: 0, // Timestamp for current floor start
+    firstRunTutorial: false, // Structured first-run onboarding
     // Checkpoint system (Playtest Feature #2)
     lastCheckpoint: null,
     continuesRemaining: MAX_CONTINUES,
@@ -2159,7 +2561,11 @@ let gameState = {
         perfectFloors: 0,         // Floors completed without taking damage
         milestoneBonus: 0,        // Bonus points from milestones
         milestonesReached: []     // Which milestones were reached
-    }
+    },
+    // === THE VAULT (Floor -100 Per-Run State) ===
+    severanceAvailable: true,     // Can use Severance Package this run (resets each run)
+    vaultAnimationPlaying: false, // Currently playing vault discovery animation
+    showingVaultFloor: false      // Floor -100 has special vault exit rendering
 };
 
 // Comprehensive stats tracking (persisted)
@@ -2187,7 +2593,12 @@ let playerStats = {
     endlessTotalFloors: 0,        // All-time floors in endless
     endlessRuns: 0,               // Total endless attempts
     endlessAverageFloor: 0,       // Running average floor reached
-    endlessMilestonesReached: []  // Which milestones have been hit (ever)
+    endlessMilestonesReached: [], // Which milestones have been hit (ever)
+    // === THE VAULT (Floor -100 Secret) ===
+    vaultDiscovered: false,       // One-time discovery flag
+    vaultDiscoveredDate: null,    // When the vault was discovered
+    hasSeverancePackage: false,   // Permanent weapon unlock
+    vaultCoins: 0                 // Coins from vault (permanent)
 };
 
 // Load stats from localStorage
@@ -2197,6 +2608,8 @@ function loadStats() {
         const parsed = JSON.parse(saved);
         Object.assign(playerStats, parsed);
     }
+    // Ensure status theme packs unlock based on loaded stats
+    checkStatusThemeUnlocks();
 }
 
 // Save stats to localStorage
@@ -2278,6 +2691,17 @@ function showMilestonesMenu() {
 
     // Build stats summary
     const rewards = getMilestoneRewards();
+    const vaultSection = playerStats.vaultDiscovered ? `
+        <div class="vault-discovery-section">
+            <h3>🔐 THE VAULT</h3>
+            <div class="vault-info">
+                <span class="vault-status">💼 SEVERANCE PACKAGE UNLOCKED</span>
+                <span class="vault-date">Discovered: ${new Date(playerStats.vaultDiscoveredDate).toLocaleDateString()}</span>
+                <span class="vault-coins">Vault Coins: ${playerStats.vaultCoins.toLocaleString()}</span>
+            </div>
+        </div>
+    ` : '';
+
     statsEl.innerHTML = `
         <h3>CURRENT BONUSES</h3>
         <div class="stats-grid">
@@ -2294,6 +2718,7 @@ function showMilestonesMenu() {
                 <div class="stat-label">Floors Cleared</div>
             </div>
         </div>
+        ${vaultSection}
     `;
 
     menu.style.display = 'flex';
@@ -2425,6 +2850,51 @@ function gameRandom() {
     return Math.random();
 }
 
+function getWeeklyModifiers() {
+    if (dailyChallenge.active && gameState && gameState.weeklyChallenge) {
+        return gameState.weeklyChallenge.modifiers || null;
+    }
+    return null;
+}
+
+function findValidPowerupTile(options = {}) {
+    const minDistToPlayer = options.minDistToPlayer ?? 3;
+    const maxDistToPlayer = options.maxDistToPlayer ?? 10;
+    const minDistToExits = options.minDistToExits ?? 2;
+
+    const tiles = [];
+    const minX = Math.max(1, gameState.player.x - maxDistToPlayer);
+    const maxX = Math.min(MAP_WIDTH - 2, gameState.player.x + maxDistToPlayer);
+    const minY = Math.max(1, gameState.player.y - maxDistToPlayer);
+    const maxY = Math.min(MAP_HEIGHT - 2, gameState.player.y + maxDistToPlayer);
+
+    for (let y = minY; y <= maxY; y++) {
+        for (let x = minX; x <= maxX; x++) {
+            const distToPlayer = Math.abs(x - gameState.player.x) + Math.abs(y - gameState.player.y);
+            if (distToPlayer < minDistToPlayer || distToPlayer > maxDistToPlayer) continue;
+            if (gameState.maze[y][x] !== TILE.FLOOR) continue;
+
+            let nearExit = false;
+            for (const exit of gameState.exits) {
+                const distToExit = Math.abs(x - exit.x) + Math.abs(y - exit.y);
+                if (distToExit < minDistToExits) {
+                    nearExit = true;
+                    break;
+                }
+            }
+            if (nearExit) continue;
+
+            const occupied = gameState.powerups.some(p => p.x === x && p.y === y);
+            if (occupied) continue;
+
+            tiles.push({ x, y });
+        }
+    }
+
+    if (tiles.length === 0) return null;
+    return tiles[Math.floor(gameRandom() * tiles.length)];
+}
+
 // Submit score to local leaderboard
 function submitDailyChallengeScore(time) {
     if (!dailyChallenge.active) return;
@@ -2477,6 +2947,8 @@ function startDailyChallenge() {
     gameState.runStartTime = Date.now();
     gameState.runTotalTime = 0;
     gameState.floorTimes = [];
+    gameState.floorStartTime = Date.now();
+    gameState.firstRunTutorial = false;
     playerProgress.wasHitThisRun = false;
     playerStats.totalRuns++;
     saveStats();
@@ -2576,8 +3048,11 @@ function hideHowToPlay() {
 }
 
 let keys = {};
+let keyPressTime = {}; // Track when each key was first pressed
+let keyMoved = {}; // Track if a key has already triggered a move (for tap detection)
 let lastMove = 0;
 const MOVE_DELAY = 100; // Reduced from 150ms for snappier, more precise movement
+const HOLD_THRESHOLD = 180; // Must hold key this long (ms) before continuous movement kicks in
 
 // Calculate effective move delay with perks and powerups
 function getEffectiveMoveDelay() {
@@ -2596,7 +3071,13 @@ const gamepadState = {
     index: -1,
     lastInput: {
         up: false, down: false, left: false, right: false,
-        action: false, pause: false
+        // All action buttons mapped to standard gamepad layout
+        dash: false,        // A (Xbox) / X (PS) - Button 0
+        punch: false,       // X (Xbox) / Square (PS) - Button 2
+        action: false,      // B (Xbox) / Circle (PS) - Button 1
+        wallBreak: false,   // Y (Xbox) / Triangle (PS) - Button 3
+        severance: false,   // LB (Xbox) / L1 (PS) - Button 4
+        pause: false        // Start - Button 9
     },
     deadzone: 0.3,
     buttonCooldown: 0
@@ -2611,6 +3092,124 @@ const input = {
     action: false,
     pause: false
 };
+
+// === UNIFIED INPUT ACTIONS SYSTEM ===
+// All actions that can be triggered by any input method (keyboard, gamepad, touch)
+// This allows the game to be fully playable on any platform
+const inputActions = {
+    // Movement (continuous while held)
+    up: false,
+    down: false,
+    left: false,
+    right: false,
+    // Actions (trigger once per press)
+    dash: false,
+    punch: false,
+    action: false,      // Use powerup
+    wallBreak: false,   // Secret ability (if unlocked)
+    severance: false,   // Ultimate ability (if unlocked)
+    pause: false,
+    // Internal: track what was pressed last frame to detect rising edge
+    _lastDash: false,
+    _lastPunch: false,
+    _lastAction: false,
+    _lastWallBreak: false,
+    _lastSeverance: false,
+    _lastPause: false
+};
+
+// Touch input state (mobile)
+const touchState = {
+    up: false,
+    down: false,
+    left: false,
+    right: false,
+    // Action triggers (set to true on tap, consumed by game loop)
+    dashTap: false,
+    punchTap: false,
+    actionTap: false,
+    wallBreakTap: false,
+    severanceTap: false,
+    pauseTap: false
+};
+
+let lastTouchActionTime = 0;
+
+function initTouchControls() {
+    const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+    const controls = document.getElementById('touchControls');
+    if (controls && hasTouch) {
+        controls.style.display = 'flex';
+        controls.style.pointerEvents = 'auto';
+        controls.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+    }
+
+    const bindHold = (id, setState) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const start = (e) => {
+            e.preventDefault();
+            if (e.pointerId !== undefined && el.setPointerCapture) {
+                el.setPointerCapture(e.pointerId);
+            }
+            setState(true);
+        };
+        const end = (e) => { e.preventDefault(); setState(false); };
+        el.addEventListener('touchstart', start, { passive: false });
+        el.addEventListener('touchend', end, { passive: false });
+        el.addEventListener('touchcancel', end, { passive: false });
+        el.addEventListener('pointerdown', start);
+        el.addEventListener('pointerup', end);
+        el.addEventListener('pointercancel', end);
+        el.addEventListener('pointerleave', end);
+        el.addEventListener('mousedown', start);
+        el.addEventListener('mouseup', end);
+        el.addEventListener('mouseleave', end);
+    };
+
+    const bindTap = (id, handler) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const tap = (e) => {
+            e.preventDefault();
+            const now = Date.now();
+            if (now - lastTouchActionTime < 120) return;
+            lastTouchActionTime = now;
+            handler();
+        };
+        el.addEventListener('touchstart', tap, { passive: false });
+        el.addEventListener('pointerdown', tap);
+        el.addEventListener('mousedown', tap);
+    };
+
+    bindHold('touchUp', (v) => { touchState.up = v; });
+    bindHold('touchDown', (v) => { touchState.down = v; });
+    bindHold('touchLeft', (v) => { touchState.left = v; });
+    bindHold('touchRight', (v) => { touchState.right = v; });
+
+    // Action button taps - set flag for unified input system
+    bindTap('touchDash', () => { touchState.dashTap = true; });
+    bindTap('touchPunch', () => { touchState.punchTap = true; });
+    bindTap('touchPower', () => { touchState.actionTap = true; });
+    bindTap('touchWallBreak', () => { touchState.wallBreakTap = true; });
+    bindTap('touchSeverance', () => { touchState.severanceTap = true; });
+    bindTap('touchPause', () => { touchState.pauseTap = true; });
+}
+
+// Update visibility of special ability touch buttons based on unlock state
+function updateSpecialTouchButtons() {
+    const wallBreakBtn = document.getElementById('touchWallBreak');
+    const severanceBtn = document.getElementById('touchSeverance');
+
+    if (wallBreakBtn) {
+        wallBreakBtn.style.display = gameState.hasWallBreaker ? 'flex' : 'none';
+    }
+    if (severanceBtn) {
+        // Show severance button if unlocked AND available this run
+        const showSeverance = playerStats.hasSeverancePackage && gameState.severanceAvailable;
+        severanceBtn.style.display = showSeverance ? 'flex' : 'none';
+    }
+}
 
 function updateGamepadInput() {
     const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
@@ -2642,11 +3241,16 @@ function updateGamepadInput() {
     const dpadLeft = gamepad.buttons[14] ? gamepad.buttons[14].pressed : false;
     const dpadRight = gamepad.buttons[15] ? gamepad.buttons[15].pressed : false;
 
-    // Action button (A on Xbox, X on PlayStation) - button 0
-    const actionButton = gamepad.buttons[0] ? gamepad.buttons[0].pressed : false;
-
-    // Pause button (Start) - button 9
-    const pauseButton = gamepad.buttons[9] ? gamepad.buttons[9].pressed : false;
+    // === UNIFIED ACTION BUTTON MAPPING ===
+    // Standard gamepad layout (works for Xbox, PlayStation, Switch Pro, etc.)
+    // Button 0: A (Xbox) / X (PS) / B (Switch) - DASH (primary action)
+    // Button 1: B (Xbox) / Circle (PS) / A (Switch) - USE POWERUP
+    // Button 2: X (Xbox) / Square (PS) / Y (Switch) - PUNCH
+    // Button 3: Y (Xbox) / Triangle (PS) / X (Switch) - WALL BREAK (if unlocked)
+    // Button 4: LB (Xbox) / L1 (PS) / L (Switch) - SEVERANCE (if unlocked)
+    // Button 5: RB (Xbox) / R1 (PS) / R (Switch) - (unused, could be alt dash)
+    // Button 9: Start / Options - PAUSE
+    const btn = (i) => gamepad.buttons[i] ? gamepad.buttons[i].pressed : false;
 
     // Apply deadzone to stick
     const stickUp = leftStickY < -gamepadState.deadzone;
@@ -2659,8 +3263,14 @@ function updateGamepadInput() {
     gamepadState.lastInput.down = stickDown || dpadDown;
     gamepadState.lastInput.left = stickLeft || dpadLeft;
     gamepadState.lastInput.right = stickRight || dpadRight;
-    gamepadState.lastInput.action = actionButton;
-    gamepadState.lastInput.pause = pauseButton;
+
+    // Action buttons
+    gamepadState.lastInput.dash = btn(0) || btn(5);  // A or RB for dash
+    gamepadState.lastInput.punch = btn(2);            // X for punch
+    gamepadState.lastInput.action = btn(1);           // B for use powerup
+    gamepadState.lastInput.wallBreak = btn(3);        // Y for wall break
+    gamepadState.lastInput.severance = btn(4);        // LB for severance
+    gamepadState.lastInput.pause = btn(9);            // Start for pause
 }
 
 function getInput() {
@@ -2673,18 +3283,104 @@ function getInput() {
         return binding.some(key => keys[key]);
     };
 
+    // Helper to check if direction key should trigger movement
+    // Returns true if: key is pressed AND (hasn't moved yet OR held long enough for continuous movement)
+    const shouldMove = (binding) => {
+        if (!binding) return false;
+        const now = Date.now();
+        return binding.some(key => {
+            if (!keys[key]) return false;
+            const pressTime = keyPressTime[key] || 0;
+            const holdDuration = now - pressTime;
+            const hasMoved = keyMoved[key];
+
+            // Allow move if: never moved yet, OR held past threshold for continuous movement
+            return !hasMoved || holdDuration >= HOLD_THRESHOLD;
+        });
+    };
+
     // Get control bindings (use defaults if not set)
     const controls = settings.controls || DEFAULT_SETTINGS.controls;
 
     // Combine keyboard (with remappable controls) and gamepad inputs
-    input.up = isKeyPressed(controls.up) || gamepadState.lastInput.up;
-    input.down = isKeyPressed(controls.down) || gamepadState.lastInput.down;
-    input.left = isKeyPressed(controls.left) || gamepadState.lastInput.left;
-    input.right = isKeyPressed(controls.right) || gamepadState.lastInput.right;
+    // Direction keys use tap/hold detection for precise control
+    input.up = shouldMove(controls.up) || gamepadState.lastInput.up || touchState.up;
+    input.down = shouldMove(controls.down) || gamepadState.lastInput.down || touchState.down;
+    input.left = shouldMove(controls.left) || gamepadState.lastInput.left || touchState.left;
+    input.right = shouldMove(controls.right) || gamepadState.lastInput.right || touchState.right;
     input.action = isKeyPressed(controls.action) || gamepadState.lastInput.action;
     input.pause = isKeyPressed(controls.pause) || gamepadState.lastInput.pause;
 
     return input;
+}
+
+// === UNIFIED INPUT ACTIONS UPDATE ===
+// Call this every frame to update the inputActions state
+// Handles edge detection (rising edge) so actions only trigger once per press
+function updateInputActions() {
+    updateGamepadInput();
+
+    // Helper to check if any key in the binding is pressed
+    const isKeyPressed = (binding) => {
+        if (!binding) return false;
+        return binding.some(key => keys[key]);
+    };
+
+    // Helper for direction movement (tap/hold detection)
+    const shouldMove = (binding) => {
+        if (!binding) return false;
+        const now = Date.now();
+        return binding.some(key => {
+            if (!keys[key]) return false;
+            const pressTime = keyPressTime[key] || 0;
+            const holdDuration = now - pressTime;
+            const hasMoved = keyMoved[key];
+            return !hasMoved || holdDuration >= HOLD_THRESHOLD;
+        });
+    };
+
+    const controls = settings.controls || DEFAULT_SETTINGS.controls;
+
+    // === MOVEMENT (continuous while held) ===
+    inputActions.up = shouldMove(controls.up) || gamepadState.lastInput.up || touchState.up;
+    inputActions.down = shouldMove(controls.down) || gamepadState.lastInput.down || touchState.down;
+    inputActions.left = shouldMove(controls.left) || gamepadState.lastInput.left || touchState.left;
+    inputActions.right = shouldMove(controls.right) || gamepadState.lastInput.right || touchState.right;
+
+    // === ACTION BUTTONS (edge detection - only trigger on rising edge) ===
+    // Combine all input sources for each action
+    const dashPressed = keys['Space'] || gamepadState.lastInput.dash || touchState.dashTap;
+    const punchPressed = keys['KeyZ'] || keys['KeyX'] || gamepadState.lastInput.punch || touchState.punchTap;
+    const actionPressed = isKeyPressed(controls.action) || gamepadState.lastInput.action || touchState.actionTap;
+    const wallBreakPressed = keys['ShiftLeft'] || keys['ShiftRight'] || gamepadState.lastInput.wallBreak || touchState.wallBreakTap;
+    const severancePressed = keys['KeyV'] || gamepadState.lastInput.severance || touchState.severanceTap;
+    const pausePressed = isKeyPressed(controls.pause) || gamepadState.lastInput.pause || touchState.pauseTap;
+
+    // Rising edge detection: only true on the frame the button becomes pressed
+    inputActions.dash = dashPressed && !inputActions._lastDash;
+    inputActions.punch = punchPressed && !inputActions._lastPunch;
+    inputActions.action = actionPressed && !inputActions._lastAction;
+    inputActions.wallBreak = wallBreakPressed && !inputActions._lastWallBreak;
+    inputActions.severance = severancePressed && !inputActions._lastSeverance;
+    inputActions.pause = pausePressed && !inputActions._lastPause;
+
+    // Store current state for next frame's edge detection
+    inputActions._lastDash = dashPressed;
+    inputActions._lastPunch = punchPressed;
+    inputActions._lastAction = actionPressed;
+    inputActions._lastWallBreak = wallBreakPressed;
+    inputActions._lastSeverance = severancePressed;
+    inputActions._lastPause = pausePressed;
+
+    // Clear touch tap flags (they're consumed after one frame)
+    touchState.dashTap = false;
+    touchState.punchTap = false;
+    touchState.actionTap = false;
+    touchState.wallBreakTap = false;
+    touchState.severanceTap = false;
+    touchState.pauseTap = false;
+
+    return inputActions;
 }
 
 // Gamepad connection events
@@ -2810,6 +3506,7 @@ const CELEBRATIONS = {
     cloneActivated: { text: '👤 DECOY DEPLOYED!', color: '#9b59b6' },
     decoyExpired: { text: '👤 DECOY GONE', color: '#666' },
     invincibility: { text: '⭐ INVINCIBLE!', color: '#ffd700' },
+    ghostWalk: { text: '👻 GHOST WALK!', color: '#64b4ff' },
     // === ENVIRONMENTAL HAZARD CELEBRATIONS ===
     shocked: { text: '⚡ SHOCKED!', color: '#ffff00' },
     paperJam: { text: '📄 PAPER JAM!', color: '#ffffff' },
@@ -2817,7 +3514,10 @@ const CELEBRATIONS = {
     wallBreakerUnlocked: { text: '🧱💥 WALL BREAKER UNLOCKED!', color: '#ff00ff' },
     wallSmash: { text: '💥 SMASH!', color: '#ff6600' },
     wallBreak: { text: '💥 WALL BREAK!', color: '#95a5a6' },
-    cooldown: { text: '⏳ RECHARGING...', color: '#3498db' }
+    cooldown: { text: '⏳ RECHARGING...', color: '#3498db' },
+    // === THE VAULT CELEBRATIONS ===
+    severance: { text: '💼⚡ SEVERANCE PACKAGE!', color: '#3498db' },
+    vaultFound: { text: '🔐💰 VAULT DISCOVERED!', color: '#f1c40f' }
 };
 
 // ============================================
@@ -2825,6 +3525,7 @@ const CELEBRATIONS = {
 // ============================================
 const DEFAULT_SETTINGS = {
     resolution: '640x640',
+    autoDetectResolution: true,
     fullscreen: false,
     screenShake: true,
     screenShakeIntensity: 100,  // 0-100% for motion sensitivity
@@ -2844,7 +3545,7 @@ const DEFAULT_SETTINGS = {
         down: ['KeyS', 'ArrowDown'],
         left: ['KeyA', 'ArrowLeft'],
         right: ['KeyD', 'ArrowRight'],
-        action: ['Space'],
+        action: ['KeyE'],
         pause: ['KeyP', 'Escape']
     },
     // Game Feel settings (Super Meat Boy consultant recommendations)
@@ -3026,8 +3727,13 @@ function loadSettings() {
         displaySettings.currentResolution = settings.resolution;
         displaySettings.fullscreen = settings.fullscreen;
 
-        // Set resolution
-        setResolution(settings.resolution);
+        // Set resolution (auto-detect unless user disabled it)
+        if (settings.autoDetectResolution) {
+            const detected = autoDetectResolution();
+            setResolution(detected);
+        } else {
+            setResolution(settings.resolution);
+        }
 
         // Apply colorblind mode if enabled
         if (settings.colorblindMode && settings.colorblindMode !== 'off') {
@@ -3201,6 +3907,8 @@ const CHARACTERS = {
 let playerProgress = {
     selectedCharacter: 'default',
     unlockedCharacters: ['default'],
+    unlockedStatusThemes: ['core'],
+    selectedStatusTheme: 'auto',
     totalRuns: 0,
     totalWins: 0,
     totalPunches: 0,
@@ -3219,6 +3927,8 @@ function loadProgress() {
         if (saved) {
             playerProgress = { ...playerProgress, ...JSON.parse(saved) };
         }
+        // Force default character only - other characters disabled until new differentiated designs
+        playerProgress.selectedCharacter = 'default';
         // Sync the global selectedCharacter for asset lookups
         selectedCharacter = CHARACTER_ID_TO_ASSET[playerProgress.selectedCharacter] || 'corporate_employee';
         checkUnlocks();
@@ -3358,6 +4068,7 @@ function checkUnlocks() {
     for (const char of newUnlocks) {
         showCharacterUnlock(char);
     }
+    checkStatusThemeUnlocks();
     saveProgress();
     return newUnlocks;
 }
@@ -3369,6 +4080,17 @@ function showCharacterUnlock(character) {
         <div style="font-size:24px;color:#ffe66d;font-weight:bold;margin-bottom:5px">${character.name}</div>
         <div style="font-size:12px;color:rgba(255,255,255,0.8)">${character.description}</div>`;
     notification.style.cssText = `position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:linear-gradient(180deg,rgba(78,205,196,0.95) 0%,rgba(46,134,130,0.95) 100%);padding:30px 50px;border-radius:12px;border:3px solid #ffe66d;box-shadow:0 0 60px rgba(255,230,109,0.6);z-index:500;text-align:center;font-family:'Courier New',monospace;`;
+    document.body.appendChild(notification);
+    setTimeout(() => { notification.style.opacity = '0'; notification.style.transition = 'opacity 0.5s'; setTimeout(() => notification.remove(), 500); }, 3000);
+}
+
+function showStatusThemeUnlock(theme) {
+    const notification = document.createElement('div');
+    notification.innerHTML = `<div style="font-size:48px;margin-bottom:10px">🎭</div>
+        <div style="font-size:14px;color:#fff;letter-spacing:3px;margin-bottom:8px">STATUS PACK UNLOCKED!</div>
+        <div style="font-size:22px;color:#ffe66d;font-weight:bold;margin-bottom:5px">${theme.name}</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.8)">${theme.description}</div>`;
+    notification.style.cssText = `position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:linear-gradient(180deg,rgba(233,69,96,0.95) 0%,rgba(143,45,74,0.95) 100%);padding:28px 46px;border-radius:12px;border:3px solid #ffe66d;box-shadow:0 0 60px rgba(255,230,109,0.6);z-index:500;text-align:center;font-family:'Courier New',monospace;`;
     document.body.appendChild(notification);
     setTimeout(() => { notification.style.opacity = '0'; notification.style.transition = 'opacity 0.5s'; setTimeout(() => notification.remove(), 500); }, 3000);
 }
@@ -3397,6 +4119,15 @@ function updatePlayerColors() {
         COLORS.playerShirtDark = char.colors.shirtDark;
         COLORS.playerHair = char.colors.hair;
         COLORS.playerPants = char.colors.pants;
+    }
+}
+
+// === THE VAULT: Update vault badge visibility on title screen ===
+function updateVaultBadge() {
+    const vaultBadge = document.getElementById('vaultBadge');
+    if (vaultBadge && playerStats.vaultDiscovered) {
+        vaultBadge.style.display = 'flex';
+        vaultBadge.title = `Vault Discovered: ${new Date(playerStats.vaultDiscoveredDate).toLocaleDateString()}`;
     }
 }
 
@@ -4394,6 +5125,10 @@ function initLevel() {
     // === ENDLESS MODE: Timer calculation ===
     if (gameState.endlessMode) {
         gameState.timer = getEndlessTimer(gameState.endlessFloor);
+        const difficultyPreset = DIFFICULTY_PRESETS[settings.difficulty] || DIFFICULTY_PRESETS.normal;
+        if (difficultyPreset && difficultyPreset.timerMultiplier && difficultyPreset.timerMultiplier > 0) {
+            gameState.timer = Math.floor(gameState.timer * difficultyPreset.timerMultiplier);
+        }
 
         // Show notifications for special floors
         if (gameState.endlessDangerZone) {
@@ -4416,20 +5151,18 @@ function initLevel() {
             showPersonalBestProximityAlert(pbStatus);
         }
     } else {
-        // Standard mode timer calculation - tighter on early floors for more engagement
-        // Floor 13: 38s, scaling down gradually (rebalanced for 13-floor game)
+        // Standard mode timer calculation - smoother early learning curve
         if (gameState.floor >= 11) {
-            // Opening floors (13-11): Start at 38s, decrease by 2s per floor
-            // Floor 13: 38s, Floor 12: 36s, Floor 11: 34s
-            gameState.timer = 38 - (13 - gameState.floor) * 2;
+            // Opening floors (13-11): 45, 42, 40
+            gameState.timer = 45 - (13 - gameState.floor) * 2.5;
         } else if (gameState.floor >= 8) {
-            // Early-mid floors (10-8): 32s base
-            gameState.timer = 32 - (10 - gameState.floor) * 2;
+            // Early-mid floors (10-8): 36, 34, 32
+            gameState.timer = 36 - (10 - gameState.floor) * 2;
         } else if (gameState.floor >= 5) {
-            // Mid floors (7-5): 28s base
-            gameState.timer = 28 - (7 - gameState.floor) * 1;
+            // Mid floors (7-5): 30, 28, 27
+            gameState.timer = 30 - (7 - gameState.floor) * 1.5;
         } else {
-            // Late floors (4-1): 25s base, but more challenging
+            // Late floors (4-1): 25 base
             gameState.timer = 25;
         }
 
@@ -4448,6 +5181,12 @@ function initLevel() {
         // Store rewards for use during gameplay
         gameState.milestoneRewards = rewards;
 
+        // Apply difficulty timer multiplier
+        const difficultyPreset = DIFFICULTY_PRESETS[settings.difficulty] || DIFFICULTY_PRESETS.normal;
+        if (difficultyPreset && difficultyPreset.timerMultiplier && difficultyPreset.timerMultiplier > 0) {
+            gameState.timer = Math.floor(gameState.timer * difficultyPreset.timerMultiplier);
+        }
+
         // Apply weekly challenge modifiers (for daily challenge mode)
         if (dailyChallenge.active && gameState.weeklyChallenge) {
             const mods = gameState.weeklyChallenge.modifiers;
@@ -4459,6 +5198,9 @@ function initLevel() {
 
     gameState.player.x = Math.floor(MAP_WIDTH / 2);
     gameState.player.y = Math.floor(MAP_HEIGHT / 2);
+    // Sync visual position with logical position (no interpolation on floor change)
+    gameState.player.visualX = gameState.player.x;
+    gameState.player.visualY = gameState.player.y;
     gameState.player.stunned = 0;
     gameState.player.speed = 1;
     gameState.player.frame = 0;
@@ -4483,6 +5225,9 @@ function initLevel() {
     // === VISUAL POLISH: Trigger enemy spawn flash ===
     gameState.enemySpawnFlash = 0.15; // Brief white flash when floor starts
     gameState.lastTimerSecond = -1; // Reset timer pulse tracking
+
+    // Track floor start time for recap stats
+    gameState.floorStartTime = Date.now();
 
     // Reset fires for new floor
     gameState.fires = [];
@@ -4620,6 +5365,20 @@ function initLevel() {
 
             // Enemy AI difficulty also scales - rebalanced for 13-floor game
             enemyDifficulty = gameState.floor >= 13 ? 'easy' : (gameState.floor >= 7 ? 'medium' : 'hard');
+
+            // First-run onboarding: gentler enemy ramp on early floors
+            if (gameState.firstRunTutorial) {
+                if (gameState.floor === 13) {
+                    numEnemies = 0;
+                    enemyDifficulty = 'easy';
+                } else if (gameState.floor === 12) {
+                    numEnemies = 1;
+                    enemyDifficulty = 'easy';
+                } else if (gameState.floor === 11) {
+                    numEnemies = 2;
+                    enemyDifficulty = 'easy';
+                }
+            }
         }
 
     for (let i = 0; i < numEnemies; i++) {
@@ -4672,6 +5431,43 @@ function initLevel() {
     } else {
         numPowerups = 8 + Math.floor(gameRandom() * 4);  // 8-11 powerups (late game gets more chaos)
     }
+    const weeklyMods = getWeeklyModifiers();
+    const powerupsDisabled = weeklyMods && weeklyMods.powerupMultiplier === 0;
+
+    // First-run onboarding: reduce clutter and guarantee core powerups
+    const guaranteedPowerups = [];
+    if (gameState.firstRunTutorial && !gameState.endlessMode) {
+        if (gameState.floor === 13) {
+            numPowerups = 1;
+            guaranteedPowerups.push({ type: 'speed', minDist: 4, maxDist: 9 });
+        } else if (gameState.floor === 12) {
+            numPowerups = 2;
+            guaranteedPowerups.push({ type: 'knockout', minDist: 5, maxDist: 10 });
+        } else if (gameState.floor === 11) {
+            numPowerups = Math.min(numPowerups, 4);
+        }
+    }
+
+    // Weekly modifier: powerup density
+    if (weeklyMods && weeklyMods.powerupMultiplier !== undefined) {
+        numPowerups = Math.max(0, Math.floor(numPowerups * weeklyMods.powerupMultiplier));
+    }
+
+    // Place guaranteed tutorial powerups first (unless powerups disabled)
+    if (!powerupsDisabled && guaranteedPowerups.length > 0) {
+        for (const gp of guaranteedPowerups) {
+            const tile = findValidPowerupTile({
+                minDistToPlayer: gp.minDist,
+                maxDistToPlayer: gp.maxDist,
+                minDistToExits: 2
+            });
+            if (tile) {
+                gameState.powerups.push({ x: tile.x, y: tile.y, type: gp.type });
+            }
+        }
+        // Reduce random count by number placed
+        numPowerups = Math.max(0, numPowerups - gameState.powerups.length);
+    }
     const MIN_POWERUP_DISTANCE = 6; // Reduced from 8 to allow more density
 
     for (let i = 0; i < numPowerups; i++) {
@@ -4701,12 +5497,21 @@ function initLevel() {
             if (gameState.floor <= 4 && roll < 0.1) {
                 // 10% chance for super-rare powerups on floors 4-1
                 powerupType = gameRandom() < 0.5 ? 'clone' : 'invincibility';
+            } else if (gameState.floor <= 7 && roll < 0.08) {
+                // 8% chance for Ghost Walk on floors 7-1 (pass through walls/desks)
+                powerupType = 'ghost';
             } else if (gameState.floor <= 7 && roll < 0.25) {
-                // 25% chance for limited powerups on floors 7-1
+                // 17% chance for limited powerups on floors 7-1
                 powerupType = gameRandom() < 0.5 ? 'timeFreeze' : 'coinMagnet';
             } else {
                 // Regular powerups
-                powerupType = ['speed', 'knockout', 'electric'][Math.floor(gameRandom() * 3)];
+                const speedMult = weeklyMods && weeklyMods.speedPowerupMultiplier ? weeklyMods.speedPowerupMultiplier : 1;
+                const weights = [speedMult, 1, 1];
+                const total = weights[0] + weights[1] + weights[2];
+                const rollPick = gameRandom() * total;
+                if (rollPick < weights[0]) powerupType = 'speed';
+                else if (rollPick < weights[0] + weights[1]) powerupType = 'knockout';
+                else powerupType = 'electric';
             }
 
             gameState.powerups.push({
@@ -4718,7 +5523,7 @@ function initLevel() {
     }
 
     // Add special powerup in garden (shield)
-    if (gameState.zones.garden) {
+    if (gameState.zones.garden && !powerupsDisabled) {
         const garden = gameState.zones.garden;
         const shieldX = garden.x + Math.floor(garden.width / 2);
         const shieldY = garden.y + Math.floor(garden.height / 2);
@@ -4730,7 +5535,7 @@ function initLevel() {
     }
 
     // Add special powerup in dog park (companion)
-    if (gameState.zones.dogPark) {
+    if (gameState.zones.dogPark && !powerupsDisabled) {
         const dogPark = gameState.zones.dogPark;
         const companionX = dogPark.x + Math.floor(dogPark.width / 2);
         const companionY = dogPark.y + Math.floor(dogPark.height / 2);
@@ -4739,6 +5544,16 @@ function initLevel() {
             y: companionY,
             type: 'companion'
         });
+    }
+
+    // Weekly modifier: extra shields (daily challenge only)
+    if (!powerupsDisabled && weeklyMods && weeklyMods.shieldSpawnChance) {
+        if (gameRandom() < weeklyMods.shieldSpawnChance) {
+            const tile = findValidPowerupTile({ minDistToPlayer: 4, maxDistToPlayer: 12, minDistToExits: 2 });
+            if (tile) {
+                gameState.powerups.push({ x: tile.x, y: tile.y, type: 'shield' });
+            }
+        }
     }
 
     gameState.powerup = null;
@@ -4750,10 +5565,19 @@ function initLevel() {
     gameState.lastChance = false;
     gameState.lastChanceTimer = 0;
 
-    // === NEW: Spawn Coins (Dopamine Breadcrumbs) ===
-    // Lots of coins scattered throughout for constant micro-rewards
+    // === COIN SPAWNING: Scaled by floor for economy balance ===
+    // Fewer coins spawn on later (lower number) floors to prevent economy overflow
     gameState.coins = [];
-    const numCoins = 15 + Math.floor(gameRandom() * 10); // 15-25 coins per floor
+    let numCoins;
+    if (gameState.floor >= 11) {
+        numCoins = 18 + Math.floor(gameRandom() * 8); // 18-25 coins (early floors)
+    } else if (gameState.floor >= 7) {
+        numCoins = 15 + Math.floor(gameRandom() * 6); // 15-20 coins (mid floors)
+    } else if (gameState.floor >= 4) {
+        numCoins = 12 + Math.floor(gameRandom() * 5); // 12-16 coins (late floors)
+    } else {
+        numCoins = 10 + Math.floor(gameRandom() * 4); // 10-13 coins (final floors)
+    }
     const MIN_COIN_DISTANCE = 4; // Minimum distance between coins
 
     for (let i = 0; i < numCoins; i++) {
@@ -5318,13 +6142,13 @@ function drawEnemySprite(enemy, x, y) {
     const srcX = state.frame * anim.frameWidth;
     const srcY = 0;
 
-    // Draw sprite - HR Karen needs smaller scale due to upright pose filling more frame
+    // Draw sprite - HR Karen needs smaller scale to align with other character sizes
     // Other enemies are in running poses with more negative space
-    const spriteScale = (enemyType === 'hr_karen') ? 1.7 : 2.0;
+    const spriteScale = (enemyType === 'hr_karen') ? 1.4 : 2.0;
     const destSize = Math.floor(TILE_SIZE * spriteScale);
     const offsetX = Math.floor((TILE_SIZE - destSize) / 2);
     // HR Karen needs less vertical offset since she's standing upright
-    const offsetY = Math.floor((TILE_SIZE - destSize) / 2) - (enemyType === 'hr_karen' ? 8 : 12);
+    const offsetY = Math.floor((TILE_SIZE - destSize) / 2) - (enemyType === 'hr_karen' ? 4 : 12);
 
     ctx.save();
 
@@ -5360,11 +6184,14 @@ function drawEnemySprite(enemy, x, y) {
 }
 
 function drawPlayer() {
-    const x = gameState.player.x * TILE_SIZE;
-    const y = gameState.player.y * TILE_SIZE;
+    // Use visual position for smooth movement (fall back to logical if not set)
+    const visualX = gameState.player.visualX !== undefined ? gameState.player.visualX : gameState.player.x;
+    const visualY = gameState.player.visualY !== undefined ? gameState.player.visualY : gameState.player.y;
+    const x = visualX * TILE_SIZE;
+    const y = visualY * TILE_SIZE;
     const bobOffset = Math.sin(gameState.animationTime * 8) * 1;
 
-    // Check if in safe zone
+    // Check if in safe zone (use logical position for game logic)
     const inBathroom = isInBathroom(gameState.player.x, gameState.player.y);
     const inCafeteria = isInCafeteria(gameState.player.x, gameState.player.y);
 
@@ -5388,10 +6215,35 @@ function drawPlayer() {
         shirtColor = COLORS.electricYellow;
         shirtLight = COLORS.electricYellowLight;
         shirtDark = COLORS.electricYellowDark;
+    } else if (gameState.powerup === 'ghost') {
+        // Ethereal blue tint for ghost walk
+        shirtColor = '#64b4ff';
+        shirtLight = '#8ecfff';
+        shirtDark = '#4090dd';
     }
 
-    // Shadow - slightly larger for more presence
-    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    // Ghost Walk: semi-transparent effect and ghost particles
+    const isGhost = gameState.powerup === 'ghost' && gameState.powerupTimer > 0;
+    if (isGhost) {
+        ctx.save();
+        ctx.globalAlpha = 0.6 + Math.sin(gameState.animationTime * 10) * 0.1; // Pulsing transparency
+
+        // Spawn ghost trail particles occasionally
+        if (Math.random() < 0.15) {
+            gameState.particles.push({
+                x: x + TILE_SIZE / 2 + (Math.random() - 0.5) * 16,
+                y: y + TILE_SIZE / 2 + (Math.random() - 0.5) * 16,
+                vx: (Math.random() - 0.5) * 0.5,
+                vy: -1 - Math.random(),
+                size: 4 + Math.random() * 4,
+                color: 'rgba(100, 180, 255, 0.6)',
+                life: 0.5 + Math.random() * 0.3
+            });
+        }
+    }
+
+    // Shadow - slightly larger for more presence (reduced for ghost)
+    ctx.fillStyle = isGhost ? 'rgba(100, 180, 255, 0.2)' : 'rgba(0,0,0,0.4)';
     ctx.beginPath();
     ctx.ellipse(x + 16, y + 30, 9, 3, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -5614,6 +6466,25 @@ function drawPlayer() {
         ctx.textAlign = 'center';
         ctx.fillText('🛡️', x + TILE_SIZE / 2, y - 6);
         ctx.textAlign = 'left';
+    }
+
+    // Ghost Walk aura effect
+    if (isGhost) {
+        // Ethereal glow around player
+        const ghostPulse = Math.sin(gameState.animationTime * 8) * 0.2 + 0.4;
+        ctx.fillStyle = `rgba(100, 180, 255, ${ghostPulse * 0.3})`;
+        ctx.beginPath();
+        ctx.arc(x + TILE_SIZE / 2, y + TILE_SIZE / 2, TILE_SIZE / 2 + 8, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Ghost icon above player
+        ctx.fillStyle = '#64b4ff';
+        ctx.font = 'bold 12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('👻', x + TILE_SIZE / 2, y - 6);
+        ctx.textAlign = 'left';
+
+        ctx.restore(); // Restore from ghost transparency save
     }
 }
 
@@ -5892,8 +6763,11 @@ function drawPunchEffect(punch) {
 }
 
 function drawEnemy(enemy) {
-    const x = enemy.x * TILE_SIZE;
-    const y = enemy.y * TILE_SIZE;
+    // Apply knockback visual offset
+    const knockbackOffsetX = enemy.knockbackX || 0;
+    const knockbackOffsetY = enemy.knockbackY || 0;
+    const x = enemy.x * TILE_SIZE + knockbackOffsetX;
+    const y = enemy.y * TILE_SIZE + knockbackOffsetY;
     const bobOffset = Math.sin(gameState.animationTime * 6 + enemy.frame) * 2;
 
     // Spawn warning animation - draw warning effect and semi-transparent enemy
@@ -6131,6 +7005,12 @@ function drawColorblindEnemyIndicator(x, y) {
 }
 
 function drawExit(exit) {
+    // Check if this is the vault floor (Floor -100 in endless mode)
+    if (gameState.endlessMode && gameState.endlessFloor === 100 && !playerStats.vaultDiscovered) {
+        drawVaultDoor(exit);
+        return;
+    }
+
     const x = exit.x * TILE_SIZE;
     const y = exit.y * TILE_SIZE;
 
@@ -6139,6 +7019,25 @@ function drawExit(exit) {
     const pulseSpeed = 4 * urgencyBoost;
     const pulse = Math.sin(gameState.animationTime * pulseSpeed) * 0.3 + 0.7;
     const arrowBob = Math.sin(gameState.animationTime * 6) * 2;
+
+    // First-run onboarding: extra exit emphasis when nearby
+    if (gameState.firstRunTutorial) {
+        const distToPlayer = Math.abs(exit.x - gameState.player.x) + Math.abs(exit.y - gameState.player.y);
+        if (distToPlayer <= 3) {
+            ctx.save();
+            ctx.fillStyle = 'rgba(255, 230, 120, 0.8)';
+            ctx.beginPath();
+            ctx.arc(x + TILE_SIZE / 2, y + TILE_SIZE / 2, 36 + pulse * 6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.font = 'bold 14px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#fff';
+            ctx.shadowColor = '#000';
+            ctx.shadowBlur = 6;
+            ctx.fillText('EXIT', x + TILE_SIZE / 2, y - 12 + arrowBob);
+            ctx.restore();
+        }
+    }
 
     // Radiating "beckoning" rings - 3 expanding concentric circles (more visible when urgent)
     const ringAlphaBoost = gameState.timer <= 10 ? 1.5 : 1.0;
@@ -6210,6 +7109,98 @@ function drawExit(exit) {
     ctx.lineTo(x + 22, y + 18 + arrowBob);
     ctx.closePath();
     ctx.fill();
+}
+
+// === THE VAULT: Draw Vault Door for Floor -100 ===
+function drawVaultDoor(exit) {
+    const x = exit.x * TILE_SIZE;
+    const y = exit.y * TILE_SIZE;
+
+    // Ominous slow pulse
+    const pulse = Math.sin(gameState.animationTime * 2) * 0.2 + 0.8;
+    const glowPulse = Math.sin(gameState.animationTime * 1.5) * 0.3 + 0.7;
+
+    // Dark ominous radiating rings (gold/green corporate colors)
+    for (let i = 0; i < 4; i++) {
+        const phase = (gameState.animationTime * 0.8 + i * 0.25) % 1;
+        const radius = 20 + phase * 35;
+        const alpha = (1 - phase) * 0.4;
+
+        ctx.strokeStyle = `rgba(50, 205, 50, ${alpha})`;  // Corporate green
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(x + TILE_SIZE / 2, y + TILE_SIZE / 2, radius, 0, Math.PI * 2);
+        ctx.stroke();
+    }
+
+    // Eerie green glow
+    ctx.fillStyle = `rgba(50, 205, 50, ${glowPulse * 0.3})`;
+    ctx.beginPath();
+    ctx.arc(x + 16, y + 16, 32, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Vault door frame (thick metal)
+    ctx.fillStyle = '#2c3e50';  // Dark metal
+    ctx.fillRect(x, y - 4, TILE_SIZE, TILE_SIZE + 4);
+
+    // Inner vault door (circular)
+    ctx.fillStyle = '#34495e';
+    ctx.beginPath();
+    ctx.arc(x + 16, y + 14, 12, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Vault door shine
+    ctx.fillStyle = '#4a6278';
+    ctx.beginPath();
+    ctx.arc(x + 14, y + 12, 10, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Vault handle/wheel spokes
+    ctx.strokeStyle = '#f1c40f';  // Gold
+    ctx.lineWidth = 2;
+    for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 3) {
+        const spinAngle = angle + gameState.animationTime * 0.5;
+        ctx.beginPath();
+        ctx.moveTo(x + 16, y + 14);
+        ctx.lineTo(x + 16 + Math.cos(spinAngle) * 8, y + 14 + Math.sin(spinAngle) * 8);
+        ctx.stroke();
+    }
+
+    // Center hub
+    ctx.fillStyle = '#f39c12';
+    ctx.beginPath();
+    ctx.arc(x + 16, y + 14, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Gold center dot
+    ctx.fillStyle = '#f1c40f';
+    ctx.beginPath();
+    ctx.arc(x + 16, y + 14, 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // "VAULT" text above (pixel art style)
+    ctx.fillStyle = '#2c3e50';
+    ctx.fillRect(x + 2, y - 10, 28, 8);
+    ctx.fillStyle = '#f1c40f';
+    ctx.font = '6px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('VAULT', x + 16, y - 4);
+
+    // Locking bolts around the door
+    ctx.fillStyle = '#7f8c8d';
+    const boltPositions = [[4, 2], [28, 2], [4, 26], [28, 26]];
+    for (const [bx, by] of boltPositions) {
+        ctx.beginPath();
+        ctx.arc(x + bx, y + by, 3, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Pulsing "?" or "$" symbol hint
+    if (!playerStats.vaultDiscovered) {
+        ctx.fillStyle = `rgba(241, 196, 15, ${pulse})`;
+        ctx.font = 'bold 10px monospace';
+        ctx.fillText('$', x + 16, y + 36);
+    }
 }
 
 // === NEW: Draw Coin (Dopamine Breadcrumb) ===
@@ -6336,6 +7327,12 @@ function drawPowerup(powerup) {
         const rainbowHue = (gameState.animationTime * 100) % 360;
         glowColor = `hsla(${rainbowHue}, 100%, 50%, 0.6)`;
         shadowColor = `hsl(${rainbowHue}, 100%, 50%)`;
+        drawFallback = true;
+    } else if (powerup.type === 'ghost') {
+        img = powerupImages.ghost;
+        // Ethereal blue glow with pulsing
+        glowColor = 'rgba(100, 180, 255, 0.6)';
+        shadowColor = '#64b4ff';
         drawFallback = true;
     }
 
@@ -6548,6 +7545,38 @@ function drawPowerup(powerup) {
         ctx.fill();
 
         ctx.restore();
+    } else if (powerup.type === 'ghost') {
+        // Fallback: Ethereal ghost silhouette
+        const cx = x + TILE_SIZE / 2;
+        const cy = y + TILE_SIZE / 2 + bounce;
+        const float = Math.sin(gameState.animationTime * 3) * 2;
+
+        // Ghost body (semi-transparent)
+        ctx.fillStyle = 'rgba(100, 180, 255, 0.8)';
+        ctx.beginPath();
+        ctx.arc(cx, cy - 4 + float, 10, Math.PI, 0, false);
+        ctx.lineTo(cx + 10, cy + 8 + float);
+        // Wavy bottom
+        ctx.quadraticCurveTo(cx + 7, cy + 4 + float, cx + 4, cy + 8 + float);
+        ctx.quadraticCurveTo(cx, cy + 4 + float, cx - 4, cy + 8 + float);
+        ctx.quadraticCurveTo(cx - 7, cy + 4 + float, cx - 10, cy + 8 + float);
+        ctx.lineTo(cx - 10, cy - 4 + float);
+        ctx.closePath();
+        ctx.fill();
+
+        // Ghost eyes
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(cx - 4, cy - 4 + float, 3, 0, Math.PI * 2);
+        ctx.arc(cx + 4, cy - 4 + float, 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Ghost pupils
+        ctx.fillStyle = '#000';
+        ctx.beginPath();
+        ctx.arc(cx - 4, cy - 4 + float, 1.5, 0, Math.PI * 2);
+        ctx.arc(cx + 4, cy - 4 + float, 1.5, 0, Math.PI * 2);
+        ctx.fill();
     }
 
     // Add sparkle effects
@@ -7005,6 +8034,36 @@ function updateTutorial(deltaTime) {
         tutorialState.hintTimer -= deltaTime;
         if (tutorialState.hintTimer <= 0) {
             tutorialState.currentHint = null;
+        }
+    }
+
+    // First-run onboarding (structured, minimal)
+    if (gameState.firstRunTutorial) {
+        if (gameState.floor === 13 && !tutorialState.shown.movement) {
+            showTutorialHint('movement', 'Use WASD / Arrows to move. Beat the clock.', 5);
+        }
+        if (gameState.floor === 13 && !tutorialState.shown.exit) {
+            for (const exit of gameState.exits) {
+                const dist = Math.abs(exit.x - gameState.player.x) + Math.abs(exit.y - gameState.player.y);
+                if (dist <= 3) {
+                    showTutorialHint('exit', 'EXIT doors are in the corners. Step on one to descend.', 4);
+                    break;
+                }
+            }
+        }
+        if (gameState.powerup && !tutorialState.shown.powerup) {
+            const powerupName = gameState.powerup === 'speed' ? 'CAFFEINE RUSH' :
+                               gameState.powerup === 'knockout' ? 'PINK SLIP' : 'STATIC SHOCK';
+            showTutorialHint('powerup', `You got ${powerupName}! Press E to use it.`, 4);
+        }
+        if (gameState.floor === 12 && !tutorialState.shown.enemy && gameState.enemies.length > 0) {
+            for (const enemy of gameState.enemies) {
+                const dist = Math.abs(enemy.x - gameState.player.x) + Math.abs(enemy.y - gameState.player.y);
+                if (dist <= 4 && enemy.stunned <= 0) {
+                    showTutorialHint('enemy', 'Coworkers can stun you. Stun them first to buy time.', 4);
+                    break;
+                }
+            }
         }
     }
 
@@ -7555,6 +8614,9 @@ function updateHUD() {
     } else if (gameState.powerup === 'electric') {
         powerupText = `⚡ ELECTRIC ${gameState.powerupTimer.toFixed(1)}s`;
         powerupExpiring = gameState.powerupTimer <= 3;
+    } else if (gameState.powerup === 'ghost') {
+        powerupText = `👻 GHOST ${gameState.powerupTimer.toFixed(1)}s`;
+        powerupExpiring = gameState.powerupTimer <= 1.5; // Shorter warning for shorter powerup
     } else if (gameState.player.invincible > 0) {
         powerupText = `⭐ INVINCIBLE ${gameState.player.invincible.toFixed(1)}s`;
         powerupExpiring = gameState.player.invincible <= 3;
@@ -7589,14 +8651,14 @@ function updateHUD() {
         powerupEl.style.color = `rgb(255, ${Math.floor(100 + pulse * 155)}, ${Math.floor(pulse * 100)})`;
         powerupEl.style.textShadow = `0 0 ${5 + pulse * 10}px rgba(255, 100, 0, ${0.5 + pulse * 0.5})`;
 
-        // Play warning beep at 3s and 1s remaining
+        // Play warning beep at 3s and 1s remaining (scaled)
         const timerVal = gameState.powerupTimer || gameState.player.shielded || gameState.player.invincible || 0;
         if (!gameState._powerupWarnedAt3 && timerVal <= 3 && timerVal > 2.9) {
-            AudioManager.play('timerWarning', 0.3, 1.5);
+            AudioManager.play('timerWarning', 0.28, 1.35);
             gameState._powerupWarnedAt3 = true;
         }
         if (!gameState._powerupWarnedAt1 && timerVal <= 1 && timerVal > 0.9) {
-            AudioManager.play('timerWarning', 0.4, 2.0);
+            AudioManager.play('timerWarning', 0.45, 1.8);
             gameState._powerupWarnedAt1 = true;
         }
     } else {
@@ -7624,6 +8686,16 @@ function updateHUD() {
                 ` | <span style="color:#666">🧱 ${gameState.player.wallBreakCooldown.toFixed(1)}s</span>`;
         }
 
+        // === SEVERANCE PACKAGE INDICATOR (only show if unlocked from Vault) ===
+        let severanceText = '';
+        if (playerStats.hasSeverancePackage) {
+            if (gameState.severanceAvailable) {
+                severanceText = ' | <span style="color:#3498db;text-shadow:0 0 8px #3498db;animation:pulse 1s infinite;">💼 [V] SEVERANCE</span>';
+            } else {
+                severanceText = ' | <span style="color:#666">💼 USED</span>';
+            }
+        }
+
         // === COMBO COUNTER ===
         let comboText = '';
         if (gameState.killCombo >= 2) {
@@ -7641,7 +8713,7 @@ function updateHUD() {
             streakText = ` <span style="color:${streakColor}">${streakLabel}${gameState.killStreak}</span>`;
         }
 
-        skillsEl.innerHTML = `<span style="color:${dashReady ? '#00d2d3' : '#666'}">${dashText}</span> | <span style="color:${punchReady ? '#e74c3c' : '#666'}">${punchText}</span>${wallBreakText}${comboText}${streakText}`;
+        skillsEl.innerHTML = `<span style="color:${dashReady ? '#00d2d3' : '#666'}">${dashText}</span> | <span style="color:${punchReady ? '#e74c3c' : '#666'}">${punchText}</span>${wallBreakText}${severanceText}${comboText}${streakText}`;
     }
 
     // Get combo display color
@@ -7665,6 +8737,16 @@ function updateHUD() {
 function canMove(x, y) {
     if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return false;
     const tile = gameState.maze[y][x];
+
+    // Ghost Walk power-up: Pass through walls and desks
+    if (gameState.powerup === 'ghost' && gameState.powerupTimer > 0) {
+        // Can pass through anything except map boundaries (already checked)
+        return tile !== undefined;
+    }
+
+    // Desk Vault perk: Dash through desks (handled in performDash)
+    // Phase Dash perk: Dash through walls AND desks (handled in performDash)
+
     return tile !== TILE.WALL && tile !== TILE.DESK;
 }
 
@@ -8086,7 +9168,11 @@ function updateEnvironmentalHazards(deltaTime) {
                     });
                 }
 
-                showCelebration('paperJam');
+                // Only show Paper Jam celebration if player is nearby (within 5 tiles)
+                const distToCopier = Math.abs(gameState.player.x - copier.x) + Math.abs(gameState.player.y - copier.y);
+                if (distToCopier <= 5) {
+                    showCelebration('paperJam');
+                }
             }
         }
     }
@@ -8170,6 +9256,10 @@ function updateSpatialAudio() {
     const px = gameState.player.x;
     const py = gameState.player.y;
     const now = Date.now();
+    const timerUrgency = Math.max(0, Math.min(1, (10 - gameState.timer) / 10));
+    const floorFactor = gameState.endlessMode
+        ? Math.min(1, (gameState.endlessFloor || 1) / 50)
+        : Math.min(1, Math.max(0, (13 - gameState.floor) / 12));
 
     // Throttle audio updates to prevent overwhelming
     if (!gameState.lastSpatialAudioTime) gameState.lastSpatialAudioTime = 0;
@@ -8179,8 +9269,11 @@ function updateSpatialAudio() {
     // Play fire crackle sounds for nearby fires
     for (const fire of gameState.fires) {
         const dist = Math.sqrt(Math.pow(fire.x - px, 2) + Math.pow(fire.y - py, 2));
-        if (dist < 6 && Math.random() < 0.3) { // Random chance to avoid constant noise
-            AudioManager.playPositional('fireCrackle', fire.x, fire.y, px, py, 0.3, 8);
+        const sizeBoost = Math.min(0.3, (fire.size || 1) * 0.1);
+        const chance = 0.18 + sizeBoost + timerUrgency * 0.2 + floorFactor * 0.15;
+        if (dist < 6 && Math.random() < chance) { // Random chance to avoid constant noise
+            const volume = 0.2 + sizeBoost + timerUrgency * 0.2;
+            AudioManager.playPositional('fireCrackle', fire.x, fire.y, px, py, volume, 8);
         }
     }
 
@@ -8188,16 +9281,20 @@ function updateSpatialAudio() {
     for (const enemy of gameState.enemies) {
         if (enemy.stunned > 0 || enemy.scared > 0) continue;
         const dist = Math.sqrt(Math.pow(enemy.x - px, 2) + Math.pow(enemy.y - py, 2));
-        if (dist < 8 && dist > 2 && Math.random() < 0.2) {
-            AudioManager.playPositional('enemyStep', enemy.x, enemy.y, px, py, 0.25, 10);
+        const chance = 0.12 + timerUrgency * 0.15 + floorFactor * 0.12;
+        if (dist < 8 && dist > 2 && Math.random() < chance) {
+            const volume = 0.18 + timerUrgency * 0.18;
+            AudioManager.playPositional('enemyStep', enemy.x, enemy.y, px, py, volume, 10);
         }
     }
 
     // Play exit hum when near an exit
     for (const exit of gameState.exits) {
         const dist = Math.sqrt(Math.pow(exit.x - px, 2) + Math.pow(exit.y - py, 2));
-        if (dist < 5 && Math.random() < 0.15) {
-            AudioManager.playPositional('exitHum', exit.x, exit.y, px, py, 0.2, 6);
+        const chance = 0.1 + timerUrgency * 0.2;
+        if (dist < 5 && Math.random() < chance) {
+            const volume = 0.12 + timerUrgency * 0.25;
+            AudioManager.playPositional('exitHum', exit.x, exit.y, px, py, volume, 6);
         }
     }
 }
@@ -8458,10 +9555,14 @@ function drawFire(fire) {
     }
 }
 
-// Add punch visual effect
-function addPunchEffect(x, y) {
+// Add punch visual effect with enemy-type variety
+function addPunchEffect(x, y, enemyType = 'coworker') {
     AudioManager.playRandomPunch(); // Random punch variant for variety
     screenShake.trigger(6, 0.15); // Small shake on punch
+
+    // Get enemy-specific colors from ENEMY_ASSETS
+    const enemyAsset = ENEMY_ASSETS[enemyType] || ENEMY_ASSETS.coworker;
+    const trailColor = enemyAsset.trailColor || { primary: '#e74c3c', secondary: '#c0392b' };
 
     gameState.punchEffects.push({
         x: x,
@@ -8471,16 +9572,32 @@ function addPunchEffect(x, y) {
         particles: []
     });
 
-    // Add burst particles
-    for (let i = 0; i < 8; i++) {
-        const angle = (i / 8) * Math.PI * 2;
+    // Add burst particles - more for tougher enemies
+    const particleCount = enemyType === 'it_support' ? 12 : (enemyType === 'hr_karen' ? 10 : 8);
+    for (let i = 0; i < particleCount; i++) {
+        const angle = (i / particleCount) * Math.PI * 2;
+        const speed = enemyType === 'it_support' ? 4 : 3;
         gameState.punchEffects[gameState.punchEffects.length - 1].particles.push({
             x: x * TILE_SIZE + TILE_SIZE / 2,
             y: y * TILE_SIZE + TILE_SIZE / 2,
-            vx: Math.cos(angle) * 3,
-            vy: Math.sin(angle) * 3,
-            size: 8,
-            color: i % 2 === 0 ? '#ee5a24' : '#ff7f50'
+            vx: Math.cos(angle) * speed + (Math.random() - 0.5),
+            vy: Math.sin(angle) * speed + (Math.random() - 0.5),
+            size: 6 + Math.random() * 4,
+            color: i % 2 === 0 ? trailColor.primary : trailColor.secondary
+        });
+    }
+
+    // Add stun stars that orbit the impact point
+    for (let i = 0; i < 3; i++) {
+        gameState.particles.push({
+            x: x * TILE_SIZE + TILE_SIZE / 2,
+            y: y * TILE_SIZE + TILE_SIZE / 2,
+            vx: 0,
+            vy: -1.5 - Math.random(),
+            size: 6,
+            color: '#f1c40f',
+            lifetime: 0.6,
+            type: 'star'
         });
     }
 }
@@ -8559,8 +9676,8 @@ function handlePlayerEnemyCollision(enemy) {
         enemy.lastAttackTime = Date.now();
         pushEnemyAway(enemy, gameState.player.x, gameState.player.y);
         gameState.enemiesKnockedOut++;
-        // Add punch visual effect
-        addPunchEffect(enemy.x, enemy.y);
+        // Add punch visual effect with enemy-type specific colors
+        addPunchEffect(enemy.x, enemy.y, enemy.enemyType || 'coworker');
         triggerFreezeFrame('enemyKnockout'); // Impact freeze for satisfying punch
         // Don't consume the powerup on contact - only on SPACE
         return;
@@ -8695,10 +9812,19 @@ function movePlayer(dx, dy) {
                     showCelebration('wallBreakerUnlocked');
                     screenShake.trigger(20, 0.5);
                     AudioManager.play('powerup', 1.0);
+                    updateSpecialTouchButtons(); // Show touch button for new ability
                 }
 
-                // === NEW: Close Call Celebration ===
-                if (gameState.timer <= 5 && gameState.timer > 0) {
+                // === CLOSE CALL: Slow-motion + celebration for dramatic escapes ===
+                if (gameState.timer <= 2 && gameState.timer > 0) {
+                    // Ultra-clutch escape - dramatic slow-mo
+                    showCelebration('clutchEscape');
+                    triggerFreezeFrame('closeDodge');
+                    gameState.slowMoActive = true;
+                    gameState.slowMoTimer = 0.5;
+                    gameState.slowMoFactor = 0.3;
+                    screenShake.trigger(8, 0.3);
+                } else if (gameState.timer <= 5 && gameState.timer > 2) {
                     showCelebration('clutchEscape');
                     triggerFreezeFrame('closeDodge');
                 } else if (gameState.timer <= 10 && gameState.timer > 5) {
@@ -8860,6 +9986,26 @@ function movePlayer(dx, dy) {
                     setTimeout(() => flash.remove(), 500);
                     playerStats.powerupsCollected++;
                     saveStats();
+                } else if (pu.type === 'ghost') {
+                    // GHOST WALK - Pass through walls and desks for 3.5 seconds
+                    gameState.powerup = 'ghost';
+                    // Check for ghostTrail perk - 50% longer duration
+                    const ghostDuration = gameState.perks.includes('ghostTrail') ? 5.25 : 3.5;
+                    gameState.powerupTimer = ghostDuration;
+                    showCelebration('ghostWalk');
+                    screenShake.trigger(8, 0.2);
+                    // Ethereal blue flash effect
+                    const flash = document.createElement('div');
+                    flash.style.cssText = `
+                        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+                        background: rgba(100, 180, 255, 0.4);
+                        pointer-events: none; z-index: 999;
+                        animation: flashFade 0.3s ease-out forwards;
+                    `;
+                    document.body.appendChild(flash);
+                    setTimeout(() => flash.remove(), 300);
+                    playerStats.powerupsCollected++;
+                    saveStats();
                 } else {
                     // Regular powerups
                     gameState.powerup = pu.type;
@@ -8924,6 +10070,10 @@ function performDash() {
     gameState.player.lastDashDir = { x: dx, y: dy };
 
     // Calculate how far we can dash (stop at walls)
+    // deskVault perk: Can dash through desks (but not walls)
+    // ghostPhase (Phase Dash) perk: Can dash through BOTH walls and desks
+    const hasDeskVault = gameState.perks.includes('deskVault');
+    const hasPhaseDash = gameState.perks.includes('ghostPhase');
     let dashDistance = 0;
     let finalX = gameState.player.x;
     let finalY = gameState.player.y;
@@ -8932,12 +10082,35 @@ function performDash() {
         const checkX = gameState.player.x + dx * i;
         const checkY = gameState.player.y + dy * i;
 
-        if (canMove(checkX, checkY)) {
+        // Check map boundaries
+        if (checkX < 0 || checkX >= MAP_WIDTH || checkY < 0 || checkY >= MAP_HEIGHT) {
+            break; // Out of bounds, stop here
+        }
+
+        const tile = gameState.maze[checkY] && gameState.maze[checkY][checkX];
+
+        // Check if we can move to this position
+        let canPass = canMove(checkX, checkY);
+
+        // Phase Dash (Legendary): Allow passing through walls AND desks
+        if (!canPass && hasPhaseDash) {
+            if (tile === TILE.WALL || tile === TILE.DESK) {
+                canPass = true; // Phase through everything!
+            }
+        }
+        // deskVault perk: Allow passing through desks only
+        else if (!canPass && hasDeskVault) {
+            if (tile === TILE.DESK) {
+                canPass = true; // Can vault over desks!
+            }
+        }
+
+        if (canPass) {
             finalX = checkX;
             finalY = checkY;
             dashDistance = i;
         } else {
-            break; // Hit a wall, stop here
+            break; // Hit obstacle, stop here
         }
     }
 
@@ -9109,6 +10282,8 @@ function performPunch() {
     let punchCooldown = PUNCH_COOLDOWN;
     if (gameState.perks.includes('punchRange')) punchRange += 1;
     if (gameState.perks.includes('punchSpeed')) punchCooldown *= 0.6;
+    // Omnipunch (Legendary): Massive punch radius - hit enemies in a 3-tile radius
+    if (gameState.perks.includes('omnipunch')) punchRange = 3;
 
     gameState.player.isPunching = true;
     gameState.player.punchCooldown = punchCooldown;
@@ -9229,6 +10404,8 @@ function performPunch() {
             let baseReward = PUNCH_TIME_REWARD;
             // Perk: Time Vampire - 50% more time per kill
             if (gameState.perks.includes('punchVampire')) baseReward = Math.floor(baseReward * 1.5);
+            // Perk: Time Lord (Legendary) - 100% more time per kill (stacks with Time Vampire!)
+            if (gameState.perks.includes('timeLord')) baseReward = Math.floor(baseReward * 2);
             const timeReward = Math.floor(baseReward * (1 + (comboMultiplier - 1) * 0.5)); // 4, 6, 8, 10...
             gameState.timer += timeReward;
             timeGained += timeReward;
@@ -9521,6 +10698,97 @@ function performWallBreak() {
     }
 }
 
+// === THE VAULT: Severance Package - Ultimate EMP Weapon ===
+function activateSeverancePackage() {
+    // Can only use once per run
+    if (!gameState.severanceAvailable) {
+        showCelebration('cooldown');
+        return false;
+    }
+
+    // Mark as used for this run
+    gameState.severanceAvailable = false;
+    updateSpecialTouchButtons(); // Hide touch button since it's been used
+
+    // Audio - epic activation sound
+    AudioManager.play('victory', 0.8);
+
+    // Massive screen shake
+    screenShake.trigger(25, 0.5);
+    triggerSlowMo(2.0, 0.2); // 2 second slow-mo at 20% speed
+
+    // Visual: Papers flying everywhere from briefcase
+    const playerCenterX = gameState.player.x * TILE_SIZE + TILE_SIZE / 2;
+    const playerCenterY = gameState.player.y * TILE_SIZE + TILE_SIZE / 2;
+
+    // Create paper particle burst
+    for (let i = 0; i < 50; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 3 + Math.random() * 8;
+        gameState.particles.push({
+            x: playerCenterX,
+            y: playerCenterY,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed - 2,
+            size: 8 + Math.random() * 8,
+            color: ['#fff', '#ecf0f1', '#f5f5dc', '#fffacd'][Math.floor(Math.random() * 4)],
+            life: 1.5 + Math.random() * 1.0,
+            rotation: Math.random() * Math.PI * 2,
+            rotationSpeed: (Math.random() - 0.5) * 0.3
+        });
+    }
+
+    // EMP wave effect - expanding circle
+    for (let i = 0; i < 3; i++) {
+        setTimeout(() => {
+            // Create expanding EMP ring particles
+            for (let j = 0; j < 20; j++) {
+                const angle = (j / 20) * Math.PI * 2;
+                const distance = 50 + i * 80;
+                gameState.particles.push({
+                    x: playerCenterX + Math.cos(angle) * distance,
+                    y: playerCenterY + Math.sin(angle) * distance,
+                    vx: Math.cos(angle) * 2,
+                    vy: Math.sin(angle) * 2,
+                    size: 6,
+                    color: '#3498db',
+                    life: 0.5
+                });
+            }
+        }, i * 150);
+    }
+
+    // STUN ALL ENEMIES for 5 seconds
+    const SEVERANCE_STUN_DURATION = 5;
+    for (const enemy of gameState.enemies) {
+        enemy.stunned = SEVERANCE_STUN_DURATION;
+        enemy.severanceStunned = true; // Mark for special visual
+
+        // "TERMINATED" text particle above each enemy
+        const enemyX = enemy.x * TILE_SIZE + TILE_SIZE / 2;
+        const enemyY = enemy.y * TILE_SIZE;
+        gameState.particles.push({
+            x: enemyX,
+            y: enemyY - 10,
+            vx: 0,
+            vy: -0.5,
+            size: 8,
+            color: '#e74c3c',
+            life: 2.0,
+            text: 'TERMINATED',
+            textSize: 8
+        });
+    }
+
+    // Show epic celebration
+    showCelebration('severance');
+
+    // Add to stats
+    gameState.enemiesKnockedOut += gameState.enemies.length;
+
+    return true;
+}
+
 // === SLOW-MO SYSTEM ===
 function triggerSlowMo(duration) {
     gameState.slowMoActive = true;
@@ -9736,6 +11004,8 @@ function usePowerup() {
 function moveEnemies() {
     // IMPORTANT: Only ONE enemy can attack per frame to prevent stun stacking
     let playerAlreadyHitThisFrame = false;
+    const weeklyMods = getWeeklyModifiers();
+    const enemyVisionMult = weeklyMods && weeklyMods.enemyVisionMultiplier ? weeklyMods.enemyVisionMultiplier : 1;
 
     // === NEW: Calculate rubber-banding factor ===
     // If player is closer to exits than enemies, enemies speed up (and vice versa)
@@ -9830,6 +11100,7 @@ function moveEnemies() {
         }
         else {
             const chaseChance = enemy.difficulty === 'easy' ? 0.4 : (enemy.difficulty === 'hard' ? 0.95 : 0.7);
+            const adjustedChaseChance = Math.min(1, chaseChance * enemyVisionMult);
 
             // If on cooldown or player is stunned, use patrol behavior instead of pure random
             if (!canAttack || gameState.player.stunned > 0) {
@@ -9837,7 +11108,7 @@ function moveEnemies() {
                 const patrolMoves = [[0, -1], [0, 1], [-1, 0], [1, 0]]; // up, down, left, right
                 dx = patrolMoves[enemy.patrolDir][0];
                 dy = patrolMoves[enemy.patrolDir][1];
-            } else if (Math.random() < chaseChance && !playerInBathroom) {
+            } else if (Math.random() < adjustedChaseChance && !playerInBathroom) {
                 // SMARTER CHASE: Weight axis selection by distance (less predictable)
                 const distX = Math.abs(gameState.player.x - enemy.x);
                 const distY = Math.abs(gameState.player.y - enemy.y);
@@ -9891,7 +11162,13 @@ function moveEnemies() {
 }
 
 function nextFloor() {
-    AudioManager.play('exit'); // Exit door sound
+    // AudioManager.play('exit'); // Exit door sound (disabled for floor transition)
+
+    // Record time spent on this floor (for run recap)
+    if (gameState.floorStartTime) {
+        const floorTime = (Date.now() - gameState.floorStartTime) / 1000;
+        gameState.floorTimes.push({ floor: gameState.floor, time: floorTime });
+    }
 
     // Check for celebration triggers before advancing
     checkCelebrationTriggers('floorComplete');
@@ -9911,6 +11188,13 @@ function nextFloor() {
         // Update max combo
         if (gameState.maxComboThisRun > gameState.endlessStats.maxCombo) {
             gameState.endlessStats.maxCombo = gameState.maxComboThisRun;
+        }
+
+        // === THE VAULT: Check for vault discovery at Floor -100 ===
+        if (gameState.endlessFloor === 100 && !playerStats.vaultDiscovered) {
+            // Trigger vault discovery!
+            showVaultDiscovery();
+            return;
         }
 
         // Advance to next floor
@@ -9969,6 +11253,9 @@ function showEndlessLevelTransition(floor) {
 
     transition.style.display = 'flex';
 
+    // Triumphant stinger on floor clear
+    AudioManager.play('floorClear', 0.8);
+
     // Start falling debris particle effect
     transitionParticles.start();
 
@@ -9978,6 +11265,200 @@ function showEndlessLevelTransition(floor) {
         transitionParticles.stop();
         showPerkSelection(floor);
     }, 1500);
+}
+
+// === THE VAULT: Discovery Animation ===
+function showVaultDiscovery() {
+    gameState.vaultAnimationPlaying = true;
+
+    // Create vault discovery overlay
+    const overlay = document.createElement('div');
+    overlay.id = 'vaultDiscovery';
+    overlay.innerHTML = `
+        <div class="vault-content">
+            <div class="vault-door-anim">🔐</div>
+            <h1 class="vault-title">THE VAULT</h1>
+            <p class="vault-subtitle">You've found what they were hiding...</p>
+            <div class="vault-coins-container">
+                <div class="coin-waterfall"></div>
+                <div class="vault-reward">+10,000 COINS</div>
+            </div>
+            <div class="vault-weapon">
+                <div class="briefcase-icon">💼</div>
+                <div class="weapon-name">SEVERANCE PACKAGE UNLOCKED</div>
+                <div class="weapon-desc">Press V to stun ALL enemies (once per run)</div>
+            </div>
+            <button class="vault-continue" onclick="completeVaultDiscovery()">CONTINUE DESCENT</button>
+        </div>
+    `;
+
+    // Add styles
+    overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 10000;
+        animation: vaultFadeIn 1s ease-out;
+    `;
+
+    // Add CSS animations via style tag
+    const style = document.createElement('style');
+    style.textContent = `
+        @keyframes vaultFadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        @keyframes vaultDoorOpen {
+            0% { transform: scale(1) rotate(0deg); }
+            50% { transform: scale(1.2) rotate(-10deg); }
+            100% { transform: scale(1.5) rotate(0deg); opacity: 0.5; }
+        }
+        @keyframes coinFall {
+            0% { transform: translateY(-100px) rotate(0deg); opacity: 0; }
+            10% { opacity: 1; }
+            100% { transform: translateY(50px) rotate(720deg); opacity: 0; }
+        }
+        @keyframes pulseGold {
+            0%, 100% { text-shadow: 0 0 20px #f1c40f, 0 0 40px #f39c12; }
+            50% { text-shadow: 0 0 40px #f1c40f, 0 0 80px #f39c12, 0 0 120px #e67e22; }
+        }
+        @keyframes briefcaseGlow {
+            0%, 100% { filter: drop-shadow(0 0 10px #3498db); }
+            50% { filter: drop-shadow(0 0 30px #3498db) drop-shadow(0 0 60px #2980b9); }
+        }
+        .vault-content {
+            text-align: center;
+            color: white;
+            font-family: 'Press Start 2P', monospace;
+        }
+        .vault-door-anim {
+            font-size: 80px;
+            animation: vaultDoorOpen 2s ease-out forwards;
+            margin-bottom: 20px;
+        }
+        .vault-title {
+            font-size: 48px;
+            color: #f1c40f;
+            animation: pulseGold 1.5s ease-in-out infinite;
+            margin: 0 0 10px 0;
+            text-transform: uppercase;
+            letter-spacing: 8px;
+        }
+        .vault-subtitle {
+            font-size: 14px;
+            color: #bdc3c7;
+            margin: 0 0 30px 0;
+            font-style: italic;
+        }
+        .vault-coins-container {
+            position: relative;
+            height: 100px;
+            margin: 20px 0;
+        }
+        .coin-waterfall {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        .vault-reward {
+            font-size: 36px;
+            color: #f1c40f;
+            animation: pulseGold 1s ease-in-out infinite;
+        }
+        .vault-weapon {
+            margin: 30px 0;
+            padding: 20px;
+            background: rgba(52, 152, 219, 0.2);
+            border: 2px solid #3498db;
+            border-radius: 10px;
+        }
+        .briefcase-icon {
+            font-size: 60px;
+            animation: briefcaseGlow 2s ease-in-out infinite;
+        }
+        .weapon-name {
+            font-size: 18px;
+            color: #3498db;
+            margin: 10px 0;
+        }
+        .weapon-desc {
+            font-size: 12px;
+            color: #95a5a6;
+        }
+        .vault-continue {
+            margin-top: 30px;
+            padding: 15px 40px;
+            font-size: 16px;
+            font-family: 'Press Start 2P', monospace;
+            background: linear-gradient(180deg, #27ae60 0%, #1e8449 100%);
+            border: 3px solid #2ecc71;
+            color: white;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .vault-continue:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 20px #2ecc71;
+        }
+    `;
+    document.head.appendChild(style);
+    document.body.appendChild(overlay);
+
+    // Create falling coins animation
+    const coinContainer = overlay.querySelector('.coin-waterfall');
+    for (let i = 0; i < 30; i++) {
+        setTimeout(() => {
+            const coin = document.createElement('div');
+            coin.textContent = '🪙';
+            coin.style.cssText = `
+                position: absolute;
+                font-size: 24px;
+                left: ${Math.random() * 80 + 10}%;
+                animation: coinFall ${1 + Math.random()}s ease-in forwards;
+            `;
+            coinContainer.appendChild(coin);
+            setTimeout(() => coin.remove(), 2000);
+        }, i * 100);
+    }
+
+    // Play discovery sound
+    AudioManager.play('victory');
+}
+
+// Complete vault discovery and continue game
+function completeVaultDiscovery() {
+    // Mark vault as discovered
+    playerStats.vaultDiscovered = true;
+    playerStats.vaultDiscoveredDate = new Date().toISOString();
+    playerStats.hasSeverancePackage = true;
+    playerStats.vaultCoins = 10000;
+    playerStats.escapePoints += 10000; // Add to persistent currency
+    saveStats();
+    updateSpecialTouchButtons(); // Show touch button for new ability
+
+    // Remove overlay
+    const overlay = document.getElementById('vaultDiscovery');
+    if (overlay) overlay.remove();
+
+    // Reset animation flag
+    gameState.vaultAnimationPlaying = false;
+
+    // Continue to next floor
+    gameState.endlessFloor++;
+    gameState.floor = -gameState.endlessFloor;
+
+    // Reset floor hits
+    gameState.floorHits = 0;
+
+    // Show transition to floor -101
+    showEndlessLevelTransition(gameState.endlessFloor);
 }
 
 // Level transition particle system - Enhanced with more variety
@@ -10112,12 +11593,16 @@ function showLevelTransition(floor) {
 
     transition.style.display = 'flex';
 
+    // Triumphant stinger on floor clear
+    AudioManager.play('floorClear', 0.8);
+
     // Start falling debris particle effect
     transitionParticles.start();
 
     // === PERK SELECTION: Show perk choices every floor ===
-    // Generate perk choices
-    gameState.perkChoices = getRandomPerkChoices(3);
+    // Generate perk choices (slot count scales with floor progression)
+    const slotCount = getShopSlotCount(gameState.floor);
+    gameState.perkChoices = getRandomPerkChoices(slotCount);
 
     // Show perk selection UI after brief delay
     setTimeout(() => {
@@ -10128,12 +11613,26 @@ function showLevelTransition(floor) {
 }
 
 // === PERK SELECTION UI ===
-// Shop pricing by rarity
-const PERK_PRICES = {
+// Base shop pricing by rarity (before inflation)
+const BASE_PERK_PRICES = {
     common: 50,
     rare: 100,
-    epic: 200
+    epic: 200,
+    legendary: 350
 };
+
+// Dynamic pricing with inflation - prices increase as player descends
+// Formula: 1.0x at floor 13 → ~1.8x at floor 1
+function getPerkPrice(rarity, floor) {
+    const basePrice = BASE_PERK_PRICES[rarity] || 100;
+    const inflationMultiplier = 1 + (13 - floor) * 0.067; // +6.7% per floor descended
+    // Check if player has coinHoarder perk for discount
+    const discount = gameState.perks.includes('coinHoarder') ? 0.85 : 1.0;
+    return Math.floor(basePrice * inflationMultiplier * discount);
+}
+
+// Legacy constant for backwards compatibility
+const PERK_PRICES = BASE_PERK_PRICES;
 
 function showPerkSelection(floor) {
     // Create perk selection overlay if it doesn't exist
@@ -10155,34 +11654,40 @@ function showPerkSelection(floor) {
     const rarityColors = {
         common: '#4ecdc4',
         rare: '#9b59b6',
-        epic: '#f39c12'
+        epic: '#f39c12',
+        legendary: '#ffd700'
     };
+
+    // Dynamic card width based on number of perks
+    const cardWidth = perks.length <= 3 ? '220px' : (perks.length <= 4 ? '190px' : '160px');
+    const maxWidth = perks.length <= 3 ? '900px' : '1100px';
 
     perkScreen.innerHTML = `
         <h2 style="color: #fff; margin-bottom: 10px; font-size: 24px;">FLOOR ${floor} - SUPPLY CLOSET</h2>
         <p style="color: #f1c40f; font-size: 20px; margin-bottom: 20px;">Coins: ${gameState.coinsCollected}</p>
-        <div style="display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; max-width: 900px;">
+        <div style="display: flex; gap: 15px; flex-wrap: wrap; justify-content: center; max-width: ${maxWidth};">
             ${perks.map((perk, index) => {
-                const price = PERK_PRICES[perk.rarity];
+                const price = getPerkPrice(perk.rarity, floor);
                 const canAfford = gameState.coinsCollected >= price;
                 return `
                 <div class="perk-card" onclick="${canAfford ? `purchasePerk('${perk.id}', ${price})` : ''}" style="
                     background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
                     border: 3px solid ${canAfford ? rarityColors[perk.rarity] : '#444'};
                     border-radius: 15px;
-                    padding: 25px;
-                    width: 220px;
+                    padding: 20px;
+                    width: ${cardWidth};
                     cursor: ${canAfford ? 'pointer' : 'not-allowed'};
                     transition: all 0.2s ease;
                     text-align: center;
                     opacity: ${canAfford ? 1 : 0.5};
-                " ${canAfford ? `onmouseover="this.style.transform='scale(1.05)';this.style.boxShadow='0 0 30px ${rarityColors[perk.rarity]}'" onmouseout="this.style.transform='scale(1)';this.style.boxShadow='none'"` : ''}>
-                    <div style="font-size: 48px; margin-bottom: 15px;">${perk.icon}</div>
-                    <div style="color: ${canAfford ? rarityColors[perk.rarity] : '#666'}; font-size: 11px; text-transform: uppercase; margin-bottom: 8px;">${perk.rarity}</div>
-                    <div style="color: #fff; font-size: 18px; font-weight: bold; margin-bottom: 10px;">${perk.name}</div>
-                    <div style="color: #aaa; font-size: 13px; line-height: 1.4;">${perk.description}</div>
-                    <div style="margin-top: 15px; color: ${canAfford ? '#f1c40f' : '#666'}; font-size: 14px; font-weight: bold;">${price} coins</div>
-                    <div style="margin-top: 5px; color: #666; font-size: 12px;">[${index + 1}]</div>
+                    ${perk.rarity === 'legendary' ? 'box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);' : ''}
+                " ${canAfford ? `onmouseover="this.style.transform='scale(1.05)';this.style.boxShadow='0 0 30px ${rarityColors[perk.rarity]}'" onmouseout="this.style.transform='scale(1)';this.style.boxShadow='${perk.rarity === 'legendary' ? '0 0 20px rgba(255, 215, 0, 0.3)' : 'none'}'"` : ''}>
+                    <div style="font-size: 40px; margin-bottom: 12px;">${perk.icon}</div>
+                    <div style="color: ${canAfford ? rarityColors[perk.rarity] : '#666'}; font-size: 10px; text-transform: uppercase; margin-bottom: 6px; ${perk.rarity === 'legendary' ? 'text-shadow: 0 0 10px #ffd700;' : ''}">${perk.rarity}</div>
+                    <div style="color: #fff; font-size: 16px; font-weight: bold; margin-bottom: 8px;">${perk.name}</div>
+                    <div style="color: #aaa; font-size: 12px; line-height: 1.3;">${perk.description}</div>
+                    <div style="margin-top: 12px; color: ${canAfford ? '#f1c40f' : '#666'}; font-size: 13px; font-weight: bold;">${price} coins</div>
+                    <div style="margin-top: 4px; color: #666; font-size: 11px;">[${index + 1}]</div>
                 </div>
             `;}).join('')}
         </div>
@@ -10204,15 +11709,16 @@ function showPerkSelection(floor) {
 
     perkScreen.style.display = 'flex';
 
-    // Keyboard shortcuts for shop
+    // Keyboard shortcuts for shop (supports up to 6 perks)
     const shopKeyHandler = (e) => {
         const perks = gameState.perkChoices;
-        if (e.key === '1' && perks[0] && gameState.coinsCollected >= PERK_PRICES[perks[0].rarity]) {
-            purchasePerk(perks[0].id, PERK_PRICES[perks[0].rarity]);
-        } else if (e.key === '2' && perks[1] && gameState.coinsCollected >= PERK_PRICES[perks[1].rarity]) {
-            purchasePerk(perks[1].id, PERK_PRICES[perks[1].rarity]);
-        } else if (e.key === '3' && perks[2] && gameState.coinsCollected >= PERK_PRICES[perks[2].rarity]) {
-            purchasePerk(perks[2].id, PERK_PRICES[perks[2].rarity]);
+        const keyNum = parseInt(e.key);
+        if (keyNum >= 1 && keyNum <= 6 && perks[keyNum - 1]) {
+            const perk = perks[keyNum - 1];
+            const price = getPerkPrice(perk.rarity, floor);
+            if (gameState.coinsCollected >= price) {
+                purchasePerk(perk.id, price);
+            }
         } else if (e.key === ' ' || e.key === 'Escape') {
             skipShop();
         }
@@ -10251,6 +11757,9 @@ function purchasePerk(perkId, price) {
     if (perkId === 'startTime') {
         gameState.timer += 5;
     }
+    if (perkId === 'timeLord') {
+        gameState.timer += 15; // Immediate +15s bonus on purchase
+    }
     if (perkId === 'shieldStart') {
         gameState.player.shielded = 5;
     }
@@ -10280,6 +11789,9 @@ function closeShop() {
 }
 
 function showVictoryScreen() {
+    // Stop background music
+    AudioManager.stopProceduralMusic();
+
     // Calculate run time (in milliseconds for daily challenge, seconds for display)
     const runTimeMs = Date.now() - gameState.runStartTime;
     gameState.runTotalTime = runTimeMs / 1000;
@@ -10330,16 +11842,26 @@ function showVictoryScreen() {
     const floorsDescended = gameState.quickRunMode ? 5 : 13;
     const modeLabel = gameState.quickRunMode ? ' (Quick Run)' : '';
 
+    const fastestFloor = gameState.floorTimes.length > 0
+        ? gameState.floorTimes.reduce((best, cur) => cur.time < best.time ? cur : best)
+        : null;
+    const fastestFloorText = fastestFloor
+        ? `Fastest floor: ${fastestFloor.floor} (${fastestFloor.time.toFixed(1)}s)`
+        : 'Fastest floor: --';
+    const statusLine = getEndRunStatus();
+
     stats.innerHTML = `
         <span style="font-size: 24px; color: #ffe66d;">⏱️ ${timeString}</span>${newRecord ? ' <span style="color: #4ecdc4;">NEW RECORD!</span>' : ''}${dailyInfo}<br><br>
         Floors descended: ${floorsDescended}${modeLabel}<br>
         Coins collected: 🪙 ${gameState.coinsCollectedCount || 0}<br>
         Coworkers punched: ${gameState.enemiesKnockedOut || 0}<br>
         Coworkers zapped: ${gameState.enemiesZapped || 0}<br>
+        Best combo: x${gameState.maxComboThisRun || 0}<br>
+        ${fastestFloorText}<br>
         Best time: ${bestTimeStr}<br>
         Total wins: ${playerStats.totalWins}<br>
         <span style="color: #f39c12;">Escape Points: +${calculateEscapePoints(true)} (Total: ${playerStats.escapePoints || 0})</span><br>
-        Status: Unemployed but alive
+        Status: ${statusLine}
     `;
     victory.style.display = 'flex';
 }
@@ -10359,9 +11881,151 @@ function calculateEscapePoints(won) {
     return points;
 }
 
+const STATUS_THEME_PACKS = {
+    core: {
+        id: 'core',
+        name: 'Core Statuses',
+        description: 'Base set of snarky survival lines.',
+        unlockCondition: () => true,
+        statuses: [
+            'Unemployed but alive',
+            'Promoted to Intern (Trial Period)',
+            'Clocked out with style',
+            'HR says: "Try a different exit next time."',
+            'The elevator remembers your name now',
+            'Overtime survivor, barely',
+            'Rivalized by Accounting',
+            'Stapler secured, morale questionable',
+            'Floor 7 sends its regards',
+            'You live to file another day',
+            '"Speed is a policy, not a perk." - Director Kane',
+            '"Corners are just promises you keep." - M. Bell, Safety Lead',
+            '"The clock is honest. Are you?" - Warden of 13',
+            '"Punch first, ask later." - Coach R. Knox',
+            '"Beat the timer, beat the system." - The Night Shift',
+            '"Your exit is a habit, not a miracle." - J. Mercer',
+            '"Don’t panic. Route." - Facilities Chief D. Pike',
+            '"You can’t out-run bad decisions, but you can out-turn them." - S. Vale',
+            '"Every floor teaches. Learn faster." - The Auditor',
+            '"Better run. The building already is." - L. Crow'
+        ]
+    },
+    night_shift: {
+        id: 'night_shift',
+        name: 'Night Shift',
+        description: 'Bleak, neon, after-hours survival tips.',
+        unlockCondition: () => playerProgress.totalRuns >= 10,
+        statuses: [
+            'Security footage looks great, actually',
+            'Break room champion, now run again',
+            '"The exit is a rumor until you prove it." - Night Ops',
+            '"You’re late. The timer isn’t." - Shift Lead Q',
+            'You smell like smoke and success',
+            'Overtime granted. It was not optional',
+            '"Move fast, leave fewer regrets." - A. Nightingale',
+            'Coffee spills fear you'
+        ]
+    },
+    hr_memo: {
+        id: 'hr_memo',
+        name: 'HR Memo',
+        description: 'Passive-aggressive corporate motivation.',
+        unlockCondition: () => playerProgress.totalPunches >= 50 || playerProgress.totalZaps >= 25,
+        statuses: [
+            'HR Memo: "Please stop stunning coworkers."',
+            'Quarterly review: Needs more dodging',
+            '"Your KPIs include living." - HR Bot 4',
+            'Filed a complaint with the floor itself',
+            'Promotion pending: Escape velocity required',
+            '"We value resilience. And exits." - People Team',
+            'Calendar invite: "Run faster" (mandatory)',
+            'Expense report: 1 broken wall, 0 regrets'
+        ]
+    },
+    survivor: {
+        id: 'survivor',
+        name: 'Survivor Notes',
+        description: 'Veteran wisdom and grudging praise.',
+        unlockCondition: () => playerProgress.totalWins >= 1 || playerProgress.perfectRunAchieved,
+        statuses: [
+            'You made it out. The rest is paperwork',
+            '"Speed is mercy." - Old Escapee',
+            '"Learn the corners, own the clock." - J. Rook',
+            'You escaped. The building didn’t',
+            'Break glass in case of slow run',
+            '"Every floor is a lesson plan." - The Veteran',
+            'You are now a cautionary success story',
+            'No overtime today. Maybe tomorrow'
+        ]
+    },
+    vault_legends: {
+        id: 'vault_legends',
+        name: 'Vault Legends',
+        description: 'Mythic lines for those who found it.',
+        unlockCondition: () => playerStats.vaultDiscovered,
+        statuses: [
+            'The Vault remembers your footsteps',
+            '"You saw it. Now run like it." - Vault Keeper',
+            'Legend filed under: classified survival',
+            'You escaped with interest',
+            '"Gold buys time. You buy exits." - The Broker',
+            'Vault-cleared. Ego increased',
+            'You’re on the rumor board now',
+            '"Every exit has a price." - The Auditor'
+        ]
+    }
+};
+
+function checkStatusThemeUnlocks() {
+    let newUnlocks = [];
+    for (const [id, theme] of Object.entries(STATUS_THEME_PACKS)) {
+        if (!playerProgress.unlockedStatusThemes.includes(id) && theme.unlockCondition()) {
+            playerProgress.unlockedStatusThemes.push(id);
+            newUnlocks.push(theme);
+        }
+    }
+    for (const theme of newUnlocks) {
+        showStatusThemeUnlock(theme);
+    }
+    if (newUnlocks.length > 0) {
+        saveProgress();
+    }
+    return newUnlocks;
+}
+
+function getEndRunStatus() {
+    const unlockedIds = playerProgress.unlockedStatusThemes || ['core'];
+    const selected = playerProgress.selectedStatusTheme || 'auto';
+
+    let candidatePacks = [];
+    if (selected !== 'auto' && unlockedIds.includes(selected) && STATUS_THEME_PACKS[selected]) {
+        candidatePacks = [STATUS_THEME_PACKS[selected]];
+    } else {
+        candidatePacks = unlockedIds
+            .map(id => STATUS_THEME_PACKS[id])
+            .filter(Boolean);
+    }
+
+    if (candidatePacks.length === 0) {
+        candidatePacks = [STATUS_THEME_PACKS.core];
+    }
+
+    const allStatuses = candidatePacks.flatMap(pack => pack.statuses);
+    return allStatuses[Math.floor(Math.random() * allStatuses.length)];
+}
+
 function showGameOverScreen(message) {
+    // Stop background music
+    AudioManager.stopProceduralMusic();
+
     // Save ghost replay if this was a good run
     saveGhostReplay();
+
+    // Record time spent on final floor if not already captured
+    if (gameState.floorStartTime && !gameState.floorTimes.some(t => t.floor === gameState.floor)) {
+        const floorTime = (Date.now() - gameState.floorStartTime) / 1000;
+        gameState.floorTimes.push({ floor: gameState.floor, time: floorTime });
+    }
 
     // Update progress
     updateProgressAfterRun(false);
@@ -10400,8 +12064,18 @@ function showGameOverScreen(message) {
     const startFloor = gameState.quickRunMode ? 5 : 13;
     const percentile = Math.min(95, Math.floor((startFloor - floorNum) / startFloor * 100) + 10);
     statsHtml += `<br><span style="color: #aaa; font-size: 12px;">That's better than ~${percentile}% of attempts!</span>`;
+    const fastestFloor = gameState.floorTimes.length > 0
+        ? gameState.floorTimes.reduce((best, cur) => cur.time < best.time ? cur : best)
+        : null;
+    const fastestFloorText = fastestFloor
+        ? `Fastest floor: ${fastestFloor.floor} (${fastestFloor.time.toFixed(1)}s)`
+        : 'Fastest floor: --';
+
     statsHtml += `<br><span style="color: #f1c40f;">🪙 Coins: ${gameState.coinsCollectedCount || 0}</span>`;
+    statsHtml += `<br><span style="color: #aaa;">Best combo: x${gameState.maxComboThisRun || 0}</span>`;
+    statsHtml += `<br><span style="color: #aaa;">${fastestFloorText}</span>`;
     statsHtml += `<br><span style="color: #f39c12;">Escape Points: +${calculateEscapePoints(false)} (Total: ${playerStats.escapePoints || 0})</span>`;
+    statsHtml += `<br><span style="color: #aaa;">Status: ${getEndRunStatus()}</span>`;
 
     // Show continue option if checkpoint available
     if (gameState.continuesRemaining > 0 && gameState.lastCheckpoint && !gameState.zenMode) {
@@ -11135,6 +12809,31 @@ function update(deltaTime) {
         gameState.enemySpawnFlash -= deltaTime * 3;
     }
 
+    // === SMOOTH MOVEMENT: Lerp visual position toward logical position ===
+    const lerpSpeed = 18; // Tiles per second (higher = snappier)
+    const player = gameState.player;
+    if (player.visualX === undefined) player.visualX = player.x;
+    if (player.visualY === undefined) player.visualY = player.y;
+
+    const dxVis = player.x - player.visualX;
+    const dyVis = player.y - player.visualY;
+    const distVis = Math.sqrt(dxVis * dxVis + dyVis * dyVis);
+
+    if (distVis > 0.01) {
+        // Lerp toward target position
+        const moveAmount = Math.min(distVis, lerpSpeed * deltaTime);
+        player.visualX += (dxVis / distVis) * moveAmount;
+        player.visualY += (dyVis / distVis) * moveAmount;
+    } else {
+        // Snap when very close
+        player.visualX = player.x;
+        player.visualY = player.y;
+    }
+
+    // Clamp to prevent overshooting
+    if (Math.abs(player.visualX - player.x) > 2) player.visualX = player.x;
+    if (Math.abs(player.visualY - player.y) > 2) player.visualY = player.y;
+
     // === COIN MAGNET PERK: Attract coins from 3 tiles away ===
     if (gameState.perks.includes('coinMagnet')) {
         for (const coin of gameState.coins) {
@@ -11200,11 +12899,25 @@ function update(deltaTime) {
         }
     }
 
-    // Timer warning sound (play every ~0.5 seconds when timer is low)
+    // Timer warning sound (scaled intensity as time runs out)
     if (gameState.timer <= 5 && gameState.timer > 0 && !gameState.lastChance) {
         if (!gameState.lastWarningTime || Date.now() - gameState.lastWarningTime > 500) {
-            AudioManager.play('warning', 0.4);
+            const urgency = Math.max(0, Math.min(1, (5 - gameState.timer) / 5));
+            const volume = 0.35 + urgency * 0.35;
+            const pitch = 1.0 + urgency * 0.25;
+            AudioManager.play('warning', volume, pitch);
             gameState.lastWarningTime = Date.now();
+        }
+    }
+
+    // Panic stinger under 3 seconds (extra urgency layer)
+    if (gameState.timer <= 3 && gameState.timer > 0 && !gameState.lastChance) {
+        if (!gameState.lastPanicTime || Date.now() - gameState.lastPanicTime > 900) {
+            const urgency = Math.max(0, Math.min(1, (3 - gameState.timer) / 3));
+            const volume = 0.4 + urgency * 0.4;
+            const pitch = 1.0 + urgency * 0.3;
+            AudioManager.play('panicStinger', volume, pitch);
+            gameState.lastPanicTime = Date.now();
         }
     }
 
@@ -11319,6 +13032,18 @@ function update(deltaTime) {
         if (enemy.spawnTimer > 0) {
             enemy.spawnTimer -= deltaTime;
         }
+        // === KNOCKBACK VISUAL: Decay knockback offset ===
+        if (enemy.knockbackTimer > 0) {
+            enemy.knockbackTimer -= deltaTime;
+            const t = enemy.knockbackTimer / 0.25; // Normalized time (1 to 0)
+            const ease = t * t; // Ease out
+            enemy.knockbackX = (enemy.knockbackX || 0) * ease;
+            enemy.knockbackY = (enemy.knockbackY || 0) * ease;
+            if (enemy.knockbackTimer <= 0) {
+                enemy.knockbackX = 0;
+                enemy.knockbackY = 0;
+            }
+        }
     }
 
     if (gameState.powerupTimer > 0) {
@@ -11380,6 +13105,12 @@ function update(deltaTime) {
             gameState.coinMagnetActive = false;
             AudioManager.play('powerupExpire');
         }
+    }
+
+    // Ghost Walk powerup expiration (already handled in powerupTimer, but need to handle ghost specifically)
+    if (gameState.powerup === 'ghost' && gameState.powerupTimer <= 0) {
+        AudioManager.play('powerupExpire');
+        gameState.powerup = null;
     }
 
     // Clone decoy - enemies chase it instead of player
@@ -11459,24 +13190,33 @@ function update(deltaTime) {
         }
     }
 
-    // Get combined input from keyboard and gamepad
-    const currentInput = getInput();
+    // === UNIFIED INPUT SYSTEM ===
+    // Get combined input from all sources (keyboard, gamepad, touch)
+    const currentInput = updateInputActions();
 
-    // Handle gamepad pause (with cooldown to prevent rapid toggling)
-    if (currentInput.pause && gamepadState.buttonCooldown <= 0) {
+    // Handle pause from any input source
+    if (currentInput.pause) {
         togglePause();
-        gamepadState.buttonCooldown = 0.3; // 300ms cooldown
     }
 
-    // Handle gamepad action button (with cooldown)
-    if (currentInput.action && gamepadState.buttonCooldown <= 0 && gamepadState.connected) {
-        usePowerup();
-        gamepadState.buttonCooldown = 0.2; // 200ms cooldown
-    }
-
-    // Decrease button cooldown
-    if (gamepadState.buttonCooldown > 0) {
-        gamepadState.buttonCooldown -= deltaTime;
+    // Handle all action buttons from any input source
+    // These are already edge-detected, so they only fire once per press
+    if (!gameState.paused && gameState.started && !gameState.gameOver && !gameState.won) {
+        if (currentInput.dash) {
+            performDash();
+        }
+        if (currentInput.punch) {
+            performPunch();
+        }
+        if (currentInput.action) {
+            usePowerup();
+        }
+        if (currentInput.wallBreak && gameState.hasWallBreaker) {
+            performWallBreak();
+        }
+        if (currentInput.severance && playerStats.hasSeverancePackage && gameState.severanceAvailable) {
+            activateSeverancePackage();
+        }
     }
 
     // Update squash & stretch animation
@@ -11488,15 +13228,55 @@ function update(deltaTime) {
     // Movement using combined input (with input buffering support)
     // Only process current input if no buffered move was just executed
     // Use else-if to ensure only one direction per frame
+    // Movement with diagonal support and tap/hold detection
+    // Calculate movement direction based on all held keys
     if (!bufferedMoveProcessed) {
-        if (currentInput.up) {
-            if (!movePlayer(0, -1)) bufferMovementInput(0, -1);
-        } else if (currentInput.down) {
-            if (!movePlayer(0, 1)) bufferMovementInput(0, 1);
-        } else if (currentInput.left) {
-            if (!movePlayer(-1, 0)) bufferMovementInput(-1, 0);
-        } else if (currentInput.right) {
-            if (!movePlayer(1, 0)) bufferMovementInput(1, 0);
+        let dx = 0;
+        let dy = 0;
+
+        // Accumulate direction from all held keys
+        if (currentInput.up) dy -= 1;
+        if (currentInput.down) dy += 1;
+        if (currentInput.left) dx -= 1;
+        if (currentInput.right) dx += 1;
+
+        // If any direction is requested, try to move
+        if (dx !== 0 || dy !== 0) {
+            let moved = false;
+
+            // For diagonal movement, try the combined direction first
+            if (dx !== 0 && dy !== 0) {
+                // Try diagonal move
+                if (movePlayer(dx, dy)) {
+                    moved = true;
+                } else {
+                    // Diagonal blocked - try horizontal first, then vertical
+                    if (movePlayer(dx, 0)) {
+                        moved = true;
+                    } else if (movePlayer(0, dy)) {
+                        moved = true;
+                    } else {
+                        // Both blocked, buffer the diagonal
+                        bufferMovementInput(dx, dy);
+                    }
+                }
+            } else {
+                // Single direction movement
+                if (movePlayer(dx, dy)) {
+                    moved = true;
+                } else {
+                    bufferMovementInput(dx, dy);
+                }
+            }
+
+            // Mark direction keys as "moved" so tap detection works
+            if (moved) {
+                const controls = settings.controls || DEFAULT_SETTINGS.controls;
+                if (dy < 0) controls.up.forEach(key => { if (keys[key]) keyMoved[key] = true; });
+                if (dy > 0) controls.down.forEach(key => { if (keys[key]) keyMoved[key] = true; });
+                if (dx < 0) controls.left.forEach(key => { if (keys[key]) keyMoved[key] = true; });
+                if (dx > 0) controls.right.forEach(key => { if (keys[key]) keyMoved[key] = true; });
+            }
         }
     }
 
@@ -11537,6 +13317,12 @@ function gameLoop(timestamp) {
     // Don't update game state while paused, but still draw
     if (!gameState.paused) {
         update(deltaTime);
+
+        // Update procedural music tempo based on timer
+        if (gameState.started && !gameState.gameOver && !gameState.won) {
+            AudioManager.setMusicTempo(gameState.timer);
+            AudioManager.updateProceduralMusic();
+        }
     }
 
     // Update restart flash effect
@@ -11572,11 +13358,15 @@ function startGame(mode = 'normal') {
     AudioManager.resume();
     AudioManager.play('select');
 
+    // Start procedural background music
+    AudioManager.startProceduralMusic();
+
     document.getElementById('message').style.display = 'none';
 
     // === ENDLESS DESCENT MODE ===
     const isEndless = mode === 'endless';
     gameState.endlessMode = isEndless;
+    gameState.firstRunTutorial = !isEndless && !dailyChallenge.active && playerProgress.totalRuns === 0;
 
     if (isEndless) {
         // Endless mode starts at floor 1 internally, displayed as negative
@@ -11654,6 +13444,14 @@ function startGame(mode = 'normal') {
     gameState.floorHits = 0;
     gameState.celebrations = [];
 
+    // === THE VAULT: Reset Severance Package for new run ===
+    gameState.severanceAvailable = playerStats.hasSeverancePackage;  // Only available if unlocked
+    gameState.vaultAnimationPlaying = false;
+    gameState.showingVaultFloor = false;
+
+    // Update touch buttons for special abilities
+    updateSpecialTouchButtons();
+
     // Set difficulty mode (Playtest Feature #1)
     gameState.zenMode = (actualMode === 'zen');
     settings.difficulty = actualMode;
@@ -11662,6 +13460,7 @@ function startGame(mode = 'normal') {
     gameState.runStartTime = Date.now();
     gameState.runTotalTime = 0;
     gameState.floorTimes = [];
+    gameState.floorStartTime = Date.now();
 
     playerProgress.wasHitThisRun = false; // Reset for perfect run tracking
 
@@ -11813,43 +13612,29 @@ document.addEventListener('keydown', (e) => {
     // Don't process other keys while paused
     if (gameState.paused) return;
 
-    keys[e.code] = true;
-
-    // === DASH (Space) - Core movement skill ===
-    if (e.code === 'Space') {
-        e.preventDefault();
-        if (gameState.started && !gameState.gameOver && !gameState.won) {
-            performDash();
-        }
+    // Register keypress - track when key was first pressed (ignore repeats)
+    // Actions are now processed in the game loop via updateInputActions()
+    if (!e.repeat) {
+        keys[e.code] = true;
+        keyPressTime[e.code] = Date.now();
+        keyMoved[e.code] = false; // Reset - this key hasn't triggered a move yet
     }
 
-    // === PUNCH (Z or X) - Default attack, gives TIME on hit ===
-    if (e.code === 'KeyZ' || e.code === 'KeyX') {
+    // Prevent default for action keys to avoid browser shortcuts
+    if (e.code === 'Space' || e.code === 'KeyZ' || e.code === 'KeyX' ||
+        e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'KeyV') {
         e.preventDefault();
-        if (gameState.started && !gameState.gameOver && !gameState.won) {
-            performPunch();
-        }
     }
-
-    // === USE POWERUP (E) - Use collected powerup ===
-    if (e.code === 'KeyE') {
+    const actionKeys = (settings.controls && settings.controls.action) ? settings.controls.action : DEFAULT_SETTINGS.controls.action;
+    if (actionKeys.includes(e.code)) {
         e.preventDefault();
-        if (gameState.started && !gameState.gameOver && !gameState.won) {
-            usePowerup();
-        }
-    }
-
-    // === WALL BREAKER (Shift) - Secret ability unlocked by using all 4 exits ===
-    if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && gameState.hasWallBreaker) {
-        e.preventDefault();
-        if (gameState.started && !gameState.gameOver && !gameState.won) {
-            performWallBreak();
-        }
     }
 });
 
 document.addEventListener('keyup', (e) => {
     keys[e.code] = false;
+    keyPressTime[e.code] = 0;
+    keyMoved[e.code] = false;
 });
 
 // ============================================
@@ -11870,6 +13655,17 @@ function updateSettingsUI() {
     const resSelect = document.getElementById('resolutionSelect');
     if (resSelect) {
         resSelect.value = settings.resolution;
+    }
+
+    // Update device profile label + auto-detect toggle
+    const deviceLabel = document.getElementById('deviceProfileLabel');
+    if (deviceLabel) {
+        const info = getDeviceProfileInfo();
+        deviceLabel.textContent = `${info.label} — Suggested: ${info.suggested}`;
+    }
+    const autoDetectToggle = document.getElementById('autoDetectToggle');
+    if (autoDetectToggle) {
+        autoDetectToggle.checked = settings.autoDetectResolution !== false;
     }
 
     // Update checkboxes
@@ -11972,6 +13768,7 @@ function updateControllerStatus() {
 }
 
 function changeResolution(resKey) {
+    settings.autoDetectResolution = false;
     settings.resolution = resKey;
     setResolution(resKey);
 }
@@ -12200,6 +13997,12 @@ function addSettingsToTitle() {
 // CHARACTER SELECTION UI
 // ============================================
 function showCharacterSelect() {
+    // Character selection disabled - only default character available
+    // New differentiated characters will be added in a future update
+    console.log('Character selection is currently disabled');
+    return;
+
+    // Original code preserved below for future re-enablement
     let modal = document.getElementById('characterSelectModal');
     if (!modal) {
         modal = document.createElement('div');
@@ -12256,6 +14059,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initDifficultyButtons();
     addResumeButtonToTitle();
     updatePlayerColors();
+    initTouchControls();
 
     // Preload character assets in background
     characterAssetLoader.preloadAll().then(count => {
@@ -12273,6 +14077,8 @@ initDifficultyButtons();
 addResumeButtonToTitle();
 updatePlayerColors();
 loadStats();  // Load player stats from localStorage
+updateVaultBadge(); // Show vault badge if discovered
+initTouchControls();
 
 // Watch for modal visibility changes to toggle HUD/canvas visibility
 const messageModal = document.getElementById('message');
