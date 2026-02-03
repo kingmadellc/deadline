@@ -579,6 +579,25 @@ function setResolution(resKey) {
     // Recalculate tile size
     TILE_SIZE = getTileSize();
 
+    // If game is active, update map dimensions and regenerate level
+    if (gameState.gameStarted && !gameState.gameOver) {
+        // Get new dimensions for current floor based on new aspect ratio
+        if (gameState.endlessMode) {
+            const dims = getEndlessMapDimensions(gameState.endlessFloor);
+            MAP_WIDTH = dims.width;
+            MAP_HEIGHT = dims.height;
+        } else {
+            const dims = getMapDimensionsForFloor(gameState.floor);
+            MAP_WIDTH = dims.width;
+            MAP_HEIGHT = dims.height;
+        }
+        // Recalculate tile size with new dimensions
+        TILE_SIZE = getTileSize();
+        // Regenerate the current level with new dimensions
+        initLevel();
+        console.log(`Resolution changed mid-game: regenerated level with ${MAP_WIDTH}x${MAP_HEIGHT} tiles`);
+    }
+
     // Save preference
     saveSettings();
 
@@ -3178,6 +3197,13 @@ const menuNavigation = {
     lastLeftRight: false
 };
 
+// Helper to check if element is visible (works with both CSS and inline styles)
+function isElementVisible(el) {
+    if (!el) return false;
+    const style = getComputedStyle(el);
+    return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+}
+
 // Get navigable buttons for current menu state
 function getMenuButtons() {
     const messageEl = document.getElementById('message');
@@ -3190,12 +3216,13 @@ function getMenuButtons() {
     // Check which menu is visible (order matters - check sub-menus first)
 
     // Settings menu (Display, Audio, Controls, etc.)
-    if (settingsMenuEl && settingsMenuEl.style.display !== 'none' && settingsMenuEl.offsetParent !== null) {
+    if (settingsMenuEl && isElementVisible(settingsMenuEl)) {
         const buttons = [];
         // Get all interactive elements in settings
         const interactives = settingsMenuEl.querySelectorAll('button, select, input[type="checkbox"], input[type="range"]');
         interactives.forEach(el => {
-            if (el.offsetParent !== null && !el.disabled) {
+            // Check if element is visible and not disabled
+            if (isElementVisible(el) && !el.disabled) {
                 buttons.push(el);
             }
         });
@@ -3203,46 +3230,46 @@ function getMenuButtons() {
     }
 
     // Milestones menu
-    if (milestonesMenuEl && milestonesMenuEl.style.display !== 'none') {
-        return Array.from(milestonesMenuEl.querySelectorAll('button')).filter(btn => btn.offsetParent !== null);
+    if (milestonesMenuEl && isElementVisible(milestonesMenuEl)) {
+        return Array.from(milestonesMenuEl.querySelectorAll('button')).filter(btn => isElementVisible(btn));
     }
 
     // Main settings menu (game modes, etc.)
-    if (mainSettingsEl && mainSettingsEl.style.display !== 'none') {
+    if (mainSettingsEl && isElementVisible(mainSettingsEl)) {
         // Settings menu - get all menu-option-btn buttons plus back button
         const buttons = Array.from(mainSettingsEl.querySelectorAll('.menu-option-btn, .back-btn'));
-        return buttons.filter(btn => btn.offsetParent !== null);
+        return buttons.filter(btn => isElementVisible(btn));
     }
 
-    if (howToPlayEl && howToPlayEl.style.display !== 'none') {
-        return Array.from(howToPlayEl.querySelectorAll('.back-btn'));
+    if (howToPlayEl && isElementVisible(howToPlayEl)) {
+        return Array.from(howToPlayEl.querySelectorAll('.back-btn, button')).filter(btn => isElementVisible(btn));
     }
 
-    if (dailyChallengeEl && dailyChallengeEl.style.display !== 'none') {
-        return Array.from(dailyChallengeEl.querySelectorAll('button'));
+    if (dailyChallengeEl && isElementVisible(dailyChallengeEl)) {
+        return Array.from(dailyChallengeEl.querySelectorAll('button')).filter(btn => isElementVisible(btn));
     }
 
-    if (messageEl && messageEl.style.display !== 'none') {
+    if (messageEl && isElementVisible(messageEl)) {
         // Main menu - get primary buttons, settings gear, and difficulty slider
         const buttons = [];
 
         // Settings gear icon
         const settingsGear = document.querySelector('.corner-settings-btn');
-        if (settingsGear) buttons.push(settingsGear);
+        if (settingsGear && isElementVisible(settingsGear)) buttons.push(settingsGear);
 
         // Resume button (if visible)
         const resumeBtn = document.getElementById('menuResumeBtn');
-        if (resumeBtn && resumeBtn.style.display !== 'none') {
+        if (resumeBtn && isElementVisible(resumeBtn)) {
             buttons.push(resumeBtn);
         }
 
         // Play button
         const playBtn = document.getElementById('menuPlayBtn');
-        if (playBtn) buttons.push(playBtn);
+        if (playBtn && isElementVisible(playBtn)) buttons.push(playBtn);
 
         // Difficulty slider (special handling)
         const slider = document.getElementById('difficultySlider');
-        if (slider) buttons.push(slider);
+        if (slider && isElementVisible(slider)) buttons.push(slider);
 
         return buttons;
     }
@@ -3278,7 +3305,7 @@ function updateGamepadMenuNavigation() {
     const gamepad = gamepads[gamepadState.index];
     if (!gamepad) return;
 
-    // Check if any menu is visible
+    // Check if any menu is visible (using helper for CSS compatibility)
     const messageEl = document.getElementById('message');
     const mainSettingsEl = document.getElementById('mainSettingsMenu');
     const howToPlayEl = document.getElementById('howToPlayMenu');
@@ -3286,12 +3313,12 @@ function updateGamepadMenuNavigation() {
     const settingsMenuEl = document.getElementById('settingsMenu');
     const milestonesMenuEl = document.getElementById('milestonesMenu');
 
-    const menuVisible = (messageEl && messageEl.style.display !== 'none') ||
-                        (mainSettingsEl && mainSettingsEl.style.display !== 'none') ||
-                        (howToPlayEl && howToPlayEl.style.display !== 'none') ||
-                        (dailyChallengeEl && dailyChallengeEl.style.display !== 'none') ||
-                        (settingsMenuEl && settingsMenuEl.style.display !== 'none' && settingsMenuEl.offsetParent !== null) ||
-                        (milestonesMenuEl && milestonesMenuEl.style.display !== 'none');
+    const menuVisible = isElementVisible(messageEl) ||
+                        isElementVisible(mainSettingsEl) ||
+                        isElementVisible(howToPlayEl) ||
+                        isElementVisible(dailyChallengeEl) ||
+                        isElementVisible(settingsMenuEl) ||
+                        isElementVisible(milestonesMenuEl);
 
     if (!menuVisible) {
         menuNavigation.enabled = false;
