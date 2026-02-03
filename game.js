@@ -27,11 +27,12 @@ const RESOLUTIONS = {
     '1280x800': { width: 1280, height: 800, scale: 1.25, aspectRatio: '16:10' }
 };
 
-// Dynamically calculate tile size based on resolution and map height
+// Dynamically calculate tile size based on resolution and VIEWPORT (not map size)
 function getTileSize() {
     const res = RESOLUTIONS[displaySettings.currentResolution] || RESOLUTIONS['640x640'];
-    // Use height to determine tile size (maintains vertical tile count)
-    return Math.floor(res.height / MAP_HEIGHT);
+    // Use VIEWPORT_HEIGHT (not MAP_HEIGHT) to keep tiles large regardless of map size
+    // This ensures tiles stay readable even on massive 90x90 maps
+    return Math.floor(res.height / VIEWPORT_HEIGHT);
 }
 
 // Get current aspect ratio from resolution
@@ -43,6 +44,13 @@ function getCurrentAspectRatio() {
 let TILE_SIZE = 32; // Will be updated dynamically
 let MAP_WIDTH = 20; // Horizontal tiles (variable based on floor and aspect ratio)
 let MAP_HEIGHT = 20; // Vertical tiles (variable based on floor)
+
+// ============================================
+// VIEWPORT / CAMERA SYSTEM - Player sees only a portion of the map
+// ============================================
+const VIEWPORT_WIDTH = 14;  // Visible tiles horizontally (~30% more zoomed than before)
+const VIEWPORT_HEIGHT = 14; // Visible tiles vertically - creates intimate exploration feel
+const CAMERA_LERP_SPEED = 8; // Smooth camera following speed
 
 // ============================================
 // ENDLESS DESCENT MODE - Configuration
@@ -1721,19 +1729,19 @@ function autoDetectResolution() {
     return bestRes;
 }
 
-// Get base map height based on floor number - balanced for readability on handhelds
+// Get base map height based on floor number - MASSIVE maps with viewport limiting
 function getBaseMapHeightForFloor(floor) {
-    // Moderate map sizes - readable on handheld devices while still challenging
-    // Floor 13-11: 18 tiles high - comfortable start
-    if (floor >= 11) return 18;
-    // Floors 10-8: 20 tiles high - medium
-    if (floor >= 8) return 20;
-    // Floors 7-5: 22 tiles high - larger
-    if (floor >= 5) return 22;
-    // Floors 4-2: 24 tiles high - big maps
-    if (floor >= 2) return 24;
-    // Floor 1: 26 tiles high - epic finale (but still playable)
-    return 26;
+    // Much larger maps - player only sees 14x14 viewport at a time
+    // Floor 13-11: 35 tiles - learning phase, but still large to explore
+    if (floor >= 11) return 35;
+    // Floors 10-8: 45 tiles - medium challenge, real exploration begins
+    if (floor >= 8) return 45;
+    // Floors 7-5: 55 tiles - large maps, tension builds
+    if (floor >= 5) return 55;
+    // Floors 4-2: 70 tiles - very large, getting lost is possible
+    if (floor >= 2) return 70;
+    // Floor 1: 90 tiles - epic finale, massive labyrinth
+    return 90;
 }
 
 // Get map dimensions based on floor number
@@ -1798,9 +1806,10 @@ function getMaxFiresForFloor(floor) {
 // ============================================
 
 function getEndlessMapDimensions(floor) {
-    const baseSize = 22;
-    const floorFactor = Math.floor(Math.log2(floor + 1) * 3);
-    const size = Math.min(baseSize + floorFactor, ENDLESS_MODE_CONFIG.maxMapSize);
+    // Endless mode starts larger and grows faster with viewport system
+    const baseSize = 40;
+    const floorFactor = Math.floor(Math.log2(floor + 1) * 5);
+    const size = Math.min(baseSize + floorFactor, 120); // Cap at 120 for performance
     // Keep endless mazes square too for consistent feel
     return { width: size, height: size };
 }
@@ -2329,7 +2338,7 @@ const PERKS = {
     luckyCoins: {
         id: 'luckyCoins',
         name: 'Lucky Coins',
-        description: 'Coins worth double points',
+        description: 'Coins are worth double',
         icon: '🍀',
         category: 'passive',
         rarity: 'rare'
@@ -2420,7 +2429,7 @@ const PERKS = {
     vaultMaster: {
         id: 'vaultMaster',
         name: 'Vault Master',
-        description: 'Triple coins from ALL sources. +100 starting coins next floor.',
+        description: 'Triple coins from ALL sources. +6 starting coins next floor.',
         icon: '💎',
         category: 'passive',
         rarity: 'ultimate'
@@ -2486,7 +2495,7 @@ function getRandomPerkChoices(count = 3) {
     // Fill remaining slots with Coin Stash options when perk pool is depleted
     let stashIndex = 0;
     while (result.length < count) {
-        const bonusAmount = 50 + stashIndex * 25;
+        const bonusAmount = 12 + stashIndex * 6;
         result.push({
             id: `coinStash_${stashIndex}`,
             name: 'Coin Stash',
@@ -2547,6 +2556,11 @@ let gameState = {
     timer: 30,
     powerup: null,
     powerupTimer: 0,
+    // === CAMERA SYSTEM - Viewport follows player ===
+    camera: {
+        x: 0, y: 0,           // Current camera position (tiles)
+        targetX: 0, targetY: 0 // Target position for smooth lerp
+    },
     player: {
         x: 10, y: 10, speed: 1, stunned: 0,
         frame: 0, direction: 0,
@@ -3215,7 +3229,7 @@ let keys = {};
 let keyPressTime = {}; // Track when each key was first pressed
 let keyMoved = {}; // Track if a key has already triggered a move (for tap detection)
 let lastMove = 0;
-const MOVE_DELAY = 115; // Balanced: responsive but not frantic (was 100ms)
+const MOVE_DELAY = 125; // Deliberate pacing for handheld play (was 115ms)
 const HOLD_THRESHOLD = 180; // Must hold key this long (ms) before continuous movement kicks in
 
 // ============================================
@@ -3271,6 +3285,52 @@ function getEffectiveMoveDelay() {
 }
 
 // ============================================
+// CAMERA SYSTEM - Viewport follows player
+// ============================================
+function updateCamera(deltaTime) {
+    if (!gameState || !gameState.camera) return;
+
+    const cam = gameState.camera;
+    const player = gameState.player;
+
+    // Target: center camera on player's visual position
+    cam.targetX = player.visualX - VIEWPORT_WIDTH / 2 + 0.5;
+    cam.targetY = player.visualY - VIEWPORT_HEIGHT / 2 + 0.5;
+
+    // Clamp target to map bounds (don't show void outside map)
+    cam.targetX = Math.max(0, Math.min(MAP_WIDTH - VIEWPORT_WIDTH, cam.targetX));
+    cam.targetY = Math.max(0, Math.min(MAP_HEIGHT - VIEWPORT_HEIGHT, cam.targetY));
+
+    // Smooth lerp toward target
+    const lerpFactor = 1 - Math.pow(0.001, deltaTime * CAMERA_LERP_SPEED);
+    cam.x += (cam.targetX - cam.x) * lerpFactor;
+    cam.y += (cam.targetY - cam.y) * lerpFactor;
+
+    // Snap if very close (prevent floating point drift)
+    if (Math.abs(cam.x - cam.targetX) < 0.01) cam.x = cam.targetX;
+    if (Math.abs(cam.y - cam.targetY) < 0.01) cam.y = cam.targetY;
+}
+
+// Initialize camera to center on player at level start
+function initCamera() {
+    if (!gameState || !gameState.camera) return;
+
+    const cam = gameState.camera;
+    const player = gameState.player;
+
+    // Immediately snap camera to player (no lerp on level start)
+    cam.x = player.x - VIEWPORT_WIDTH / 2 + 0.5;
+    cam.y = player.y - VIEWPORT_HEIGHT / 2 + 0.5;
+
+    // Clamp to map bounds
+    cam.x = Math.max(0, Math.min(MAP_WIDTH - VIEWPORT_WIDTH, cam.x));
+    cam.y = Math.max(0, Math.min(MAP_HEIGHT - VIEWPORT_HEIGHT, cam.y));
+
+    cam.targetX = cam.x;
+    cam.targetY = cam.y;
+}
+
+// ============================================
 // GAMEPAD / CONTROLLER SUPPORT
 // ============================================
 const gamepadState = {
@@ -3296,10 +3356,77 @@ const gamepadState = {
 const Haptics = {
     enabled: true,
     last: {},
+    lastGlobal: 0,
     strength: 1.0,
+    globalMinInterval: 18,
+    sequenceTokens: {},
+    cooldowns: {
+        timerWarning: 320,
+        lowTimerRamp: 450,
+        panic: 600,
+        heartbeat: 400,
+        stunned: 450,
+        shielded: 650
+    },
+    events: {
+        player_stunned: { strong: 0.8, weak: 0.5, duration: 180, cooldown: 140 },
+        player_died: {
+            sequence: [
+                { strong: 0.9, weak: 0.6, duration: 200 },
+                { strong: 0.6, weak: 0.9, duration: 260 },
+                { strong: 0.4, weak: 0.7, duration: 220 }
+            ],
+            cooldown: 800
+        },
+        victory: {
+            sequence: [
+                { strong: 0.3, weak: 0.6, duration: 120 },
+                { strong: 0.5, weak: 0.4, duration: 100 },
+                { strong: 0.2, weak: 0.7, duration: 160 }
+            ],
+            cooldown: 700
+        },
+        floor_clear: {
+            sequence: [
+                { strong: 0.35, weak: 0.55, duration: 90 },
+                { strong: 0.2, weak: 0.4, duration: 70 },
+                { strong: 0.4, weak: 0.6, duration: 120 }
+            ],
+            cooldown: 500
+        },
+        powerup_collect: { strong: 0.35, weak: 0.45, duration: 90, cooldown: 120 },
+        powerup_use: { strong: 0.3, weak: 0.4, duration: 120, cooldown: 180 },
+        powerup_special: { strong: 0.55, weak: 0.4, duration: 140, cooldown: 220 },
+        exit_reached: { strong: 0.2, weak: 0.3, duration: 120, cooldown: 220 },
+        door_slam: { strong: 0.55, weak: 0.4, duration: 160, cooldown: 350 },
+        tile_collapse: { strong: 0.6, weak: 0.4, duration: 180, cooldown: 350 },
+        debris_warning: { strong: 0.3, weak: 0.2, duration: 120, cooldown: 500 },
+        debris_collapse: { strong: 0.9, weak: 0.6, duration: 260, cooldown: 650 },
+        wire_shock: { strong: 1.0, weak: 0.6, duration: 160, cooldown: 300 },
+        sprinkler: { strong: 0.2, weak: 0.15, duration: 120, cooldown: 350 },
+        burn_start: { strong: 0.35, weak: 0.25, duration: 160, cooldown: 350 },
+        burn_tick: { strong: 0.25, weak: 0.2, duration: 120, cooldown: 250 },
+        water_enter: { strong: 0.15, weak: 0.1, duration: 100, cooldown: 350 },
+        electric_short: { strong: 0.6, weak: 0.35, duration: 140, cooldown: 400 },
+        shield_activate: { strong: 0.3, weak: 0.25, duration: 160, cooldown: 250 },
+        companion_activate: { strong: 0.25, weak: 0.2, duration: 150, cooldown: 250 },
+        timer_warning: { strong: 0.35, weak: 0.25, duration: 90, cooldown: 280 },
+        dash: { strong: 0.3, weak: 0.45, duration: 80, cooldown: 120 },
+        punch: { strong: 0.45, weak: 0.3, duration: 100, cooldown: 100 },
+        wall_break: { strong: 0.85, weak: 0.6, duration: 160, cooldown: 180 },
+        powerup_expire: { strong: 0.35, weak: 0.2, duration: 90, cooldown: 200 },
+        shield_block: { strong: 0.4, weak: 0.25, duration: 100, cooldown: 150 },
+        invincible_hit: { strong: 0.35, weak: 0.3, duration: 90, cooldown: 120 }
+    },
 
     getActiveGamepad() {
         const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+        if (gamepadState.connected && gamepadState.index >= 0) {
+            const gp = gamepads[gamepadState.index];
+            if (gp && gp.connected && (gp.vibrationActuator || (gp.hapticActuators && gp.hapticActuators[0]))) {
+                return gp;
+            }
+        }
         for (let i = 0; i < gamepads.length; i++) {
             const gp = gamepads[i];
             if (gp && gp.connected && (gp.vibrationActuator || (gp.hapticActuators && gp.hapticActuators[0]))) {
@@ -3313,15 +3440,21 @@ const Haptics = {
         return Math.min(max, Math.max(min, v));
     },
 
+    _isEnabled() {
+        return this.enabled && this.strength > 0;
+    },
+
     _play(strong, weak, duration) {
+        if (!this._isEnabled()) return;
         const gp = this.getActiveGamepad();
         if (!gp) return;
         const act = gp.vibrationActuator || (gp.hapticActuators && gp.hapticActuators[0]);
         if (!act) return;
-        if (this.strength <= 0) return;
+
         const dur = this._clamp(duration, 20, 1000);
         const s = this._clamp(strong * this.strength, 0, 1);
         const w = this._clamp(weak * this.strength, 0, 1);
+        if (s <= 0.02 && w <= 0.02) return;
 
         if (act.playEffect) {
             act.playEffect('dual-rumble', {
@@ -3334,27 +3467,61 @@ const Haptics = {
         }
     },
 
-    pulse(name, strong, weak, duration, minInterval = 80) {
-        if (!this.enabled) return;
+    _canPlay(name, minInterval, ignoreGlobal = false) {
         const now = performance.now();
-        if (this.last[name] && now - this.last[name] < minInterval) return;
+        if (!ignoreGlobal && now - this.lastGlobal < this.globalMinInterval) return false;
+        if (this.last[name] && now - this.last[name] < minInterval) return false;
         this.last[name] = now;
+        this.lastGlobal = now;
+        return true;
+    },
+
+    pulse(name, strong, weak, duration, minInterval = 80, options = {}) {
+        if (!this._isEnabled()) return;
+        const cooldown = Math.max(minInterval, this.cooldowns[name] || 0);
+        if (!this._canPlay(name, cooldown, options.ignoreGlobal)) return;
         this._play(strong, weak, duration);
     },
 
-    sequence(name, steps, minInterval = 200) {
-        if (!this.enabled) return;
-        const now = performance.now();
-        if (this.last[name] && now - this.last[name] < minInterval) return;
-        this.last[name] = now;
+    sequence(name, steps, minInterval = 200, options = {}) {
+        if (!this._isEnabled()) return;
+        const cooldown = Math.max(minInterval, this.cooldowns[name] || 0);
+        if (!this._canPlay(name, cooldown, options.ignoreGlobal)) return;
+
+        const token = (this.sequenceTokens[name] || 0) + 1;
+        this.sequenceTokens[name] = token;
 
         let offset = 0;
-        steps.forEach((step, i) => {
+        steps.forEach((step) => {
             const dur = step.duration || 80;
             const delay = step.delayAfter !== undefined ? step.delayAfter : 40;
-            setTimeout(() => this._play(step.strong || 0, step.weak || 0, dur), offset);
+            setTimeout(() => {
+                if (this.sequenceTokens[name] !== token) return;
+                this._play(step.strong || 0, step.weak || 0, dur);
+            }, offset);
             offset += dur + delay;
         });
+    },
+
+    playEvent(event, scale = 1.0) {
+        if (!this._isEnabled()) return;
+        const pattern = this.events[event];
+        if (!pattern) return;
+        const s = this._clamp((pattern.strong || 0) * scale, 0, 1);
+        const w = this._clamp((pattern.weak || 0) * scale, 0, 1);
+        const cooldown = pattern.cooldown !== undefined ? pattern.cooldown : 0;
+
+        if (pattern.sequence) {
+            const steps = pattern.sequence.map((step) => ({
+                strong: this._clamp((step.strong || 0) * scale, 0, 1),
+                weak: this._clamp((step.weak || 0) * scale, 0, 1),
+                duration: step.duration || 80,
+                delayAfter: step.delayAfter
+            }));
+            this.sequence(event, steps, cooldown || 200);
+        } else {
+            this.pulse(event, s, w, pattern.duration || 120, cooldown || 80);
+        }
     }
 };
 
@@ -4412,6 +4579,7 @@ function loadSettings() {
 
         // Apply haptics strength
         Haptics.strength = (settings.hapticsStrength !== undefined) ? settings.hapticsStrength : 1.0;
+        Haptics.enabled = Haptics.strength > 0;
 
         console.log('Settings loaded:', settings);
     } catch (e) {
@@ -5363,10 +5531,13 @@ function generateMaze() {
     }
 
     // Now ADD walls randomly, but verify each wall doesn't block any path
-    const wallsToAdd = 80; // Number of wall tiles to try adding
+    // Scale wall count with map area for consistent density on larger maps
+    const mapArea = MAP_WIDTH * MAP_HEIGHT;
+    const wallDensity = 0.12; // Target ~12% wall coverage
+    const wallsToAdd = Math.floor(mapArea * wallDensity);
     let wallsAdded = 0;
     let attempts = 0;
-    const maxAttempts = 300;
+    const maxAttempts = wallsToAdd * 5; // More attempts for larger maps
 
     while (wallsAdded < wallsToAdd && attempts < maxAttempts) {
         attempts++;
@@ -5855,6 +6026,9 @@ function initLevel() {
     // Sync visual position with logical position (no interpolation on floor change)
     gameState.player.visualX = gameState.player.x;
     gameState.player.visualY = gameState.player.y;
+
+    // === CAMERA: Initialize camera centered on player ===
+    initCamera();
     gameState.player.stunned = 0;
     gameState.player.speed = 1;
     gameState.player.frame = 0;
@@ -5928,9 +6102,9 @@ function initLevel() {
     if (gameState.perks.includes('timeLord')) {
         gameState.timer += 10;
     }
-    // Vault Master: +100 starting coins each floor
+    // Vault Master: +6 starting coins each floor
     if (gameState.perks.includes('vaultMaster')) {
-        awardCoins(100);
+        awardCoins(6);
     }
 
     // Add cafeteria on floors 10, 7, 4 (rebalanced for 13-floor game)
@@ -6241,8 +6415,8 @@ function initLevel() {
     gameState.lastChance = false;
     gameState.lastChanceTimer = 0;
 
-    // === COIN SPAWNING: Scaled by floor for economy balance ===
-    // Fewer coins spawn on later (lower number) floors to prevent economy overflow
+    // === COIN SPAWNING: Count scales by floor for economy balance ===
+    // Coins are always value 1; later floors spawn fewer coins
     gameState.coins = [];
     let numCoins;
     if (gameState.floor >= 11) {
@@ -6289,24 +6463,10 @@ function initLevel() {
         } while (!validPlacement && attempts < 100);
 
         if (attempts < 100) {
-            // Scale coin value based on floor (later floors = more coins for shop)
-            // Floor 13: 5-10, Floor 7-12: 8-15, Floor 1-6: 10-20
-            let baseValue, bonusValue;
-            if (gameState.floor >= 11) {
-                baseValue = 5;
-                bonusValue = Math.floor(gameRandom() * 6); // 5-10
-            } else if (gameState.floor >= 7) {
-                baseValue = 8;
-                bonusValue = Math.floor(gameRandom() * 8); // 8-15
-            } else {
-                baseValue = 10;
-                bonusValue = Math.floor(gameRandom() * 11); // 10-20
-            }
-
             gameState.coins.push({
                 x: cx,
                 y: cy,
-                value: baseValue + bonusValue,
+                value: 1,
                 collected: false,
                 bobOffset: gameRandom() * Math.PI * 2, // For bobbing animation
                 sparkle: gameRandom() * Math.PI * 2   // For sparkle effect
@@ -7677,24 +7837,33 @@ function drawExit(exit) {
     const pulse = Math.sin(gameState.animationTime * pulseSpeed) * 0.3 + 0.7;
     const arrowBob = Math.sin(gameState.animationTime * 6) * 2;
 
-    // First-run onboarding: extra exit emphasis when nearby
-    if (gameState.firstRunTutorial) {
-        const distToPlayer = Math.abs(exit.x - gameState.player.x) + Math.abs(exit.y - gameState.player.y);
-        if (distToPlayer <= 3) {
-            ctx.save();
-            ctx.fillStyle = 'rgba(255, 230, 120, 0.8)';
-            ctx.beginPath();
-            ctx.arc(x + TILE_SIZE / 2, y + TILE_SIZE / 2, 36 + pulse * 6, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.font = 'bold 14px monospace';
-            ctx.textAlign = 'center';
-            ctx.fillStyle = '#fff';
-            ctx.shadowColor = '#000';
-            ctx.shadowBlur = 6;
-            ctx.fillText('EXIT', x + TILE_SIZE / 2, y - 12 + arrowBob);
-            ctx.restore();
-        }
-    }
+    // === NEON EXIT SIGN - Always visible, prominent glow ===
+    ctx.save();
+    // Black backing panel for contrast
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+    ctx.fillRect(x - 6, y - 22, TILE_SIZE + 12, 18);
+
+    // Neon glow layers
+    ctx.shadowColor = '#f1c40f';
+    ctx.shadowBlur = 20 + pulse * 10;
+    ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'center';
+
+    // Outer glow text
+    ctx.fillStyle = `rgba(255, 200, 50, ${0.6 + pulse * 0.2})`;
+    ctx.fillText('EXIT', x + TILE_SIZE / 2, y - 8);
+
+    // Inner bright text
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = `rgba(255, 240, 150, ${0.9 + pulse * 0.1})`;
+    ctx.fillText('EXIT', x + TILE_SIZE / 2, y - 8);
+
+    // Border glow
+    ctx.strokeStyle = `rgba(255, 200, 50, ${0.4 + pulse * 0.2})`;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x - 4, y - 20, TILE_SIZE + 8, 14);
+
+    ctx.restore();
 
     // Radiating "beckoning" rings - 3 expanding concentric circles (more visible when urgent)
     const ringAlphaBoost = gameState.timer <= 10 ? 1.5 : 1.0;
@@ -8657,7 +8826,7 @@ function checkCelebrationTriggers(event, data = {}) {
             if (gameState.timer >= 10) {
                 showCelebration('speedster');
                 // Speed bonus coins!
-                const speedBonus = Math.floor(gameState.timer * 2);
+                const speedBonus = Math.max(1, Math.floor(gameState.timer / 8));
                 awardCoins(speedBonus);
                 showCelebration('speedBonus', { coins: speedBonus });
             }
@@ -8665,14 +8834,14 @@ function checkCelebrationTriggers(event, data = {}) {
             if (gameState.floorHits === 0) {
                 showCelebration('flawless');
                 // Flawless bonus coins!
-                const flawlessBonus = 25 + (13 - gameState.floor) * 5; // More on later floors
+                const flawlessBonus = 3 + Math.floor((13 - gameState.floor) / 4);
                 awardCoins(flawlessBonus);
                 showCelebration('flawlessBonus', { coins: flawlessBonus });
             }
             // DOMINATION: Both speedster AND flawless!
             if (gameState.timer >= 10 && gameState.floorHits === 0) {
                 showCelebration('domination');
-                awardCoins(50); // Extra domination bonus
+                awardCoins(5); // Extra domination bonus
             }
             break;
         case 'enemyStunned':
@@ -8847,13 +9016,27 @@ function draw() {
         return;
     }
 
-    // Apply screen shake offset
+    // Apply screen shake offset (outer save - restored at end of draw())
     ctx.save();
     ctx.translate(screenShake.offsetX, screenShake.offsetY);
 
-    // Draw tiles
-    for (let y = 0; y < MAP_HEIGHT; y++) {
-        for (let x = 0; x < MAP_WIDTH; x++) {
+    // === CAMERA TRANSFORM: Offset all world-space drawing (inner save) ===
+    ctx.save();
+    const camOffsetX = -gameState.camera.x * TILE_SIZE;
+    const camOffsetY = -gameState.camera.y * TILE_SIZE;
+    ctx.translate(camOffsetX, camOffsetY);
+
+    // Calculate visible tile range (only draw what's on screen + 1 tile buffer)
+    const camX = Math.floor(gameState.camera.x);
+    const camY = Math.floor(gameState.camera.y);
+    const startX = Math.max(0, camX - 1);
+    const startY = Math.max(0, camY - 1);
+    const endX = Math.min(MAP_WIDTH, camX + VIEWPORT_WIDTH + 2);
+    const endY = Math.min(MAP_HEIGHT, camY + VIEWPORT_HEIGHT + 2);
+
+    // Draw only visible tiles (performance optimization for large maps)
+    for (let y = startY; y < endY; y++) {
+        for (let x = startX; x < endX; x++) {
             drawTile(x, y);
         }
     }
@@ -8925,6 +9108,16 @@ function draw() {
 
     // Draw clone decoy (if active)
     drawClone();
+
+    // === OFF-SCREEN EXIT INDICATORS: Show arrows pointing to exits outside viewport ===
+    drawOffScreenExitIndicators();
+
+    // === END WORLD-SPACE DRAWING: Restore camera transform for screen-space effects ===
+    ctx.restore(); // Restore from camera transform
+
+    // Re-apply screen shake only (for screen-space effects)
+    ctx.save();
+    ctx.translate(screenShake.offsetX, screenShake.offsetY);
 
     // === TIME FREEZE EFFECT: Blue-tinted screen when enemies frozen ===
     if (gameState.timeFreezeActive) {
@@ -9145,6 +9338,63 @@ function draw() {
     ctx.restore();
 }
 
+// === OFF-SCREEN EXIT INDICATORS: Arrows pointing toward exits outside viewport ===
+function drawOffScreenExitIndicators() {
+    if (!gameState.exits || !gameState.camera) return;
+
+    const cam = gameState.camera;
+    const padding = 40; // Distance from screen edge
+    const arrowSize = 20;
+    const pulse = Math.sin(gameState.animationTime * 4) * 0.3 + 0.7;
+
+    for (const exit of gameState.exits) {
+        // Calculate exit position relative to camera (in pixels)
+        const exitScreenX = (exit.x - cam.x) * TILE_SIZE + TILE_SIZE / 2;
+        const exitScreenY = (exit.y - cam.y) * TILE_SIZE + TILE_SIZE / 2;
+
+        // Check if exit is outside visible viewport
+        const viewportPixelW = VIEWPORT_WIDTH * TILE_SIZE;
+        const viewportPixelH = VIEWPORT_HEIGHT * TILE_SIZE;
+
+        if (exitScreenX < 0 || exitScreenX > viewportPixelW ||
+            exitScreenY < 0 || exitScreenY > viewportPixelH) {
+
+            // Calculate arrow position (clamped to screen edge)
+            let arrowX = Math.max(padding, Math.min(viewportPixelW - padding, exitScreenX));
+            let arrowY = Math.max(padding, Math.min(viewportPixelH - padding, exitScreenY));
+
+            // Calculate angle from arrow position to actual exit
+            const angle = Math.atan2(exitScreenY - arrowY, exitScreenX - arrowX);
+
+            // Draw glowing arrow
+            ctx.save();
+            ctx.translate(arrowX, arrowY);
+            ctx.rotate(angle);
+
+            // Glow effect
+            ctx.shadowColor = '#f1c40f';
+            ctx.shadowBlur = 15 + pulse * 10;
+
+            // Arrow shape
+            ctx.fillStyle = `rgba(255, 200, 50, ${0.7 + pulse * 0.3})`;
+            ctx.beginPath();
+            ctx.moveTo(arrowSize, 0);
+            ctx.lineTo(-arrowSize / 2, -arrowSize / 2);
+            ctx.lineTo(-arrowSize / 4, 0);
+            ctx.lineTo(-arrowSize / 2, arrowSize / 2);
+            ctx.closePath();
+            ctx.fill();
+
+            // Border
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            ctx.restore();
+        }
+    }
+}
+
 // Draw a mini-map showing player position and exits
 function drawMiniMap() {
     const miniMapHeight = 80;
@@ -9212,6 +9462,26 @@ function drawMiniMap() {
     ctx.beginPath();
     ctx.arc(playerPx + cellWidth/2, playerPy + cellHeight/2, Math.min(cellWidth, cellHeight) * pulse, 0, Math.PI * 2);
     ctx.fill();
+
+    // === VIEWPORT INDICATOR: Rectangle showing visible area on minimap ===
+    if (gameState.camera) {
+        const viewX = miniMapX + gameState.camera.x * cellWidth;
+        const viewY = miniMapY + gameState.camera.y * cellHeight;
+        const viewW = VIEWPORT_WIDTH * cellWidth;
+        const viewH = VIEWPORT_HEIGHT * cellHeight;
+
+        ctx.strokeStyle = 'rgba(78, 205, 196, 0.9)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(viewX, viewY, viewW, viewH);
+
+        // Corner highlights for visibility
+        ctx.fillStyle = '#4ecdc4';
+        const cornerSize = 3;
+        ctx.fillRect(viewX - 1, viewY - 1, cornerSize, cornerSize);
+        ctx.fillRect(viewX + viewW - cornerSize + 1, viewY - 1, cornerSize, cornerSize);
+        ctx.fillRect(viewX - 1, viewY + viewH - cornerSize + 1, cornerSize, cornerSize);
+        ctx.fillRect(viewX + viewW - cornerSize + 1, viewY + viewH - cornerSize + 1, cornerSize, cornerSize);
+    }
 
     // Border
     ctx.strokeStyle = '#4ecdc4';
@@ -9547,8 +9817,8 @@ function fryEnemy(enemy) {
         showCelebration('electricChain', { count: gameState.killCombo });
     }
 
-    // Drop coins from fried enemies (more generous)
-    const coinValue = 5 + Math.floor(Math.random() * 10);
+    // Drop coins from fried enemies (flat value)
+    const coinValue = 1;
     gameState.coins.push({
         x: enemy.x,
         y: enemy.y,
@@ -10067,7 +10337,7 @@ function updateFires(deltaTime) {
                 if (gameState.player.burning <= 0) {
                     gameState.player.burning = 2.0;  // 2 seconds of burn
                     playerStats.timesBurned++;
-                    Haptics.pulse('burn', 0.6, 0.4, 140, 200);
+                    Haptics.playEvent('burn_start');
                 }
             }
         }
@@ -10362,7 +10632,7 @@ function handlePlayerEnemyCollision(enemy) {
         // Push enemy away and stun briefly without hurting player
         enemy.stunned = 1.5;
         pushEnemyAway(enemy, gameState.player.x, gameState.player.y);
-        Haptics.pulse('shieldBlock', 0.4, 0.25, 90, 120);
+        Haptics.playEvent('shield_block');
         return;
     }
 
@@ -10388,7 +10658,7 @@ function handlePlayerEnemyCollision(enemy) {
             });
         }
         AudioManager.play('punch1', 0.8);
-        Haptics.pulse('invincibleHit', 0.35, 0.3, 90, 80);
+        Haptics.playEvent('invincible_hit');
         return;
     }
 
@@ -10435,7 +10705,7 @@ function handlePlayerEnemyCollision(enemy) {
     // Only apply if player isn't already stunned (prevent stacking)
     if (gameState.player.stunned <= 0) {
         AudioManager.play('hit'); // Player hit sound
-        Haptics.pulse('playerHit', 0.9, 0.7, 180, 120);
+        Haptics.playEvent('player_stunned');
         screenShake.trigger(10, 0.25); // Medium shake when hit
         triggerFreezeFrame('playerHit'); // Impact freeze frame for game feel
         gameState.damageFlashTimer = 0.3; // Red vignette flash for impact feedback
@@ -10665,14 +10935,11 @@ function movePlayer(dx, dy) {
                     default:
                         AudioManager.play('powerup'); // Fallback
                 }
-                // Haptics: type-specific pulse
-                let hStrong = 0.3;
-                let hWeak = 0.4;
-                if (pu.type === 'electric') { hStrong = 0.55; hWeak = 0.45; }
-                else if (pu.type === 'knockout') { hStrong = 0.45; hWeak = 0.3; }
-                else if (pu.type === 'ghost') { hStrong = 0.2; hWeak = 0.45; }
-                else if (pu.type === 'speed') { hStrong = 0.35; hWeak = 0.5; }
-                Haptics.pulse('powerup', hStrong, hWeak, 90, 80);
+                // Haptics: type-specific event
+                const powerupEvent = (pu.type === 'electric' || pu.type === 'knockout' || pu.type === 'invincibility' || pu.type === 'overclock')
+                    ? 'powerup_special'
+                    : 'powerup_collect';
+                Haptics.playEvent(powerupEvent);
                 // Quick freeze frame on powerup collection
                 triggerFreezeFrame('powerupCollect');
 
@@ -10680,6 +10947,7 @@ function movePlayer(dx, dy) {
                 if (pu.type === 'shield') {
                     // Shield from garden - 8 seconds of damage immunity
                     gameState.player.shielded = 8;
+                    Haptics.playEvent('powerup_use');
                     playerStats.powerupsCollected++;
                     saveStats();
                 } else if (pu.type === 'companion') {
@@ -10690,6 +10958,7 @@ function movePlayer(dx, dy) {
                         timer: 15,  // Lasts 15 seconds
                         frame: 0
                     };
+                    Haptics.playEvent('powerup_use');
                     playerStats.powerupsCollected++;
                     saveStats();
                 } else if (pu.type === 'timeFreeze') {
@@ -10698,6 +10967,7 @@ function movePlayer(dx, dy) {
                     gameState.timeFreezeTimer = 5;
                     showCelebration('timeFreeze');
                     screenShake.trigger(10, 0.2);
+                    Haptics.playEvent('powerup_special');
                     // Freeze all enemies
                     for (const enemy of gameState.enemies) {
                         enemy.frozen = true;
@@ -10709,6 +10979,7 @@ function movePlayer(dx, dy) {
                     gameState.coinMagnetActive = true;
                     gameState.coinMagnetTimer = 8;
                     showCelebration('coinMagnet');
+                    Haptics.playEvent('powerup_use');
                     playerStats.powerupsCollected++;
                     saveStats();
                 } else if (pu.type === 'clone') {
@@ -10721,6 +10992,7 @@ function movePlayer(dx, dy) {
                         blinkTimer: 0
                     };
                     showCelebration('cloneActivated');
+                    Haptics.playEvent('powerup_use');
                     playerStats.powerupsCollected++;
                     saveStats();
                 } else if (pu.type === 'invincibility') {
@@ -10728,6 +11000,7 @@ function movePlayer(dx, dy) {
                     gameState.player.invincible = 4;
                     showCelebration('invincibility');
                     screenShake.trigger(15, 0.3);
+                    Haptics.playEvent('powerup_special');
                     // Rainbow flash effect
                     const flash = document.createElement('div');
                     flash.style.cssText = `
@@ -10746,6 +11019,7 @@ function movePlayer(dx, dy) {
                     gameState.powerupTimer = 6;
                     showCelebration('overclock');
                     screenShake.trigger(6, 0.2);
+                    Haptics.playEvent('powerup_special');
                     playerStats.powerupsCollected++;
                     saveStats();
                 } else if (pu.type === 'ghost') {
@@ -10756,6 +11030,7 @@ function movePlayer(dx, dy) {
                     gameState.powerupTimer = ghostDuration;
                     showCelebration('ghostWalk');
                     screenShake.trigger(8, 0.2);
+                    Haptics.playEvent('powerup_use');
                     // Ethereal blue flash effect
                     const flash = document.createElement('div');
                     flash.style.cssText = `
@@ -10902,7 +11177,7 @@ function performDash() {
         osc.start();
         osc.stop(AudioManager.context.currentTime + 0.1);
     }
-    Haptics.pulse('dash', 0.25, 0.45, 70, 80);
+    Haptics.playEvent('dash');
 
     // === DASH DAMAGE PERK: Stun enemies we dash through ===
     if (gameState.perks.includes('dashDamage')) {
@@ -11126,7 +11401,7 @@ function performPunch() {
                 }
 
                 // === SHOP ECONOMY: Enemies drop coins when defeated ===
-                const coinDrop = 5 + Math.floor(Math.random() * 10); // 5-14 coins
+                const coinDrop = 1; // Flat 1 coin per enemy
                 awardCoins(coinDrop);
 
                 // Coin drop visual effect
@@ -11235,7 +11510,7 @@ function performPunch() {
     if (enemiesHit > 0) {
         // Escalating combo audio - pitch increases with kill combo
         const comboBoost = Math.min(gameState.killCombo || 0, 10) / 10;
-        Haptics.pulse('punch', 0.35 + comboBoost * 0.25, 0.2 + comboBoost * 0.15, 90, 70);
+        Haptics.playEvent('punch', 0.8 + comboBoost * 0.5);
         const comboPitch = 1.0 + Math.min(gameState.killCombo, 10) * 0.06; // Up to 1.6x at combo 10
         AudioManager.play('punch1', 0.8, comboPitch);
 
@@ -11413,7 +11688,7 @@ function performWallBreak() {
 
         // Audio - heavy impact sound
         AudioManager.play('punch1', 1.0);
-        Haptics.pulse('wallBreak', 0.85, 0.6, 160, 120);
+        Haptics.playEvent('wall_break', 0.8 + Math.min(wallsBroken, 3) * 0.08);
 
         // Screen shake - big one!
         screenShake.trigger(15 + wallsBroken * 5, 0.3);
@@ -11790,6 +12065,7 @@ function usePowerup() {
         }
         gameState.powerup = null;
         gameState.powerupTimer = 0;
+        Haptics.playEvent('powerup_use');
     }
 }
 
@@ -12040,11 +12316,7 @@ function nextFloor() {
         gameState.won = true;
         saveGhostReplay(); // Save ghost replay on victory
         AudioManager.play('victory'); // Victory fanfare
-        Haptics.sequence('victory', [
-            { strong: 0.3, weak: 0.6, duration: 120 },
-            { strong: 0.5, weak: 0.4, duration: 100 },
-            { strong: 0.2, weak: 0.7, duration: 160 }
-        ], 700);
+        Haptics.playEvent('victory');
         showVictoryScreen();
         return;
     }
@@ -12073,11 +12345,7 @@ function showEndlessLevelTransition(floor) {
 
     // Triumphant stinger on floor clear
     AudioManager.play('floorClear', 0.8);
-    Haptics.sequence('floorClear', [
-        { strong: 0.35, weak: 0.55, duration: 90 },
-        { strong: 0.2, weak: 0.4, duration: 70 },
-        { strong: 0.4, weak: 0.6, duration: 120 }
-    ], 500);
+    Haptics.playEvent('floor_clear');
 
     // Start falling debris particle effect
     transitionParticles.start();
@@ -12424,11 +12692,7 @@ function showLevelTransition(floor) {
 
     // Triumphant stinger on floor clear
     AudioManager.play('floorClear', 0.8);
-    Haptics.sequence('floorClear', [
-        { strong: 0.35, weak: 0.55, duration: 90 },
-        { strong: 0.2, weak: 0.4, duration: 70 },
-        { strong: 0.4, weak: 0.6, duration: 120 }
-    ], 500);
+    Haptics.playEvent('floor_clear');
 
     // Start falling debris particle effect
     transitionParticles.start();
@@ -12449,11 +12713,11 @@ function showLevelTransition(floor) {
 // === PERK SELECTION UI ===
 // Flat pricing by rarity - legendary/ultimate are premium (1-2 per run max)
 const PERK_PRICES = {
-    common: 50,
-    rare: 100,
-    epic: 200,
-    legendary: 800,   // Requires dedicated coin saving
-    ultimate: 1200    // True endgame purchase
+    common: 10,
+    rare: 18,
+    epic: 30,
+    legendary: 45,   // Top-tier but achievable late
+    ultimate: 65     // Endgame purchase for skilled play
 };
 
 // Simple pricing - flat rates with optional Penny Pincher discount
@@ -13587,11 +13851,7 @@ function drawGhost() {
 
 function startImplosion() {
     AudioManager.play('collapse'); // Floor collapse sound
-    Haptics.sequence('collapse', [
-        { strong: 0.9, weak: 0.6, duration: 200 },
-        { strong: 0.6, weak: 0.9, duration: 260 },
-        { strong: 0.4, weak: 0.7, duration: 220 }
-    ], 800);
+    Haptics.playEvent('player_died');
     screenShake.trigger(20, 1.5); // Intense, long shake during collapse
 
     gameState.imploding = true;
@@ -13798,6 +14058,9 @@ function update(deltaTime) {
     if (Math.abs(player.visualX - player.x) > 2) player.visualX = player.x;
     if (Math.abs(player.visualY - player.y) > 2) player.visualY = player.y;
 
+    // === CAMERA UPDATE: Smooth follow player ===
+    updateCamera(deltaTime);
+
     // === COIN MAGNET PERK: Attract coins from 3 tiles away ===
     if (gameState.perks.includes('coinMagnet')) {
         for (const coin of gameState.coins) {
@@ -13879,7 +14142,7 @@ function update(deltaTime) {
             const volume = 0.35 + urgency * 0.35;
             const pitch = 1.0 + urgency * 0.25;
             AudioManager.play('warning', volume, pitch);
-            Haptics.pulse('timerWarning', 0.2 + urgency * 0.25, 0.25 + urgency * 0.3, 80, 350);
+            Haptics.playEvent('timer_warning', 0.7 + urgency * 0.6);
             gameState.lastWarningTime = Date.now();
         }
     }
@@ -14063,7 +14326,7 @@ function update(deltaTime) {
         gameState.powerupTimer -= deltaTime;
         if (gameState.powerupTimer <= 0 && (gameState.powerup === 'speed' || gameState.powerup === 'electric' || gameState.powerup === 'overclock')) {
             AudioManager.play('powerupExpire'); // Power-down sound
-            Haptics.pulse('powerupExpire', 0.2, 0.35, 90, 200);
+            Haptics.playEvent('powerup_expire');
             gameState.powerup = null;
         }
     }
@@ -14078,7 +14341,7 @@ function update(deltaTime) {
         gameState.player.invincible -= deltaTime;
         if (gameState.player.invincible <= 0) {
             AudioManager.play('powerupExpire');
-            Haptics.pulse('powerupExpire', 0.2, 0.35, 90, 200);
+            Haptics.playEvent('powerup_expire');
         }
     }
 
@@ -14093,7 +14356,7 @@ function update(deltaTime) {
                 enemy.frozen = false;
             }
             AudioManager.play('powerupExpire');
-            Haptics.pulse('powerupExpire', 0.2, 0.35, 90, 200);
+            Haptics.playEvent('powerup_expire');
         }
     }
 
@@ -14120,14 +14383,14 @@ function update(deltaTime) {
         if (gameState.coinMagnetTimer <= 0) {
             gameState.coinMagnetActive = false;
             AudioManager.play('powerupExpire');
-            Haptics.pulse('powerupExpire', 0.2, 0.35, 90, 200);
+            Haptics.playEvent('powerup_expire');
         }
     }
 
     // Ghost Walk powerup expiration (already handled in powerupTimer, but need to handle ghost specifically)
     if (gameState.powerup === 'ghost' && gameState.powerupTimer <= 0) {
         AudioManager.play('powerupExpire');
-        Haptics.pulse('powerupExpire', 0.2, 0.35, 90, 200);
+        Haptics.playEvent('powerup_expire');
         gameState.powerup = null;
     }
 
@@ -14455,7 +14718,7 @@ function startGame(mode = 'normal') {
     gameState.fireSpawnTimer = 0;
 
     // === SHOP ECONOMY: Start with coins to buy first upgrade ===
-    gameState.coinsBanked = 50; // Starting coins for first shop purchase
+    gameState.coinsBanked = 8; // Starting coins for first shop purchase
     gameState.coinsEarnedThisFloor = 0;
     gameState.coinsCollected = 0;
     gameState.coinsCollectedCount = 0;
@@ -15026,6 +15289,7 @@ function setSfxVolume(value) {
 function setHapticsStrength(value) {
     settings.hapticsStrength = value / 100;
     Haptics.strength = settings.hapticsStrength;
+    Haptics.enabled = Haptics.strength > 0;
     const span = document.getElementById('hapticsStrengthVal');
     if (span) span.textContent = value + '%';
     saveSettings();
