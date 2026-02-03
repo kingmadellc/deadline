@@ -147,7 +147,9 @@ const powerupImages = {
     timeFreeze: new Image(),
     coinMagnet: new Image(),
     clone: new Image(),
-    invincibility: new Image()
+    invincibility: new Image(),
+    overclock: new Image(),
+    ghost: new Image()
 };
 powerupImages.speed.src = 'powerup-speed.png';
 powerupImages.knockout.src = 'powerup-knockout.png';
@@ -160,6 +162,7 @@ powerupImages.timeFreeze.src = 'powerup-timefreeze.png';
 powerupImages.coinMagnet.src = 'powerup-magnet.png';
 powerupImages.clone.src = 'powerup-clone.png';
 powerupImages.invincibility.src = 'powerup-invincibility.png';
+powerupImages.overclock.src = 'powerup-overclock.png';
 
 // Atmospheric background images for different screens
 const atmosphericBackgrounds = {
@@ -2583,6 +2586,11 @@ let gameState = {
     // Celebration system (Playtest Feature #3)
     celebrations: [],  // Active celebration popups
     floorHits: 0,      // Hits taken this floor (for flawless tracking)
+    // === FLOW SYSTEM (Momentum Meter) ===
+    flow: 0,
+    flowStateActive: false,
+    lastFlowActionTime: 0,
+    flowBonusLastFloor: 0,
     // Zen mode flag
     zenMode: false,
     // === NEW: Collectibles System (Dopamine Breadcrumbs) ===
@@ -2677,10 +2685,14 @@ let playerStats = {
 
 // Load stats from localStorage
 function loadStats() {
-    const saved = localStorage.getItem('deadline_stats');
-    if (saved) {
-        const parsed = JSON.parse(saved);
-        Object.assign(playerStats, parsed);
+    try {
+        const saved = localStorage.getItem('deadline_stats');
+        if (saved) {
+            const parsed = JSON.parse(saved);
+            Object.assign(playerStats, parsed);
+        }
+    } catch (e) {
+        console.log('Failed to load stats:', e);
     }
     // Ensure status theme packs unlock based on loaded stats
     checkStatusThemeUnlocks();
@@ -2688,7 +2700,11 @@ function loadStats() {
 
 // Save stats to localStorage
 function saveStats() {
-    localStorage.setItem('deadline_stats', JSON.stringify(playerStats));
+    try {
+        localStorage.setItem('deadline_stats', JSON.stringify(playerStats));
+    } catch (e) {
+        console.log('Failed to save stats:', e);
+    }
 }
 
 // Alias for consistency
@@ -2894,25 +2910,36 @@ function saveDailyChallengeData() {
         completed: dailyChallenge.completed,
         leaderboard: dailyChallenge.leaderboard.slice(0, 10)  // Top 10
     };
-    localStorage.setItem('deadline_dailyChallenge', JSON.stringify(data));
+    try {
+        localStorage.setItem('deadline_dailyChallenge', JSON.stringify(data));
+    } catch (e) {
+        console.log('Failed to save daily challenge:', e);
+    }
 }
 
 // Load daily challenge data
 function loadDailyChallengeData() {
-    const saved = localStorage.getItem('deadline_dailyChallenge');
-    if (saved) {
-        const data = JSON.parse(saved);
-        // Only load if it's today's challenge
-        if (data.date === dailyChallenge.date) {
-            dailyChallenge.bestTime = data.bestTime;
-            dailyChallenge.completed = data.completed;
-            dailyChallenge.leaderboard = data.leaderboard || [];
-        } else {
-            // New day, reset
-            dailyChallenge.bestTime = null;
-            dailyChallenge.completed = false;
-            dailyChallenge.leaderboard = [];
+    try {
+        const saved = localStorage.getItem('deadline_dailyChallenge');
+        if (saved) {
+            const data = JSON.parse(saved);
+            // Only load if it's today's challenge
+            if (data.date === dailyChallenge.date) {
+                dailyChallenge.bestTime = data.bestTime;
+                dailyChallenge.completed = data.completed;
+                dailyChallenge.leaderboard = data.leaderboard || [];
+            } else {
+                // New day, reset
+                dailyChallenge.bestTime = null;
+                dailyChallenge.completed = false;
+                dailyChallenge.leaderboard = [];
+            }
         }
+    } catch (e) {
+        console.log('Failed to load daily challenge:', e);
+        dailyChallenge.bestTime = null;
+        dailyChallenge.completed = false;
+        dailyChallenge.leaderboard = [];
     }
 }
 
@@ -3018,6 +3045,11 @@ function startDailyChallenge() {
     gameState.enemiesDodged = 0;
     gameState.fires = [];
     gameState.fireSpawnTimer = 0;
+    // === FLOW SYSTEM: Reset for new run ===
+    gameState.flow = 0;
+    gameState.flowStateActive = false;
+    gameState.lastFlowActionTime = 0;
+    gameState.flowBonusLastFloor = 0;
     gameState.runStartTime = Date.now();
     gameState.runTotalTime = 0;
     gameState.floorTimes = [];
@@ -3128,12 +3160,53 @@ let lastMove = 0;
 const MOVE_DELAY = 100; // Reduced from 150ms for snappier, more precise movement
 const HOLD_THRESHOLD = 180; // Must hold key this long (ms) before continuous movement kicks in
 
+// ============================================
+// FLOW SYSTEM (Momentum Meter)
+// ============================================
+const FLOW_MAX = 100;
+const FLOW_GAIN_MOVE = 6;
+const FLOW_GAIN_DASH = 10;
+const FLOW_DECAY_PER_SEC = 12;
+const FLOW_IDLE_GRACE_MS = 600;
+
+function addFlow(amount) {
+    if (!gameState || gameState.gameOver || gameState.won) return;
+    gameState.flow = Math.min(FLOW_MAX, (gameState.flow || 0) + amount);
+    gameState.lastFlowActionTime = Date.now();
+    if (gameState.flow >= FLOW_MAX && !gameState.flowStateActive) {
+        gameState.flowStateActive = true;
+        showCelebration('flowState');
+    }
+}
+
+function breakFlow() {
+    if (!gameState) return;
+    gameState.flow = 0;
+    gameState.flowStateActive = false;
+}
+
+function updateFlow(deltaTime) {
+    if (!gameState || !gameState.started || gameState.gameOver || gameState.won) return;
+    const now = Date.now();
+    const lastAction = gameState.lastFlowActionTime || 0;
+    if (now - lastAction > FLOW_IDLE_GRACE_MS) {
+        const decay = FLOW_DECAY_PER_SEC * deltaTime;
+        gameState.flow = Math.max(0, (gameState.flow || 0) - decay);
+        if (gameState.flow < FLOW_MAX) gameState.flowStateActive = false;
+    }
+}
+
 // Calculate effective move delay with perks and powerups
 function getEffectiveMoveDelay() {
     let delay = MOVE_DELAY;
     if (gameState && gameState.perks && gameState.perks.includes('speedBoost')) delay *= 0.75; // 25% faster
     if (gameState && gameState.powerup === 'speed') delay *= 0.5; // Speed powerup stacks
+    if (gameState && gameState.powerup === 'overclock') delay *= 0.4; // Panic speed boost
     if (gameState && gameState.playerSlowed) delay *= 1.5; // Coffee spill slow effect
+    if (gameState && gameState.flow) {
+        const flowBoost = Math.min(gameState.flow, FLOW_MAX) / FLOW_MAX;
+        delay *= (1 - (flowBoost * 0.2)); // Up to 20% faster at full flow
+    }
     return delay;
 }
 
@@ -3659,6 +3732,7 @@ let lastTouchActionTime = 0;
 function initTouchControls() {
     const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
     const controls = document.getElementById('touchControls');
+    const supportsPointer = 'PointerEvent' in window;
     if (controls && hasTouch) {
         controls.style.display = 'flex';
         controls.style.pointerEvents = 'auto';
@@ -3676,16 +3750,19 @@ function initTouchControls() {
             setState(true);
         };
         const end = (e) => { e.preventDefault(); setState(false); };
-        el.addEventListener('touchstart', start, { passive: false });
-        el.addEventListener('touchend', end, { passive: false });
-        el.addEventListener('touchcancel', end, { passive: false });
-        el.addEventListener('pointerdown', start);
-        el.addEventListener('pointerup', end);
-        el.addEventListener('pointercancel', end);
-        el.addEventListener('pointerleave', end);
-        el.addEventListener('mousedown', start);
-        el.addEventListener('mouseup', end);
-        el.addEventListener('mouseleave', end);
+        if (supportsPointer) {
+            el.addEventListener('pointerdown', start);
+            el.addEventListener('pointerup', end);
+            el.addEventListener('pointercancel', end);
+            el.addEventListener('pointerleave', end);
+        } else {
+            el.addEventListener('touchstart', start, { passive: false });
+            el.addEventListener('touchend', end, { passive: false });
+            el.addEventListener('touchcancel', end, { passive: false });
+            el.addEventListener('mousedown', start);
+            el.addEventListener('mouseup', end);
+            el.addEventListener('mouseleave', end);
+        }
     };
 
     const bindTap = (id, handler) => {
@@ -3698,9 +3775,12 @@ function initTouchControls() {
             lastTouchActionTime = now;
             handler();
         };
-        el.addEventListener('touchstart', tap, { passive: false });
-        el.addEventListener('pointerdown', tap);
-        el.addEventListener('mousedown', tap);
+        if (supportsPointer) {
+            el.addEventListener('pointerdown', tap);
+        } else {
+            el.addEventListener('touchstart', tap, { passive: false });
+            el.addEventListener('mousedown', tap);
+        }
     };
 
     bindHold('touchUp', (v) => { touchState.up = v; });
@@ -4028,6 +4108,9 @@ const CELEBRATIONS = {
     decoyExpired: { text: '👤 DECOY GONE', color: '#666' },
     invincibility: { text: '⭐ INVINCIBLE!', color: '#ffd700' },
     ghostWalk: { text: '👻 GHOST WALK!', color: '#64b4ff' },
+    overclock: { text: '🚨 OVERCLOCK!', color: '#ff6b6b' },
+    flowState: { text: 'FLOW STATE!', color: '#6ee7de' },
+    flowBonus: { text: '+{seconds}s FLOW BONUS!', color: '#6ee7de' },
     // === ENVIRONMENTAL HAZARD CELEBRATIONS ===
     shocked: { text: '⚡ SHOCKED!', color: '#ffff00' },
     paperJam: { text: '📄 PAPER JAM!', color: '#ffffff' },
@@ -4479,6 +4562,9 @@ function saveGameState() {
         timer: gameState.timer,
         powerup: gameState.powerup,
         powerupTimer: gameState.powerupTimer,
+        flow: gameState.flow || 0,
+        flowStateActive: gameState.flowStateActive || false,
+        flowBonusLastFloor: gameState.flowBonusLastFloor || 0,
         player: { ...gameState.player },
         enemies: gameState.enemies.map(e => ({ ...e })),
         enemiesKnockedOut: gameState.enemiesKnockedOut,
@@ -4551,6 +4637,9 @@ function resumeGame() {
     gameState.timer = saveData.timer;
     gameState.powerup = saveData.powerup;
     gameState.powerupTimer = saveData.powerupTimer;
+    gameState.flow = saveData.flow || 0;
+    gameState.flowStateActive = saveData.flowStateActive || false;
+    gameState.flowBonusLastFloor = saveData.flowBonusLastFloor || 0;
     gameState.player.x = saveData.player.x;
     gameState.player.y = saveData.player.y;
     gameState.player.hitCount = saveData.player.hitCount || 0;
@@ -6046,15 +6135,20 @@ function initLevel() {
             } else if (gameState.floor <= 7 && roll < 0.25) {
                 // 17% chance for limited powerups on floors 7-1
                 powerupType = gameRandom() < 0.5 ? 'timeFreeze' : 'coinMagnet';
+            } else if (gameState.floor <= 10 && gameState.floor >= 8 && roll < 0.2) {
+                // Panic pickup on floors 10-8: huge speed, no punches
+                powerupType = 'overclock';
             } else {
                 // Regular powerups
                 const speedMult = weeklyMods && weeklyMods.speedPowerupMultiplier ? weeklyMods.speedPowerupMultiplier : 1;
-                const weights = [speedMult, 1, 1];
-                const total = weights[0] + weights[1] + weights[2];
+                const overclockWeight = gameState.floor <= 10 ? 0.4 : 0;
+                const weights = [speedMult, 1, 1, overclockWeight];
+                const total = weights[0] + weights[1] + weights[2] + weights[3];
                 const rollPick = gameRandom() * total;
                 if (rollPick < weights[0]) powerupType = 'speed';
                 else if (rollPick < weights[0] + weights[1]) powerupType = 'knockout';
-                else powerupType = 'electric';
+                else if (rollPick < weights[0] + weights[1] + weights[2]) powerupType = 'electric';
+                else powerupType = 'overclock';
             }
 
             gameState.powerups.push({
@@ -6479,6 +6573,8 @@ function getPowerupOverlayColor(powerupType, stunned) {
             return 'rgba(231, 76, 60, 0.25)';   // Red tint
         case 'electric':
             return 'rgba(241, 196, 15, 0.25)';  // Yellow tint
+        case 'overclock':
+            return 'rgba(255, 107, 107, 0.25)';  // Hot red tint
         default:
             return null;
     }
@@ -6797,7 +6893,7 @@ function drawPlayer() {
     const spriteDrawn = drawCharacterSprite(x, y, facingRight, powerupOverlay);
 
     // Draw enhanced speed trail (works with both sprite and procedural)
-    drawCharacterSpeedTrail(x, y, gameState.powerup === 'speed');
+    drawCharacterSpeedTrail(x, y, gameState.powerup === 'speed' || gameState.powerup === 'overclock');
 
     // Fall back to procedural rendering if sprite not available
     if (!spriteDrawn) {
@@ -7839,6 +7935,11 @@ function drawPowerup(powerup) {
         img = powerupImages.electric;
         glowColor = 'rgba(241, 196, 15, 0.6)';
         shadowColor = '#f1c40f';
+    } else if (powerup.type === 'overclock') {
+        img = powerupImages.overclock;
+        glowColor = 'rgba(255, 107, 107, 0.7)';
+        shadowColor = '#ff6b6b';
+        drawFallback = true;
     } else if (powerup.type === 'shield') {
         img = powerupImages.shield;
         glowColor = 'rgba(76, 175, 80, 0.6)';
@@ -8277,6 +8378,25 @@ function drawCollectingPowerups() {
         ctx.arc(0, 0, TILE_SIZE / 6, 0, Math.PI * 2);
         ctx.fill();
 
+        ctx.restore();
+    } else if (powerup.type === 'overclock') {
+        // Fallback: Red warning diamond with bolt
+        const cx = x + TILE_SIZE / 2;
+        const cy = y + TILE_SIZE / 2 + bounce;
+        ctx.save();
+        ctx.fillStyle = '#ff6b6b';
+        ctx.translate(cx, cy);
+        ctx.rotate(Math.PI / 4);
+        ctx.fillRect(-10, -10, 20, 20);
+        ctx.rotate(-Math.PI / 4);
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-3, -8);
+        ctx.lineTo(2, -2);
+        ctx.lineTo(-1, -2);
+        ctx.lineTo(4, 6);
+        ctx.stroke();
         ctx.restore();
     }
 }
@@ -9153,6 +9273,21 @@ function updateHUD() {
         coinDisplay.style.color = gameState.coinCombo > 2 ? '#f39c12' : '#f1c40f';
     }
 
+    // === FLOW DISPLAY ===
+    const flowEl = document.getElementById('flow');
+    if (flowEl) {
+        const flowPercent = Math.round(((gameState.flow || 0) / FLOW_MAX) * 100);
+        flowEl.textContent = `FLOW ${flowPercent}%`;
+        if (gameState.flowStateActive) {
+            const pulse = Math.sin(gameState.animationTime * 8) * 0.5 + 0.5;
+            flowEl.style.color = '#9ff3ee';
+            flowEl.style.textShadow = `0 0 ${8 + pulse * 10}px rgba(110, 231, 222, ${0.6 + pulse * 0.4})`;
+        } else {
+            flowEl.style.color = '#6ee7de';
+            flowEl.style.textShadow = 'none';
+        }
+    }
+
     let powerupText = 'None';
     let powerupExpiring = false; // Track if any powerup is about to expire
 
@@ -9178,6 +9313,9 @@ function updateHUD() {
     } else if (gameState.powerup === 'ghost') {
         powerupText = `👻 GHOST ${gameState.powerupTimer.toFixed(1)}s`;
         powerupExpiring = gameState.powerupTimer <= 1.5; // Shorter warning for shorter powerup
+    } else if (gameState.powerup === 'overclock') {
+        powerupText = `🚨 OVERCLOCK ${gameState.powerupTimer.toFixed(1)}s`;
+        powerupExpiring = gameState.powerupTimer <= 2;
     } else if (gameState.player.invincible > 0) {
         powerupText = `⭐ INVINCIBLE ${gameState.player.invincible.toFixed(1)}s`;
         powerupExpiring = gameState.player.invincible <= 3;
@@ -10286,6 +10424,7 @@ function handlePlayerEnemyCollision(enemy) {
         gameState.powerup = null;
         gameState.powerupTimer = 0;
         playerProgress.wasHitThisRun = true; // Track for perfect run
+        breakFlow();
         // Mark enemy as having just attacked (cooldown)
         enemy.lastAttackTime = Date.now();
         // Push enemy away so player isn't stuck
@@ -10307,6 +10446,7 @@ function handlePlayerEnemyCollision(enemy) {
         const stunDuration = getStunDuration(gameState.player.hitCount);
         gameState.player.stunned = stunDuration;
         playerProgress.wasHitThisRun = true; // Track for perfect run
+        breakFlow();
 
         // === KILL STREAK RESET: Getting hit breaks your streak ===
         if (gameState.killStreak >= 3) {
@@ -10380,6 +10520,7 @@ function movePlayer(dx, dy) {
 
         // Trigger stretch animation on movement start (Super Meat Boy feel)
         triggerStretch();
+        addFlow(FLOW_GAIN_MOVE);
 
         // Check secret exit on floor 7 (rebalanced from floor 13)
         if (gameState.floor === 7 && gameState.secretExit) {
@@ -10599,6 +10740,14 @@ function movePlayer(dx, dy) {
                     `;
                     document.body.appendChild(flash);
                     setTimeout(() => flash.remove(), 500);
+                    playerStats.powerupsCollected++;
+                    saveStats();
+                } else if (pu.type === 'overclock') {
+                    // OVERCLOCK - Huge speed boost, but no punching
+                    gameState.powerup = 'overclock';
+                    gameState.powerupTimer = 6;
+                    showCelebration('overclock');
+                    screenShake.trigger(6, 0.2);
                     playerStats.powerupsCollected++;
                     saveStats();
                 } else if (pu.type === 'ghost') {
@@ -10901,6 +11050,7 @@ function performDash() {
         gameState.player.isDashing = false;
     }, DASH_SPEED * dashDistance * 1000);
 
+    addFlow(FLOW_GAIN_DASH);
     return true;
 }
 
@@ -10910,6 +11060,7 @@ function performPunch() {
     // Can't punch if on cooldown or stunned
     if (gameState.player.punchCooldown > 0) return false;
     if (gameState.player.stunned > 0) return false;
+    if (gameState.powerup === 'overclock') return false;
 
     // Apply perk modifiers
     let punchRange = PUNCH_RANGE;
@@ -11815,6 +11966,17 @@ function nextFloor() {
         gameState.floorTimes.push({ floor: gameState.floor, time: floorTime });
     }
 
+    // === FLOW BONUS: Reward clean momentum on exit ===
+    const flowBonus = Math.floor(((gameState.flow || 0) / FLOW_MAX) * 4);
+    gameState.flowBonusLastFloor = flowBonus;
+    if (flowBonus > 0) {
+        gameState.timer += flowBonus;
+        showCelebration('flowBonus', { seconds: flowBonus });
+    }
+    // Spend some flow on the bonus to keep the loop dynamic
+    gameState.flow = Math.max(0, (gameState.flow || 0) - 40);
+    gameState.flowStateActive = false;
+
     // Check for celebration triggers before advancing
     checkCelebrationTriggers('floorComplete');
 
@@ -11893,9 +12055,15 @@ function nextFloor() {
 function showEndlessLevelTransition(floor) {
     const transition = document.getElementById('levelTransition');
     const floorNum = document.getElementById('nextFloorNum');
+    const flowBonusEl = document.getElementById('flowBonus');
 
     // Display floor as negative (descending into the abyss)
     floorNum.textContent = `-${floor}`;
+    if (flowBonusEl) {
+        flowBonusEl.textContent = gameState.flowBonusLastFloor > 0
+            ? `FLOW BONUS +${gameState.flowBonusLastFloor}s`
+            : '';
+    }
 
     // Set random atmospheric background
     const bg = getRandomBackground('levelTransition');
@@ -12240,7 +12408,13 @@ const transitionParticles = {
 function showLevelTransition(floor) {
     const transition = document.getElementById('levelTransition');
     const floorNum = document.getElementById('nextFloorNum');
+    const flowBonusEl = document.getElementById('flowBonus');
     floorNum.textContent = floor;
+    if (flowBonusEl) {
+        flowBonusEl.textContent = gameState.flowBonusLastFloor > 0
+            ? `FLOW BONUS +${gameState.flowBonusLastFloor}s`
+            : '';
+    }
 
     // Set random atmospheric background
     const bg = getRandomBackground('levelTransition');
@@ -12273,13 +12447,13 @@ function showLevelTransition(floor) {
 }
 
 // === PERK SELECTION UI ===
-// Flat pricing by rarity - clean round numbers, no inflation
+// Flat pricing by rarity - legendary/ultimate are premium (1-2 per run max)
 const PERK_PRICES = {
     common: 50,
     rare: 100,
     epic: 200,
-    legendary: 400,
-    ultimate: 600  // New tier for late-game
+    legendary: 800,   // Requires dedicated coin saving
+    ultimate: 1200    // True endgame purchase
 };
 
 // Simple pricing - flat rates with optional Penny Pincher discount
@@ -12959,6 +13133,10 @@ function instantRestart() {
     gameState.runStartTime = Date.now();
     gameState.runTotalTime = 0;
     gameState.floorTimes = [];
+    gameState.flow = 0;
+    gameState.flowStateActive = false;
+    gameState.lastFlowActionTime = 0;
+    gameState.flowBonusLastFloor = 0;
     playerProgress.wasHitThisRun = false;
 
     // Reset ghost recording
@@ -13416,6 +13594,7 @@ function showMessage(title, text, isWin) {
 
 function update(deltaTime) {
     gameState.animationTime += deltaTime;
+    updateFlow(deltaTime);
 
     // Update character animation state - reset isMoving if player hasn't moved recently
     if (characterAnimationState.player.lastMoveTime &&
@@ -13831,7 +14010,7 @@ function update(deltaTime) {
 
     if (gameState.powerupTimer > 0) {
         gameState.powerupTimer -= deltaTime;
-        if (gameState.powerupTimer <= 0 && (gameState.powerup === 'speed' || gameState.powerup === 'electric')) {
+        if (gameState.powerupTimer <= 0 && (gameState.powerup === 'speed' || gameState.powerup === 'electric' || gameState.powerup === 'overclock')) {
             AudioManager.play('powerupExpire'); // Power-down sound
             Haptics.pulse('powerupExpire', 0.2, 0.35, 90, 200);
             gameState.powerup = null;
