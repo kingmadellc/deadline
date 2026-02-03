@@ -1721,24 +1721,16 @@ function getBaseMapHeightForFloor(floor) {
     return 30;
 }
 
-// Get map dimensions based on floor number and current aspect ratio
+// Get map dimensions based on floor number
+// DESIGN DECISION: Mazes are always SQUARE for authentic skyscraper feel
+// The widescreen canvas shows more atmospheric space around the square maze
 function getMapDimensionsForFloor(floor) {
-    const baseHeight = getBaseMapHeightForFloor(floor);
-    const aspectRatio = getCurrentAspectRatio();
-
-    let width;
-    if (aspectRatio === '16:9') {
-        // 16:9 widescreen - wider maps (use floor to avoid canvas overflow)
-        width = Math.floor(baseHeight * 16 / 9);
-    } else if (aspectRatio === '16:10') {
-        // 16:10 (Steam Deck) - slightly wider maps (use floor to avoid canvas overflow)
-        width = Math.floor(baseHeight * 16 / 10);
-    } else {
-        // Square (1:1)
-        width = baseHeight;
-    }
-
-    return { width, height: baseHeight };
+    const baseSize = getBaseMapHeightForFloor(floor);
+    // Keep mazes square - highrises have square floor plates
+    // Slight random variation per floor for authenticity (±1 tile)
+    const variation = Math.floor(gameRandom() * 3) - 1; // -1, 0, or +1
+    const size = Math.max(14, baseSize + variation);
+    return { width: size, height: size };
 }
 
 // Legacy function for backwards compatibility
@@ -1791,14 +1783,11 @@ function getMaxFiresForFloor(floor) {
 // ============================================
 
 function getEndlessMapDimensions(floor) {
-    const baseHeight = 22;
+    const baseSize = 22;
     const floorFactor = Math.floor(Math.log2(floor + 1) * 3);
-    const height = Math.min(baseHeight + floorFactor, ENDLESS_MODE_CONFIG.maxMapSize);
-    const aspectRatio = getCurrentAspectRatio();
-    let width = height;
-    if (aspectRatio === '16:9') width = Math.floor(height * 16 / 9);
-    if (aspectRatio === '16:10') width = Math.floor(height * 16 / 10);
-    return { width, height };
+    const size = Math.min(baseSize + floorFactor, ENDLESS_MODE_CONFIG.maxMapSize);
+    // Keep endless mazes square too for consistent feel
+    return { width: size, height: size };
 }
 
 function getEndlessTimer(floor) {
@@ -12326,6 +12315,12 @@ function showPerkSelection(floor) {
     `;
 
     perkScreen.style.display = 'flex';
+
+    // Reset gamepad navigation to pick up the new perk screen
+    // This ensures controller can navigate perk cards immediately
+    menuNavigation.enabled = false;
+    menuNavigation.buttons = [];
+    menuNavigation.currentIndex = 0;
 
     // Add click/keyboard handlers to perk cards for gamepad/keyboard navigation
     perkScreen.querySelectorAll('.perk-card').forEach(card => {
