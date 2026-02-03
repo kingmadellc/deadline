@@ -2384,6 +2384,31 @@ const PERKS = {
         icon: '💢',
         category: 'punch',
         rarity: 'legendary'
+    },
+    // === ULTIMATE PERKS (Floors 3-1 only, expensive for coin savers) ===
+    unstoppable: {
+        id: 'unstoppable',
+        name: 'Unstoppable',
+        description: 'Immune to stuns and knockbacks. Walk through fire unharmed.',
+        icon: '🦾',
+        category: 'passive',
+        rarity: 'ultimate'
+    },
+    chronoShift: {
+        id: 'chronoShift',
+        name: 'Chrono Shift',
+        description: 'Time slows 50% when timer drops below 10s',
+        icon: '⏱️',
+        category: 'passive',
+        rarity: 'ultimate'
+    },
+    vaultMaster: {
+        id: 'vaultMaster',
+        name: 'Vault Master',
+        description: 'Triple coins from ALL sources. +100 starting coins next floor.',
+        icon: '💎',
+        category: 'passive',
+        rarity: 'ultimate'
     }
 };
 
@@ -2392,7 +2417,8 @@ const PERK_TIER_UNLOCK = {
     common: 13,    // Available from floor 13 (start)
     rare: 10,      // Unlock at floor 10 or below
     epic: 7,       // Unlock at floor 7 or below
-    legendary: 4   // Unlock at floor 4 or below
+    legendary: 4,  // Unlock at floor 4 or below
+    ultimate: 3    // Unlock at floor 3 or below (expensive late-game perks)
 };
 
 // Get number of shop slots based on floor (more choices on later floors)
@@ -5762,6 +5788,23 @@ function initLevel() {
     gameState.player.shielded = 0;
     gameState.player.companion = null;
 
+    // === PERK EFFECTS: Apply perks that activate at floor start ===
+    // Safety First: Start each floor with a shield
+    if (gameState.perks.includes('shieldStart')) {
+        gameState.player.shielded = 5;
+    }
+    // Head Start / Time Lord: Bonus time at floor start
+    if (gameState.perks.includes('startTime')) {
+        gameState.timer += 5;
+    }
+    if (gameState.perks.includes('timeLord')) {
+        gameState.timer += 10;
+    }
+    // Vault Master: +100 starting coins each floor
+    if (gameState.perks.includes('vaultMaster')) {
+        gameState.coinsCollected += 100;
+    }
+
     // Add cafeteria on floors 10, 7, 4 (rebalanced for 13-floor game)
     if (gameState.floor === 10 || gameState.floor === 7 || gameState.floor === 4) {
         gameState.zones.cafeteria = addCafeteria(gameState.maze);
@@ -9101,11 +9144,12 @@ function updateHUD() {
         timerEl.style.color = gameState.timer <= 5 ? '#e94560' : '#ff6b6b';
     }
 
-    // === NEW: Coin display with combo indicator ===
+    // === Coin display shows spendable currency (real-time) ===
     const coinDisplay = document.getElementById('coinDisplay');
     if (coinDisplay) {
         const comboText = gameState.coinCombo > 1 ? ` x${gameState.coinCombo}` : '';
-        coinDisplay.textContent = `🪙 ${gameState.coinsCollectedCount || 0}${comboText}`;
+        // Show coinsCollected (the actual currency value) not the count
+        coinDisplay.textContent = `🪙 ${gameState.coinsCollected || 0}${comboText}`;
         coinDisplay.style.color = gameState.coinCombo > 2 ? '#f39c12' : '#f1c40f';
     }
 
@@ -9879,12 +9923,15 @@ function updateFires(deltaTime) {
         if (fire.age > size3Threshold && fire.size < 3) fire.size = 3;
 
         // Check if player is on fire (skip player-created fires)
+        // Unstoppable perk: immune to fire damage
         if (fire.x === gameState.player.x && fire.y === gameState.player.y && !fire.isPlayerFire) {
-            // Player is BURNING!
-            if (gameState.player.burning <= 0) {
-                gameState.player.burning = 2.0;  // 2 seconds of burn
-                playerStats.timesBurned++;
-                Haptics.pulse('burn', 0.6, 0.4, 140, 200);
+            if (!gameState.perks.includes('unstoppable')) {
+                // Player is BURNING!
+                if (gameState.player.burning <= 0) {
+                    gameState.player.burning = 2.0;  // 2 seconds of burn
+                    playerStats.timesBurned++;
+                    Haptics.pulse('burn', 0.6, 0.4, 140, 200);
+                }
             }
         }
 
@@ -10146,6 +10193,14 @@ function handlePlayerEnemyCollision(enemy) {
     // No collision effects in bathroom
     if (inBathroom) return;
 
+    // === UNSTOPPABLE PERK - Immune to stuns and knockbacks ===
+    if (gameState.perks.includes('unstoppable')) {
+        // Push enemy away but player is unaffected
+        enemy.stunned = 1.0;
+        pushEnemyAway(enemy, gameState.player.x, gameState.player.y);
+        return;
+    }
+
     // === DASH INVINCIBILITY - Player phases through enemies during dash ===
     if (gameState.player.dashInvincible > 0) {
         // Player dashed through enemy - bonus style points!
@@ -10386,8 +10441,10 @@ function movePlayer(dx, dy) {
                 coin.collecting = true;
                 coin.collectScale = 1.3; // Pop up
                 coin.collectAlpha = 1.0;
-                // Lucky Coins perk: double coin value
-                const coinMultiplier = gameState.perks.includes('luckyCoins') ? 2 : 1;
+                // Coin multiplier perks: Vault Master (3x) > Lucky Coins (2x)
+                let coinMultiplier = 1;
+                if (gameState.perks.includes('vaultMaster')) coinMultiplier = 3;
+                else if (gameState.perks.includes('luckyCoins')) coinMultiplier = 2;
                 gameState.coinsCollected += coin.value * coinMultiplier;
                 gameState.coinsCollectedCount++;
 
@@ -10813,8 +10870,10 @@ function performDash() {
             const coin = gameState.coins[j];
             if (!coin.collected && coin.x === checkX && coin.y === checkY) {
                 coin.collected = true;
-                // Lucky Coins perk: double coin value
-                const coinMultiplier = gameState.perks.includes('luckyCoins') ? 2 : 1;
+                // Coin multiplier perks: Vault Master (3x) > Lucky Coins (2x)
+                let coinMultiplier = 1;
+                if (gameState.perks.includes('vaultMaster')) coinMultiplier = 3;
+                else if (gameState.perks.includes('luckyCoins')) coinMultiplier = 2;
                 gameState.coinsCollected += coin.value * coinMultiplier;
                 gameState.coinsCollectedCount++;
                 gameState.coinCombo++;
@@ -12214,26 +12273,25 @@ function showLevelTransition(floor) {
 }
 
 // === PERK SELECTION UI ===
-// Base shop pricing by rarity (before inflation)
-const BASE_PERK_PRICES = {
+// Flat pricing by rarity - clean round numbers, no inflation
+const PERK_PRICES = {
     common: 50,
     rare: 100,
     epic: 200,
-    legendary: 350
+    legendary: 400,
+    ultimate: 600  // New tier for late-game
 };
 
-// Dynamic pricing with inflation - prices increase as player descends
-// Formula: 1.0x at floor 13 → ~1.8x at floor 1
+// Simple pricing - flat rates with optional Penny Pincher discount
 function getPerkPrice(rarity, floor) {
-    const basePrice = BASE_PERK_PRICES[rarity] || 100;
-    const inflationMultiplier = 1 + (13 - floor) * 0.067; // +6.7% per floor descended
-    // Check if player has coinHoarder perk for discount
+    const basePrice = PERK_PRICES[rarity] || 100;
+    // Penny Pincher perk gives 15% discount
     const discount = gameState.perks.includes('coinHoarder') ? 0.85 : 1.0;
-    return Math.floor(basePrice * inflationMultiplier * discount);
+    return Math.round(basePrice * discount);
 }
 
 // Legacy constant for backwards compatibility
-const PERK_PRICES = BASE_PERK_PRICES;
+const BASE_PERK_PRICES = PERK_PRICES;
 
 function showPerkSelection(floor) {
     // Create perk selection overlay if it doesn't exist
@@ -12256,7 +12314,8 @@ function showPerkSelection(floor) {
         common: '#4ecdc4',
         rare: '#9b59b6',
         epic: '#f39c12',
-        legendary: '#ffd700'
+        legendary: '#ffd700',
+        ultimate: '#ff1493'  // Hot pink for ultimate tier
     };
 
     // Dynamic card width based on number of perks
@@ -12279,7 +12338,7 @@ function showPerkSelection(floor) {
                     tabindex="${canAfford ? '0' : '-1'}"
                     style="
                     background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-                    border: 3px solid ${canAfford ? rarityColors[perk.rarity] : '#444'};
+                    border: 3px solid ${canAfford ? rarityColors[perk.rarity] || '#4ecdc4' : '#444'};
                     border-radius: 15px;
                     padding: 20px;
                     width: ${cardWidth};
@@ -12288,9 +12347,10 @@ function showPerkSelection(floor) {
                     text-align: center;
                     opacity: ${canAfford ? 1 : 0.5};
                     ${perk.rarity === 'legendary' ? 'box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);' : ''}
+                    ${perk.rarity === 'ultimate' ? 'box-shadow: 0 0 30px rgba(255, 20, 147, 0.5); animation: ultimate-pulse 1.5s ease-in-out infinite;' : ''}
                 ">
                     <div style="font-size: 40px; margin-bottom: 12px;">${perk.icon}</div>
-                    <div style="color: ${canAfford ? rarityColors[perk.rarity] : '#666'}; font-size: 10px; text-transform: uppercase; margin-bottom: 6px; ${perk.rarity === 'legendary' ? 'text-shadow: 0 0 10px #ffd700;' : ''}">${perk.rarity}</div>
+                    <div style="color: ${canAfford ? rarityColors[perk.rarity] || '#4ecdc4' : '#666'}; font-size: 10px; text-transform: uppercase; margin-bottom: 6px; ${perk.rarity === 'legendary' ? 'text-shadow: 0 0 10px #ffd700;' : ''}${perk.rarity === 'ultimate' ? 'text-shadow: 0 0 15px #ff1493; font-weight: bold;' : ''}">${perk.rarity}</div>
                     <div style="color: #fff; font-size: 16px; font-weight: bold; margin-bottom: 8px;">${perk.name}</div>
                     <div style="color: #aaa; font-size: 12px; line-height: 1.3;">${perk.description}</div>
                     <div style="margin-top: 12px; color: ${canAfford ? '#f1c40f' : '#666'}; font-size: 13px; font-weight: bold;">${price} coins</div>
@@ -13438,7 +13498,9 @@ function update(deltaTime) {
         const speedMultiplier = settings.gameSpeed || 1.0;
         // === SLOW-MO: Timer ticks slower during slow-mo (player advantage) ===
         const slowMoMultiplier = gameState.slowMoActive ? gameState.slowMoFactor : 1.0;
-        gameState.timer -= deltaTime * cafeteriaMultiplier * burnMultiplier * speedMultiplier * slowMoMultiplier;
+        // === CHRONO SHIFT PERK: Time slows 50% when timer is below 10s ===
+        const chronoShiftMultiplier = (gameState.perks.includes('chronoShift') && gameState.timer <= 10 && gameState.timer > 0) ? 0.5 : 1.0;
+        gameState.timer -= deltaTime * cafeteriaMultiplier * burnMultiplier * speedMultiplier * slowMoMultiplier * chronoShiftMultiplier;
     }
 
     // Update celebrations
@@ -13549,7 +13611,10 @@ function update(deltaTime) {
                     // Auto-collect if reached player
                     if (coin.x === gameState.player.x && coin.y === gameState.player.y) {
                         coin.collected = true;
-                        const coinMultiplier = gameState.perks.includes('luckyCoins') ? 2 : 1;
+                        // Coin multiplier perks: Vault Master (3x) > Lucky Coins (2x)
+                        let coinMultiplier = 1;
+                        if (gameState.perks.includes('vaultMaster')) coinMultiplier = 3;
+                        else if (gameState.perks.includes('luckyCoins')) coinMultiplier = 2;
                         gameState.coinsCollected += coin.value * coinMultiplier;
                         gameState.coinsCollectedCount++;
 
