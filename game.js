@@ -623,17 +623,19 @@ function getDeviceProfileInfo() {
     const isAndroid = /Android/i.test(ua);
     const isMobile = isIOS || isAndroid || ('ontouchstart' in window && screenWidth < 900);
 
+    // Detect handheld gaming devices by screen characteristics
+    const isHandheld1080p = (screenWidth >= 1920 && screenHeight >= 1080 && 'ontouchstart' in window && !isIOS && !isAndroid);
+
     if (isIOS) {
         return { label: 'iPhone/iPad (iOS)', suggested: autoDetectResolution() };
     }
-    // Asus ROG Ally and Ally X detection
-    if (/ROG Ally|ASUS.*Ally/i.test(ua)) {
-        const suggested = (screenHeight >= 1080 && dpr <= 1.5) ? '1920x1080' : '1280x720';
-        return { label: 'Asus ROG Ally', suggested };
+    // Asus ROG Ally and Ally X detection (explicit UA match)
+    if (/ROG Ally|ASUS/i.test(ua) && screenWidth >= 1920) {
+        return { label: 'Asus ROG Ally/Ally X', suggested: '1920x1080' };
     }
-    // Generic Asus handheld detection (Ally X may not have "ROG" in UA)
-    if (/ASUS/i.test(ua) && screenWidth >= 1920 && aspectRatio >= 1.7) {
-        return { label: 'Asus Ally X', suggested: '1920x1080' };
+    // Generic 1080p handheld detection (Ally X, other gaming handhelds)
+    if (isHandheld1080p && aspectRatio >= 1.7) {
+        return { label: 'Gaming Handheld (1080p)', suggested: '1920x1080' };
     }
     if (/Steam Deck/i.test(ua)) {
         return { label: 'Steam Deck', suggested: '1280x800' };
@@ -1650,8 +1652,16 @@ function autoDetectResolution() {
     const isAndroid = /Android/i.test(ua);
     const isMobile = isIOS || isAndroid || ('ontouchstart' in window && screenWidth < 900);
 
-    // Asus ROG Ally / Ally X detection (1920x1080 native)
-    if (/ROG Ally|ASUS.*Ally|ASUS/i.test(ua) && screenWidth >= 1920 && aspectRatio >= 1.7) {
+    // Handheld gaming device detection (Ally X, ROG Ally, Steam Deck, etc.)
+    // These devices have high-res screens in small form factors
+    const isHandheld = (
+        /ROG Ally|ASUS|Steam Deck/i.test(ua) ||
+        // Fallback: detect by screen characteristics (1080p+ with touch, not phone-sized)
+        (screenWidth >= 1920 && screenHeight >= 1080 && 'ontouchstart' in window && !isIOS && !isAndroid)
+    );
+
+    // Asus ROG Ally / Ally X / similar 1080p handhelds
+    if (isHandheld && screenWidth >= 1920 && aspectRatio >= 1.7) {
         return '1920x1080';
     }
 
@@ -1661,14 +1671,17 @@ function autoDetectResolution() {
         return '640x640';
     }
 
-    // Detect widescreen aspect ratios
+    // Detect widescreen aspect ratios (16:9)
     if (aspectRatio >= 1.7 && aspectRatio <= 1.8) {
-        // 16:9 aspect ratio (ROG Ally, Ally X, standard monitors)
-        if (screenWidth >= 1920 && screenHeight >= 1080 && dpr <= 1.5) return '1920x1080';
+        // Full HD or higher - use 1920x1080
+        if (screenWidth >= 1920 && screenHeight >= 1080) return '1920x1080';
+        // HD - use 1280x720
         if (screenHeight >= 720) return '1280x720';
         return '1280x720';
-    } else if (aspectRatio >= 1.55 && aspectRatio < 1.7) {
-        // 16:10 aspect ratio (Steam Deck)
+    }
+
+    // 16:10 aspect ratio (Steam Deck, some laptops)
+    if (aspectRatio >= 1.55 && aspectRatio < 1.7) {
         return '1280x800';
     }
 
@@ -1686,19 +1699,19 @@ function autoDetectResolution() {
     return bestRes;
 }
 
-// Get base map height based on floor number - INCREASED DIFFICULTY (rebalanced for 13 floors)
+// Get base map height based on floor number - balanced for readability on handhelds
 function getBaseMapHeightForFloor(floor) {
-    // DIFFICULTY INCREASE: Larger maps throughout, no easy small maps
-    // Floor 13-11: Start at 22 tiles high - challenging from the start
-    if (floor >= 11) return 22;
-    // Floors 10-8: 24 tiles high - medium-large
-    if (floor >= 8) return 24;
-    // Floors 7-5: 26 tiles high - large maps
-    if (floor >= 5) return 26;
-    // Floors 4-2: 28 tiles high - huge maps
-    if (floor >= 2) return 28;
-    // Floor 1: 30 tiles high - massive finale
-    return 30;
+    // Moderate map sizes - readable on handheld devices while still challenging
+    // Floor 13-11: 18 tiles high - comfortable start
+    if (floor >= 11) return 18;
+    // Floors 10-8: 20 tiles high - medium
+    if (floor >= 8) return 20;
+    // Floors 7-5: 22 tiles high - larger
+    if (floor >= 5) return 22;
+    // Floors 4-2: 24 tiles high - big maps
+    if (floor >= 2) return 24;
+    // Floor 1: 26 tiles high - epic finale (but still playable)
+    return 26;
 }
 
 // Get map dimensions based on floor number
