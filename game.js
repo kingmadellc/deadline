@@ -732,6 +732,15 @@ function toggleFullscreen() {
 // Handle fullscreen change events
 document.addEventListener('fullscreenchange', () => {
     displaySettings.fullscreen = !!document.fullscreenElement;
+
+    // When entering fullscreen, auto-detect best resolution for the screen
+    if (document.fullscreenElement) {
+        const bestRes = autoDetectResolution();
+        if (bestRes && bestRes !== displaySettings.currentResolution) {
+            setResolution(bestRes);
+        }
+    }
+
     // Re-fit canvas to use full screen space
     setTimeout(fitCanvasToViewport, 100);
     // Update fullscreen toggle button text
@@ -4009,8 +4018,16 @@ function initTouchControls() {
         controls.style.display = 'flex';
         controls.style.pointerEvents = 'auto';
         controls.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
-        // Show controls when touched anywhere
+        // Show controls when touched anywhere on the controls
         controls.addEventListener('pointerdown', showTouchControls);
+        // Also show controls when touching anywhere on the screen (canvas or document)
+        document.addEventListener('touchstart', showTouchControls, { passive: true });
+        document.addEventListener('pointerdown', (e) => {
+            // Only show on touch/pen input, not mouse
+            if (e.pointerType === 'touch' || e.pointerType === 'pen') {
+                showTouchControls();
+            }
+        });
         controls.addEventListener('touchstart', showTouchControls, { passive: true });
         // Initially show controls
         showTouchControls();
@@ -9055,7 +9072,9 @@ function drawTutorialHint() {
 }
 
 function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Fill entire canvas with dark background (for areas outside the map on widescreen)
+    ctx.fillStyle = COLORS.wallDark || '#1a1a1a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     if (!gameState.started || gameState.maze.length === 0) {
         return;
