@@ -599,9 +599,14 @@ function getDeviceProfileInfo() {
     if (isIOS) {
         return { label: 'iPhone/iPad (iOS)', suggested: autoDetectResolution() };
     }
-    if (/ROG Ally/i.test(ua)) {
+    // Asus ROG Ally and Ally X detection
+    if (/ROG Ally|ASUS.*Ally/i.test(ua)) {
         const suggested = (screenHeight >= 1080 && dpr <= 1.5) ? '1920x1080' : '1280x720';
-        return { label: 'ROG Ally', suggested };
+        return { label: 'Asus ROG Ally', suggested };
+    }
+    // Generic Asus handheld detection (Ally X may not have "ROG" in UA)
+    if (/ASUS/i.test(ua) && screenWidth >= 1920 && aspectRatio >= 1.7) {
+        return { label: 'Asus Ally X', suggested: '1920x1080' };
     }
     if (/Steam Deck/i.test(ua)) {
         return { label: 'Steam Deck', suggested: '1280x800' };
@@ -1618,6 +1623,11 @@ function autoDetectResolution() {
     const isAndroid = /Android/i.test(ua);
     const isMobile = isIOS || isAndroid || ('ontouchstart' in window && screenWidth < 900);
 
+    // Asus ROG Ally / Ally X detection (1920x1080 native)
+    if (/ROG Ally|ASUS.*Ally|ASUS/i.test(ua) && screenWidth >= 1920 && aspectRatio >= 1.7) {
+        return '1920x1080';
+    }
+
     // iOS / mobile browsers: keep internal resolution conservative
     if (isIOS || isMobile) {
         if (Math.min(screenWidth, screenHeight) >= 900 || dpr > 2) return '800x800';
@@ -1626,8 +1636,9 @@ function autoDetectResolution() {
 
     // Detect widescreen aspect ratios
     if (aspectRatio >= 1.7 && aspectRatio <= 1.8) {
-        // 16:9 aspect ratio (ROG Ally, standard monitors)
-        if (screenHeight >= 1080 && dpr <= 1.5) return '1920x1080';
+        // 16:9 aspect ratio (ROG Ally, Ally X, standard monitors)
+        if (screenWidth >= 1920 && screenHeight >= 1080 && dpr <= 1.5) return '1920x1080';
+        if (screenHeight >= 720) return '1280x720';
         return '1280x720';
     } else if (aspectRatio >= 1.55 && aspectRatio < 1.7) {
         // 16:10 aspect ratio (Steam Deck)
@@ -3105,8 +3116,30 @@ function getMenuButtons() {
     const mainSettingsEl = document.getElementById('mainSettingsMenu');
     const howToPlayEl = document.getElementById('howToPlayMenu');
     const dailyChallengeEl = document.getElementById('dailyChallengeMenu');
+    const settingsMenuEl = document.getElementById('settingsMenu');
+    const milestonesMenuEl = document.getElementById('milestonesMenu');
 
-    // Check which menu is visible
+    // Check which menu is visible (order matters - check sub-menus first)
+
+    // Settings menu (Display, Audio, Controls, etc.)
+    if (settingsMenuEl && settingsMenuEl.style.display !== 'none' && settingsMenuEl.offsetParent !== null) {
+        const buttons = [];
+        // Get all interactive elements in settings
+        const interactives = settingsMenuEl.querySelectorAll('button, select, input[type="checkbox"], input[type="range"]');
+        interactives.forEach(el => {
+            if (el.offsetParent !== null && !el.disabled) {
+                buttons.push(el);
+            }
+        });
+        return buttons;
+    }
+
+    // Milestones menu
+    if (milestonesMenuEl && milestonesMenuEl.style.display !== 'none') {
+        return Array.from(milestonesMenuEl.querySelectorAll('button')).filter(btn => btn.offsetParent !== null);
+    }
+
+    // Main settings menu (game modes, etc.)
     if (mainSettingsEl && mainSettingsEl.style.display !== 'none') {
         // Settings menu - get all menu-option-btn buttons plus back button
         const buttons = Array.from(mainSettingsEl.querySelectorAll('.menu-option-btn, .back-btn'));
@@ -3182,11 +3215,15 @@ function updateGamepadMenuNavigation() {
     const mainSettingsEl = document.getElementById('mainSettingsMenu');
     const howToPlayEl = document.getElementById('howToPlayMenu');
     const dailyChallengeEl = document.getElementById('dailyChallengeMenu');
+    const settingsMenuEl = document.getElementById('settingsMenu');
+    const milestonesMenuEl = document.getElementById('milestonesMenu');
 
     const menuVisible = (messageEl && messageEl.style.display !== 'none') ||
                         (mainSettingsEl && mainSettingsEl.style.display !== 'none') ||
                         (howToPlayEl && howToPlayEl.style.display !== 'none') ||
-                        (dailyChallengeEl && dailyChallengeEl.style.display !== 'none');
+                        (dailyChallengeEl && dailyChallengeEl.style.display !== 'none') ||
+                        (settingsMenuEl && settingsMenuEl.style.display !== 'none' && settingsMenuEl.offsetParent !== null) ||
+                        (milestonesMenuEl && milestonesMenuEl.style.display !== 'none');
 
     if (!menuVisible) {
         menuNavigation.enabled = false;
@@ -3235,20 +3272,46 @@ function updateGamepadMenuNavigation() {
     }
     menuNavigation.lastUpDown = upPressed || downPressed;
 
-    // Handle left/right for difficulty slider
+    // Handle left/right for sliders and selects
     const focusedBtn = menuNavigation.buttons[menuNavigation.currentIndex];
-    if (focusedBtn && focusedBtn.id === 'difficultySlider') {
-        if (canNavigate && (leftPressed || rightPressed) && !menuNavigation.lastLeftRight) {
-            const slider = focusedBtn;
-            const currentVal = parseInt(slider.value);
-            if (leftPressed && currentVal > parseInt(slider.min)) {
-                slider.value = currentVal - 1;
-                slider.dispatchEvent(new Event('input'));
-                menuNavigation.lastNavTime = now;
-            } else if (rightPressed && currentVal < parseInt(slider.max)) {
-                slider.value = currentVal + 1;
-                slider.dispatchEvent(new Event('input'));
-                menuNavigation.lastNavTime = now;
+    if (focusedBtn) {
+        const tagName = focusedBtn.tagName.toUpperCase();
+        const inputType = focusedBtn.type ? focusedBtn.type.toLowerCase() : '';
+
+        // Range sliders (difficulty, volume, etc.)
+        if (tagName === 'INPUT' && inputType === 'range') {
+            if (canNavigate && (leftPressed || rightPressed) && !menuNavigation.lastLeftRight) {
+                const slider = focusedBtn;
+                const currentVal = parseInt(slider.value);
+                const step = parseInt(slider.step) || 1;
+                if (leftPressed && currentVal > parseInt(slider.min)) {
+                    slider.value = currentVal - step;
+                    slider.dispatchEvent(new Event('input'));
+                    slider.dispatchEvent(new Event('change'));
+                    menuNavigation.lastNavTime = now;
+                } else if (rightPressed && currentVal < parseInt(slider.max)) {
+                    slider.value = currentVal + step;
+                    slider.dispatchEvent(new Event('input'));
+                    slider.dispatchEvent(new Event('change'));
+                    menuNavigation.lastNavTime = now;
+                }
+            }
+        }
+
+        // Select dropdowns - left/right cycles options
+        if (tagName === 'SELECT') {
+            if (canNavigate && (leftPressed || rightPressed) && !menuNavigation.lastLeftRight) {
+                const currentIndex = focusedBtn.selectedIndex;
+                const optionsCount = focusedBtn.options.length;
+                if (leftPressed && currentIndex > 0) {
+                    focusedBtn.selectedIndex = currentIndex - 1;
+                    focusedBtn.dispatchEvent(new Event('change'));
+                    menuNavigation.lastNavTime = now;
+                } else if (rightPressed && currentIndex < optionsCount - 1) {
+                    focusedBtn.selectedIndex = currentIndex + 1;
+                    focusedBtn.dispatchEvent(new Event('change'));
+                    menuNavigation.lastNavTime = now;
+                }
             }
         }
     }
@@ -3256,14 +3319,31 @@ function updateGamepadMenuNavigation() {
 
     // A button - activate/click the focused button
     if (aButton && !menuNavigation.lastAButton) {
-        if (focusedBtn && focusedBtn.tagName !== 'INPUT') {
-            focusedBtn.click();
-            // Refresh buttons after click (menu may have changed)
-            setTimeout(() => {
-                menuNavigation.buttons = getMenuButtons();
-                menuNavigation.currentIndex = 0;
-                updateMenuFocus();
-            }, 100);
+        if (focusedBtn) {
+            const tagName = focusedBtn.tagName.toUpperCase();
+            const inputType = focusedBtn.type ? focusedBtn.type.toLowerCase() : '';
+
+            if (tagName === 'INPUT' && inputType === 'checkbox') {
+                // Toggle checkbox
+                focusedBtn.checked = !focusedBtn.checked;
+                focusedBtn.dispatchEvent(new Event('change'));
+            } else if (tagName === 'SELECT') {
+                // Cycle through select options
+                const currentIndex = focusedBtn.selectedIndex;
+                const nextIndex = (currentIndex + 1) % focusedBtn.options.length;
+                focusedBtn.selectedIndex = nextIndex;
+                focusedBtn.dispatchEvent(new Event('change'));
+            } else if (tagName === 'INPUT' && inputType === 'range') {
+                // Range sliders handled by left/right, skip A button
+            } else if (tagName === 'BUTTON') {
+                focusedBtn.click();
+                // Refresh buttons after click (menu may have changed)
+                setTimeout(() => {
+                    menuNavigation.buttons = getMenuButtons();
+                    menuNavigation.currentIndex = 0;
+                    updateMenuFocus();
+                }, 100);
+            }
         }
     }
     menuNavigation.lastAButton = aButton;
