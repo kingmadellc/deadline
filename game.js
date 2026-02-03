@@ -3457,6 +3457,25 @@ function updateGamepadMenuNavigation() {
     }
     menuNavigation.lastUpDown = upPressed || downPressed;
 
+    // Handle left/right for perk selection (horizontal layout)
+    if (perkSelectionEl && isElementVisible(perkSelectionEl)) {
+        if (canNavigate && (leftPressed || rightPressed) && !menuNavigation.lastLeftRight) {
+            menuNavigation.buttons = getMenuButtons();
+
+            if (leftPressed && menuNavigation.currentIndex > 0) {
+                menuNavigation.currentIndex--;
+                menuNavigation.lastNavTime = now;
+                updateMenuFocus();
+                Haptics.pulse('menuNav', 0.08, 0.12, 40, 80);
+            } else if (rightPressed && menuNavigation.currentIndex < menuNavigation.buttons.length - 1) {
+                menuNavigation.currentIndex++;
+                menuNavigation.lastNavTime = now;
+                updateMenuFocus();
+                Haptics.pulse('menuNav', 0.08, 0.12, 40, 80);
+            }
+        }
+    }
+
     // Handle left/right for sliders and selects
     const focusedBtn = menuNavigation.buttons[menuNavigation.currentIndex];
     if (focusedBtn) {
@@ -3529,6 +3548,12 @@ function updateGamepadMenuNavigation() {
                     menuNavigation.currentIndex = 0;
                     updateMenuFocus();
                 }, 100);
+            } else if (tagName === 'DIV' && focusedBtn.classList.contains('perk-card')) {
+                // Perk card - click if not disabled
+                if (focusedBtn.dataset.disabled !== 'true') {
+                    focusedBtn.click();
+                    Haptics.pulse('menuSelect', 0.2, 0.25, 60, 120);
+                }
             }
         }
     }
@@ -3545,6 +3570,20 @@ function updateGamepadMenuNavigation() {
                 menuNavigation.currentIndex = 0;
                 updateMenuFocus();
             }, 100);
+        } else {
+            // Fallback actions for screens without back buttons
+            if (pauseScreenEl && isElementVisible(pauseScreenEl)) {
+                // B on pause screen = resume game (click first button which is Resume)
+                const resumeBtn = pauseScreenEl.querySelector('button');
+                if (resumeBtn) {
+                    resumeBtn.click();
+                    Haptics.pulse('menuBack', 0.18, 0.2, 60, 120);
+                }
+            } else if (perkSelectionEl && isElementVisible(perkSelectionEl)) {
+                // B on perk selection = skip shop
+                skipShop();
+                Haptics.pulse('menuBack', 0.18, 0.2, 60, 120);
+            }
         }
     }
     menuNavigation.lastBButton = bButton;
@@ -8497,6 +8536,10 @@ function checkCelebrationTriggers(event, data = {}) {
             break;
         case 'checkpoint':
             showCelebration('checkpoint');
+            Haptics.sequence('checkpoint', [
+                { strong: 0.2, weak: 0.35, duration: 70 },
+                { strong: 0.35, weak: 0.2, duration: 90 }
+            ], 400);
             break;
     }
 }
@@ -9750,6 +9793,7 @@ function updateSpatialAudio() {
         : Math.min(1, Math.max(0, (13 - gameState.floor) / 12));
     let closeEnemy = false;
     let closeFire = false;
+    let closeExit = false;
 
     // Throttle audio updates to prevent overwhelming
     if (!gameState.lastSpatialAudioTime) gameState.lastSpatialAudioTime = 0;
@@ -9788,12 +9832,18 @@ function updateSpatialAudio() {
             const volume = 0.12 + timerUrgency * 0.25;
             AudioManager.playPositional('exitHum', exit.x, exit.y, px, py, volume, 6);
         }
+        if (dist <= 2) closeExit = true;
     }
 
     // Accessibility: subtle proximity haptics for hazards
     if (closeEnemy || closeFire) {
         const dangerLevel = (closeEnemy && closeFire) ? 0.12 : 0.08;
         Haptics.pulse('hazardNear', dangerLevel, dangerLevel + 0.04, 50, 250);
+    }
+
+    // Accessibility: gentle exit proximity cue
+    if (closeExit) {
+        Haptics.pulse('exitNear', 0.06, 0.1, 45, 400);
     }
 }
 
@@ -10217,6 +10267,7 @@ function handlePlayerEnemyCollision(enemy) {
         // === KILL STREAK RESET: Getting hit breaks your streak ===
         if (gameState.killStreak >= 3) {
             showCelebration('comboBreak');
+            Haptics.pulse('comboBreak', 0.35, 0.2, 120, 300);
         }
         gameState.killStreak = 0;
         gameState.killCombo = 0;
@@ -11234,6 +11285,7 @@ function performWallBreak() {
     } else {
         // No walls in range
         AudioManager.play('footstep', 0.3);
+        Haptics.pulse('wallBreakFail', 0.15, 0.1, 70, 200);
         return false;
     }
 }
@@ -11699,6 +11751,7 @@ function moveEnemies() {
         const distToPlayer = Math.abs(enemy.x - gameState.player.x) + Math.abs(enemy.y - gameState.player.y);
         if (distToPlayer === 1 && gameState.player.stunned <= 0 && !playerInBathroom && canAttack && !playerAlreadyHitThisFrame) {
             // Enemy attacks from adjacent tile
+            Haptics.pulse('enemyThreat', 0.18, 0.26, 60, 400);
             handlePlayerEnemyCollision(enemy);
             playerAlreadyHitThisFrame = true;  // Prevent other enemies from attacking this frame
         }
@@ -12740,21 +12793,21 @@ function showEndlessGameOverScreen(message) {
     // Build display
     msg.innerHTML = isNewBest ?
         `<span style="color: #ffd700;">🏆 NEW PERSONAL BEST! 🏆</span>` :
-        'GAME OVER';
+        'CLOCKED OUT';
 
     let statsHtml = `<div style="font-size: 32px; color: #e74c3c; margin-bottom: 10px;">FLOOR -${finalFloor}</div>`;
     statsHtml += `<div style="font-size: 20px; color: #4ecdc4; margin-bottom: 15px;">SCORE: ${finalScore.toLocaleString()}</div>`;
 
     if (isNewBest) {
-        statsHtml += `<div style="color: #ffd700; margin-bottom: 10px;">You beat your previous best of Floor -${playerStats.endlessBestFloor - (finalFloor - (playerStats.endlessBestFloor || 0))}!</div>`;
+        statsHtml += `<div style="color: #ffd700; margin-bottom: 10px;">New record filed: Floor -${playerStats.endlessBestFloor - (finalFloor - (playerStats.endlessBestFloor || 0))}</div>`;
     } else {
-        statsHtml += `<div style="color: #aaa; margin-bottom: 10px;">Best: Floor -${playerStats.endlessBestFloor} | Score: ${playerStats.endlessBestScore.toLocaleString()}</div>`;
+        statsHtml += `<div style="color: #aaa; margin-bottom: 10px;">Best on file: Floor -${playerStats.endlessBestFloor} | Score: ${playerStats.endlessBestScore.toLocaleString()}</div>`;
     }
 
     // Milestones reached
     if (gameState.endlessStats.milestonesReached.length > 0) {
         statsHtml += `<div style="margin: 10px 0; padding: 8px; background: rgba(0,0,0,0.3); border-radius: 5px;">`;
-        statsHtml += `<div style="color: #f39c12; font-size: 12px; margin-bottom: 5px;">MILESTONES REACHED</div>`;
+        statsHtml += `<div style="color: #f39c12; font-size: 12px; margin-bottom: 5px;">AUDITS CLEARED</div>`;
         gameState.endlessStats.milestonesReached.forEach(m => {
             statsHtml += `<span style="color: #2ecc71; margin: 0 5px;">✓ ${m}</span>`;
         });
@@ -13633,21 +13686,33 @@ function update(deltaTime) {
     }
 
     // === DASH COOLDOWN UPDATE ===
+    const prevDashCooldown = gameState.player.dashCooldown;
     if (gameState.player.dashCooldown > 0) {
         gameState.player.dashCooldown -= deltaTime;
+        if (prevDashCooldown > 0 && gameState.player.dashCooldown <= 0) {
+            Haptics.pulse('dashReady', 0.12, 0.18, 60, 200);
+        }
     }
     if (gameState.player.dashInvincible > 0) {
         gameState.player.dashInvincible -= deltaTime;
     }
 
     // === PUNCH COOLDOWN UPDATE ===
+    const prevPunchCooldown = gameState.player.punchCooldown;
     if (gameState.player.punchCooldown > 0) {
         gameState.player.punchCooldown -= deltaTime;
+        if (prevPunchCooldown > 0 && gameState.player.punchCooldown <= 0) {
+            Haptics.pulse('punchReady', 0.12, 0.18, 60, 200);
+        }
     }
 
     // === WALL BREAK COOLDOWN UPDATE ===
+    const prevWallBreakCooldown = gameState.player.wallBreakCooldown;
     if (gameState.player.wallBreakCooldown > 0) {
         gameState.player.wallBreakCooldown -= deltaTime;
+        if (prevWallBreakCooldown > 0 && gameState.player.wallBreakCooldown <= 0 && gameState.hasWallBreaker) {
+            Haptics.pulse('wallBreakReady', 0.14, 0.2, 70, 200);
+        }
     }
 
     // === COMBO TIMER DECAY ===
@@ -13658,6 +13723,7 @@ function update(deltaTime) {
             // Combo expired
             if (gameState.killCombo >= 3) {
                 showCelebration('comboBreak');
+                Haptics.pulse('comboBreak', 0.35, 0.2, 120, 300);
             }
             gameState.killCombo = 0;
         }
