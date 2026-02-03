@@ -231,12 +231,12 @@ const atmosphericBackgrounds = {
 // ============================================
 // CHARACTER ASSET SYSTEM
 // ============================================
+// Player character asset (single playable character)
 const CHARACTER_ASSETS = {
     corporate_employee: {
         id: 'corporate_employee',
         name: 'Corporate Employee',
         description: 'Just trying to survive another day',
-        unlocked: true,
         portrait: {
             src: 'assets/characters/corporate-employee-portrait.jpg',
             loaded: false,
@@ -256,84 +256,6 @@ const CHARACTER_ASSETS = {
             primary: '#00d2d3',
             secondary: '#00b8b8',
             glow: 'rgba(0, 210, 211, 0.6)'
-        }
-    },
-    intern: {
-        id: 'intern',
-        name: 'The Intern',
-        description: 'Gets coffee faster than anyone',
-        unlockCondition: 'Complete a run without getting hit',
-        portrait: {
-            src: 'assets/characters/intern-portrait.jpg',
-            loaded: false,
-            image: null
-        },
-        animation: {
-            type: 'spritesheet',
-            src: 'assets/characters/intern-spritesheet.png',
-            loaded: false,
-            image: null,
-            frameCount: 8,
-            frameWidth: 78,
-            frameHeight: 78,
-            frameDuration: 0.083
-        },
-        trailColor: {
-            primary: '#3498db',
-            secondary: '#2980b9',
-            glow: 'rgba(52, 152, 219, 0.6)'
-        }
-    },
-    it_support: {
-        id: 'it_support',
-        name: 'IT Support',
-        description: 'Have you tried turning it off and on?',
-        unlockCondition: 'Zap 50 coworkers total',
-        portrait: {
-            src: 'assets/characters/it-support-portrait.webp',
-            loaded: false,
-            image: null
-        },
-        animation: {
-            type: 'spritesheet',
-            src: 'assets/characters/it-support-spritesheet.png',
-            loaded: false,
-            image: null,
-            frameCount: 8,
-            frameWidth: 78,
-            frameHeight: 78,
-            frameDuration: 0.083
-        },
-        trailColor: {
-            primary: '#9b59b6',
-            secondary: '#8e44ad',
-            glow: 'rgba(155, 89, 182, 0.6)'
-        }
-    },
-    hr_karen: {
-        id: 'hr_karen',
-        name: 'HR Karen',
-        description: 'Would like to speak to the manager',
-        unlockCondition: 'Punch 100 coworkers total',
-        portrait: {
-            src: 'assets/characters/hr-karen-portrait.jpg',
-            loaded: false,
-            image: null
-        },
-        animation: {
-            type: 'spritesheet',
-            src: 'assets/characters/hr-karen-spritesheet.png',
-            loaded: false,
-            image: null,
-            frameCount: 8,
-            frameWidth: 78,
-            frameHeight: 78,
-            frameDuration: 0.083
-        },
-        trailColor: {
-            primary: '#c0392b',
-            secondary: '#a93226',
-            glow: 'rgba(192, 57, 43, 0.6)'
         }
     }
 };
@@ -380,6 +302,16 @@ const ENEMY_TYPES = {
         chaseChance: 0.7,     // Moderately aggressive
         timeReward: 5,        // Normal reward
         special: 'explode'    // Explodes on stun, damaging nearby enemies
+    },
+    hr_assistant: {
+        id: 'hr_assistant',
+        name: 'HR Assistant',
+        description: 'Frantic and aggressive - papers flying everywhere',
+        speed: 1.3,           // Faster than average
+        health: 1,            // Normal health
+        chaseChance: 0.85,    // Very aggressive
+        timeReward: 5,        // Normal reward
+        special: null         // No special ability
     }
 };
 
@@ -463,23 +395,57 @@ const ENEMY_ASSETS = {
             secondary: '#d35400',
             glow: 'rgba(230, 126, 34, 0.6)'
         }
+    },
+    // HR Assistant - Frantic chaser
+    hr_assistant: {
+        id: 'hr_assistant',
+        name: 'HR Assistant',
+        animation: {
+            type: 'spritesheet',
+            src: 'assets/characters/hr-assistant-spritesheet.png',
+            loaded: false,
+            image: null,
+            frameCount: 8,
+            frameWidth: 78,
+            frameHeight: 78,
+            frameDuration: 0.075  // Slightly faster animation for frantic feel
+        },
+        trailColor: {
+            primary: '#e91e63',
+            secondary: '#c2185b',
+            glow: 'rgba(233, 30, 99, 0.6)'
+        }
+    }
+};
+
+// Dog companion assets (for dog park zones)
+const DOG_ASSETS = {
+    office_dog: {
+        id: 'office_dog',
+        name: 'Office Dog',
+        portrait: {
+            src: 'assets/characters/office-dog-portrait.png',
+            loaded: false,
+            image: null
+        },
+        animation: {
+            type: 'spritesheet',
+            src: 'assets/characters/office-dog-spritesheet.png',
+            loaded: false,
+            image: null,
+            frameCount: 8,
+            frameWidth: 78,
+            frameHeight: 78,
+            frameDuration: 0.083
+        }
     }
 };
 
 // Enemy animation state tracking
 const enemyAnimationStates = new Map();
 
-// Currently selected character (defaults to corporate_employee)
-let selectedCharacter = 'corporate_employee';
-
-// Mapping from progression character IDs to asset IDs
-const CHARACTER_ID_TO_ASSET = {
-    'default': 'corporate_employee',
-    'speedster': 'intern',
-    'tank': 'it_support',
-    'fighter': 'hr_karen',
-    'ghost': 'corporate_employee'  // Ghost uses default sprite (no unique spritesheet)
-};
+// Player always uses corporate_employee
+const selectedCharacter = 'corporate_employee';
 
 // Character asset loader
 const characterAssetLoader = {
@@ -489,7 +455,8 @@ const characterAssetLoader = {
     async preloadAll() {
         const characters = Object.values(CHARACTER_ASSETS);
         const enemies = Object.values(ENEMY_ASSETS);
-        this.totalCount = characters.length * 2 + enemies.length; // portraits + animations + enemy animations
+        const dogs = Object.values(DOG_ASSETS);
+        this.totalCount = characters.length * 2 + enemies.length + dogs.length * 2; // portraits + animations + enemy animations + dog assets
         this.loadedCount = 0;
 
         const promises = [];
@@ -509,6 +476,16 @@ const characterAssetLoader = {
         for (const enemy of enemies) {
             if (enemy.animation.type === 'spritesheet') {
                 promises.push(this.loadImage(enemy.animation));
+            }
+        }
+
+        // Load dog companion assets
+        for (const dog of dogs) {
+            if (dog.portrait) {
+                promises.push(this.loadImage(dog.portrait));
+            }
+            if (dog.animation.type === 'spritesheet') {
+                promises.push(this.loadImage(dog.animation));
             }
         }
 
@@ -2494,21 +2471,23 @@ function selectEnemyType(floor, enemyIndex) {
         return 'coworker';
     }
 
-    // Floor 6-4: Add HR Karen (exploders)
+    // Floor 6-4: Add HR Karen (exploders) and HR Assistant (frantic chasers)
     if (floor >= 4) {
         const roll = Math.random();
         if (roll < 0.2) return 'intern';
         if (roll < 0.35) return 'it_support';
         if (roll < 0.5) return 'hr_karen';
+        if (roll < 0.6) return 'hr_assistant';
         return 'coworker';
     }
 
     // Floor 3-1: Full variety, more dangerous mix
     const roll = Math.random();
-    if (roll < 0.25) return 'intern';      // 25% fast
-    if (roll < 0.4) return 'it_support';   // 15% tank
-    if (roll < 0.55) return 'hr_karen';    // 15% exploder
-    return 'coworker';                      // 45% basic
+    if (roll < 0.2) return 'intern';       // 20% fast
+    if (roll < 0.35) return 'it_support';  // 15% tank
+    if (roll < 0.5) return 'hr_karen';     // 15% exploder
+    if (roll < 0.65) return 'hr_assistant'; // 15% frantic
+    return 'coworker';                      // 35% basic
 }
 
 // Game state
@@ -4435,86 +4414,21 @@ function hideMainSettings() {
 // ============================================
 // META-PROGRESSION SYSTEM
 // ============================================
-const CHARACTERS = {
-    default: {
-        id: 'default',
-        name: 'Corporate Employee',
-        description: 'Just trying to survive another day',
-        unlocked: true,
-        unlockCondition: null,
-        colors: {
-            shirt: '#00b894',
-            shirtLight: '#55efc4',
-            shirtDark: '#00a884',
-            hair: '#5f3dc4',
-            pants: '#2d3436'
-        }
-    },
-    speedster: {
-        id: 'speedster',
-        name: 'The Intern',
-        description: 'Gets coffee faster than anyone',
-        unlocked: false,
-        unlockCondition: 'Complete a run without getting hit',
-        colors: {
-            shirt: '#0984e3',
-            shirtLight: '#74b9ff',
-            shirtDark: '#0652DD',
-            hair: '#fdcb6e',
-            pants: '#2d3436'
-        },
-        bonus: { speedMultiplier: 1.1 }
-    },
-    tank: {
-        id: 'tank',
-        name: 'IT Support',
-        description: 'Have you tried turning it off and on?',
-        unlocked: false,
-        unlockCondition: 'Zap 50 coworkers total',
-        colors: {
-            shirt: '#6c5ce7',
-            shirtLight: '#a29bfe',
-            shirtDark: '#5b4cdb',
-            hair: '#2d3436',
-            pants: '#636e72'
-        },
-        bonus: { stunResistance: 0.5 }
-    },
-    fighter: {
-        id: 'fighter',
-        name: 'HR Karen',
-        description: 'Would like to speak to the manager',
-        unlocked: false,
-        unlockCondition: 'Punch 100 coworkers total',
-        colors: {
-            shirt: '#d63031',
-            shirtLight: '#ff7675',
-            shirtDark: '#b71c1c',
-            hair: '#fdcb6e',
-            pants: '#2d3436'
-        },
-        bonus: { punchRange: 4 }
-    },
-    ghost: {
-        id: 'ghost',
-        name: 'The Quiet One',
-        description: 'Nobody notices them in meetings',
-        unlocked: false,
-        unlockCondition: 'Find the Floor 13 secret exit',
-        colors: {
-            shirt: '#636e72',
-            shirtLight: '#b2bec3',
-            shirtDark: '#2d3436',
-            hair: '#dfe6e9',
-            pants: '#2d3436'
-        },
-        bonus: { enemyDetectionRange: 0.8 }
+// Single playable character - Corporate Employee
+const PLAYER_CHARACTER = {
+    id: 'default',
+    name: 'Corporate Employee',
+    description: 'Just trying to survive another day',
+    colors: {
+        shirt: '#00b894',
+        shirtLight: '#55efc4',
+        shirtDark: '#00a884',
+        hair: '#5f3dc4',
+        pants: '#2d3436'
     }
 };
 
 let playerProgress = {
-    selectedCharacter: 'default',
-    unlockedCharacters: ['default'],
     unlockedStatusThemes: ['core'],
     selectedStatusTheme: 'auto',
     totalRuns: 0,
@@ -4533,13 +4447,11 @@ function loadProgress() {
     try {
         const saved = localStorage.getItem('deadline_progress');
         if (saved) {
-            playerProgress = { ...playerProgress, ...JSON.parse(saved) };
+            const savedData = JSON.parse(saved);
+            // Migrate old save data - ignore character selection fields
+            const { selectedCharacter, unlockedCharacters, ...rest } = savedData;
+            playerProgress = { ...playerProgress, ...rest };
         }
-        // Characters are now enabled! Let player use their unlocked characters
-        // playerProgress.selectedCharacter = 'default'; // REMOVED - characters enabled
-        // Sync the global selectedCharacter for asset lookups
-        selectedCharacter = CHARACTER_ID_TO_ASSET[playerProgress.selectedCharacter] || 'corporate_employee';
-        checkUnlocks();
     } catch (e) {
         console.log('Failed to load progress:', e);
     }
@@ -4661,41 +4573,10 @@ function showSaveNotification(message) {
     setTimeout(() => { notification.style.opacity = '0'; notification.style.transition = 'opacity 0.5s'; setTimeout(() => notification.remove(), 500); }, 2000);
 }
 
-function checkUnlocks() {
-    let newUnlocks = [];
-    if (playerProgress.perfectRunAchieved && !playerProgress.unlockedCharacters.includes('speedster')) {
-        playerProgress.unlockedCharacters.push('speedster');
-        newUnlocks.push(CHARACTERS.speedster);
-    }
-    if (playerProgress.totalZaps >= 50 && !playerProgress.unlockedCharacters.includes('tank')) {
-        playerProgress.unlockedCharacters.push('tank');
-        newUnlocks.push(CHARACTERS.tank);
-    }
-    if (playerProgress.totalPunches >= 100 && !playerProgress.unlockedCharacters.includes('fighter')) {
-        playerProgress.unlockedCharacters.push('fighter');
-        newUnlocks.push(CHARACTERS.fighter);
-    }
-    if (playerProgress.secretExitFound && !playerProgress.unlockedCharacters.includes('ghost')) {
-        playerProgress.unlockedCharacters.push('ghost');
-        newUnlocks.push(CHARACTERS.ghost);
-    }
-    for (const char of newUnlocks) {
-        showCharacterUnlock(char);
-    }
+function checkProgressUnlocks() {
+    // Check for status theme unlocks only (character unlocks removed)
     checkStatusThemeUnlocks();
     saveProgress();
-    return newUnlocks;
-}
-
-function showCharacterUnlock(character) {
-    const notification = document.createElement('div');
-    notification.innerHTML = `<div style="font-size:48px;margin-bottom:10px">🔓</div>
-        <div style="font-size:14px;color:#fff;letter-spacing:3px;margin-bottom:8px">CHARACTER UNLOCKED!</div>
-        <div style="font-size:24px;color:#ffe66d;font-weight:bold;margin-bottom:5px">${character.name}</div>
-        <div style="font-size:12px;color:rgba(255,255,255,0.8)">${character.description}</div>`;
-    notification.style.cssText = `position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:linear-gradient(180deg,rgba(78,205,196,0.95) 0%,rgba(46,134,130,0.95) 100%);padding:30px 50px;border-radius:12px;border:3px solid #ffe66d;box-shadow:0 0 60px rgba(255,230,109,0.6);z-index:500;text-align:center;font-family:'Courier New',monospace;`;
-    document.body.appendChild(notification);
-    setTimeout(() => { notification.style.opacity = '0'; notification.style.transition = 'opacity 0.5s'; setTimeout(() => notification.remove(), 500); }, 3000);
 }
 
 function showStatusThemeUnlock(theme) {
@@ -4710,23 +4591,11 @@ function showStatusThemeUnlock(theme) {
 }
 
 function getSelectedCharacter() {
-    return CHARACTERS[playerProgress.selectedCharacter] || CHARACTERS.default;
-}
-
-function selectCharacter(charId) {
-    if (playerProgress.unlockedCharacters.includes(charId)) {
-        playerProgress.selectedCharacter = charId;
-        // Update the global selectedCharacter for asset lookups
-        selectedCharacter = CHARACTER_ID_TO_ASSET[charId] || 'corporate_employee';
-        saveProgress();
-        updatePlayerColors();
-        return true;
-    }
-    return false;
+    return PLAYER_CHARACTER;
 }
 
 function updatePlayerColors() {
-    const char = getSelectedCharacter();
+    const char = PLAYER_CHARACTER;
     if (char.colors) {
         COLORS.playerShirt = char.colors.shirt;
         COLORS.playerShirtLight = char.colors.shirtLight;
@@ -4825,7 +4694,7 @@ function updateProgressAfterRun(won) {
         showMilestoneUnlocks(newMilestones);
     }
 
-    checkUnlocks();
+    checkProgressUnlocks();
     checkAchievements();
     saveProgress();
 }
@@ -7135,84 +7004,61 @@ function drawCompanion() {
     const x = comp.x * TILE_SIZE;
     const y = comp.y * TILE_SIZE;
     const bounce = Math.sin(comp.frame) * 2;
-    const wagAngle = Math.sin(comp.frame * 1.5) * 0.6;
 
-    // Shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.25)';
-    ctx.beginPath();
-    ctx.ellipse(x + TILE_SIZE / 2, y + TILE_SIZE - 4, 10, 4, 0, 0, Math.PI * 2);
-    ctx.fill();
+    // Try to use sprite-based rendering
+    const dogAsset = DOG_ASSETS.office_dog;
+    if (dogAsset && dogAsset.animation.loaded && dogAsset.animation.image) {
+        const anim = dogAsset.animation;
+        const frameIndex = Math.floor(comp.frame) % anim.frameCount;
+        const srcX = frameIndex * anim.frameWidth;
+        const srcY = 0;
 
-    // Dog body (larger)
-    ctx.fillStyle = '#8d6e63';
-    ctx.beginPath();
-    ctx.ellipse(x + TILE_SIZE / 2, y + TILE_SIZE / 2 + 4 + bounce, 12, 10, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Dog head
-    ctx.fillStyle = '#a1887f';
-    ctx.beginPath();
-    ctx.arc(x + TILE_SIZE / 2 + 8, y + TILE_SIZE / 2 - 4 + bounce, 9, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Ears (floppy)
-    ctx.fillStyle = '#6d4c41';
-    const earFlop = Math.sin(comp.frame * 2) * 2;
-    ctx.beginPath();
-    ctx.ellipse(x + TILE_SIZE / 2 + 2, y + TILE_SIZE / 2 - 10 + bounce + earFlop, 4, 6, -0.4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.ellipse(x + TILE_SIZE / 2 + 14, y + TILE_SIZE / 2 - 10 + bounce + earFlop, 4, 6, 0.4, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Snout
-    ctx.fillStyle = '#bcaaa4';
-    ctx.beginPath();
-    ctx.ellipse(x + TILE_SIZE / 2 + 14, y + TILE_SIZE / 2 - 2 + bounce, 5, 4, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Eyes (happy)
-    ctx.fillStyle = '#000';
-    ctx.beginPath();
-    ctx.arc(x + TILE_SIZE / 2 + 5, y + TILE_SIZE / 2 - 6 + bounce, 2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(x + TILE_SIZE / 2 + 11, y + TILE_SIZE / 2 - 6 + bounce, 2, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Nose
-    ctx.fillStyle = '#3e2723';
-    ctx.beginPath();
-    ctx.arc(x + TILE_SIZE / 2 + 16, y + TILE_SIZE / 2 - 2 + bounce, 3, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Tongue (panting)
-    if (Math.sin(comp.frame * 3) > 0) {
-        ctx.fillStyle = '#f48fb1';
+        // Shadow
+        ctx.fillStyle = 'rgba(0,0,0,0.25)';
         ctx.beginPath();
-        ctx.ellipse(x + TILE_SIZE / 2 + 14, y + TILE_SIZE / 2 + 4 + bounce, 2, 4, 0, 0, Math.PI * 2);
+        ctx.ellipse(x + TILE_SIZE / 2, y + TILE_SIZE - 2, 12, 4, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Draw sprite with bounce
+        const scale = 2.0; // Scale factor for the dog sprite
+        const drawWidth = anim.frameWidth * scale * 0.5;
+        const drawHeight = anim.frameHeight * scale * 0.5;
+        const drawX = x + TILE_SIZE / 2 - drawWidth / 2;
+        const drawY = y + TILE_SIZE / 2 - drawHeight / 2 + bounce;
+
+        ctx.drawImage(
+            anim.image,
+            srcX, srcY, anim.frameWidth, anim.frameHeight,
+            drawX, drawY, drawWidth, drawHeight
+        );
+    } else {
+        // Fallback to simple procedural drawing if sprite not loaded
+        ctx.fillStyle = 'rgba(0,0,0,0.25)';
+        ctx.beginPath();
+        ctx.ellipse(x + TILE_SIZE / 2, y + TILE_SIZE - 4, 10, 4, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Simple dog body
+        ctx.fillStyle = '#8d6e63';
+        ctx.beginPath();
+        ctx.ellipse(x + TILE_SIZE / 2, y + TILE_SIZE / 2 + 4 + bounce, 12, 10, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Dog head
+        ctx.fillStyle = '#a1887f';
+        ctx.beginPath();
+        ctx.arc(x + TILE_SIZE / 2 + 8, y + TILE_SIZE / 2 - 4 + bounce, 9, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Eyes
+        ctx.fillStyle = '#000';
+        ctx.beginPath();
+        ctx.arc(x + TILE_SIZE / 2 + 5, y + TILE_SIZE / 2 - 6 + bounce, 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(x + TILE_SIZE / 2 + 11, y + TILE_SIZE / 2 - 6 + bounce, 2, 0, Math.PI * 2);
         ctx.fill();
     }
-
-    // Wagging tail
-    ctx.strokeStyle = '#8d6e63';
-    ctx.lineWidth = 4;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(x + TILE_SIZE / 2 - 10, y + TILE_SIZE / 2 + 4 + bounce);
-    ctx.quadraticCurveTo(
-        x + TILE_SIZE / 2 - 18 + wagAngle * 8, y + TILE_SIZE / 2 - 6 + bounce,
-        x + TILE_SIZE / 2 - 16 + wagAngle * 10, y + TILE_SIZE / 2 - 14 + bounce
-    );
-    ctx.stroke();
-    ctx.lineWidth = 1;
-    ctx.lineCap = 'butt';
-
-    // Legs (walking animation)
-    ctx.fillStyle = '#8d6e63';
-    const legOffset = Math.sin(comp.frame * 2) * 3;
-    ctx.fillRect(x + TILE_SIZE / 2 - 6, y + TILE_SIZE / 2 + 10 + bounce + legOffset, 4, 6);
-    ctx.fillRect(x + TILE_SIZE / 2 + 2, y + TILE_SIZE / 2 + 10 + bounce - legOffset, 4, 6);
 
     // Happy aura when near scared enemies
     let nearScaredEnemy = false;
@@ -8378,25 +8224,6 @@ function drawCollectingPowerups() {
         ctx.arc(0, 0, TILE_SIZE / 6, 0, Math.PI * 2);
         ctx.fill();
 
-        ctx.restore();
-    } else if (powerup.type === 'overclock') {
-        // Fallback: Red warning diamond with bolt
-        const cx = x + TILE_SIZE / 2;
-        const cy = y + TILE_SIZE / 2 + bounce;
-        ctx.save();
-        ctx.fillStyle = '#ff6b6b';
-        ctx.translate(cx, cy);
-        ctx.rotate(Math.PI / 4);
-        ctx.fillRect(-10, -10, 20, 20);
-        ctx.rotate(-Math.PI / 4);
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(-3, -8);
-        ctx.lineTo(2, -2);
-        ctx.lineTo(-1, -2);
-        ctx.lineTo(4, 6);
-        ctx.stroke();
         ctx.restore();
     }
 }
@@ -10529,7 +10356,7 @@ function movePlayer(dx, dy) {
                 gameState.floor = 1;
                 gameState.won = true;
                 playerProgress.secretExitFound = true; // Unlock ghost character
-                checkUnlocks();
+                checkProgressUnlocks();
                 showMessage('SECRET ESCAPE!', 'You found the hidden path from floor 7!', true);
                 return;
             }
@@ -14982,109 +14809,6 @@ function addSettingsToTitle() {
         settingsBtn.textContent = 'SYSTEMS';
         settingsBtn.onclick = showSettingsMenu;
         tertiaryRow.appendChild(settingsBtn);
-    }
-}
-
-// ============================================
-// CHARACTER SELECTION UI
-// ============================================
-function showCharacterSelect() {
-    // Character selection RE-ENABLED!
-    let modal = document.getElementById('characterSelectModal');
-    if (!modal) {
-        modal = document.createElement('div');
-        modal.id = 'characterSelectModal';
-        modal.style.cssText = `position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);display:flex;justify-content:center;align-items:center;z-index:400;`;
-        document.body.appendChild(modal);
-    }
-
-    let html = `<div style="background:linear-gradient(180deg,rgba(30,40,60,0.98) 0%,rgba(15,20,35,0.99) 100%);padding:30px;border-radius:12px;border:3px solid #4ecdc4;max-width:600px;max-height:80vh;overflow-y:auto;">
-        <h2 style="color:#4ecdc4;text-align:center;margin-bottom:20px;letter-spacing:3px;">SELECT CHARACTER</h2>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:15px;">`;
-
-    for (const [id, char] of Object.entries(CHARACTERS)) {
-        const unlocked = playerProgress.unlockedCharacters.includes(id);
-        const selected = playerProgress.selectedCharacter === id;
-        const borderColor = selected ? '#ffe66d' : (unlocked ? '#4ecdc4' : '#555');
-        const opacity = unlocked ? '1' : '0.6';
-
-        // Calculate unlock progress for locked characters
-        let progressHtml = '';
-        if (!unlocked && id !== 'default') {
-            let progress = 0;
-            let progressMax = 1;
-            let progressLabel = '';
-
-            if (id === 'speedster') {
-                // Perfect run - binary (achieved or not)
-                progress = playerProgress.perfectRunAchieved ? 1 : 0;
-                progressMax = 1;
-                progressLabel = 'Perfect Run';
-            } else if (id === 'tank') {
-                // 50 total zaps
-                progress = Math.min(playerProgress.totalZaps || 0, 50);
-                progressMax = 50;
-                progressLabel = `${progress}/${progressMax} Zaps`;
-            } else if (id === 'fighter') {
-                // 100 total punches
-                progress = Math.min(playerProgress.totalPunches || 0, 100);
-                progressMax = 100;
-                progressLabel = `${progress}/${progressMax} Punches`;
-            } else if (id === 'ghost') {
-                // Secret exit - binary
-                progress = playerProgress.secretExitFound ? 1 : 0;
-                progressMax = 1;
-                progressLabel = 'Secret Exit';
-            }
-
-            const progressPercent = (progress / progressMax) * 100;
-            progressHtml = `
-                <div style="margin-top:8px;">
-                    <div style="background:rgba(0,0,0,0.5);border-radius:4px;height:6px;overflow:hidden;">
-                        <div style="background:linear-gradient(90deg,#4ecdc4,#2a9d8f);width:${progressPercent}%;height:100%;transition:width 0.3s;"></div>
-                    </div>
-                    <div style="color:#4ecdc4;font-size:9px;margin-top:3px;">${progressLabel}</div>
-                </div>`;
-        }
-
-        // Show character bonus for unlocked characters
-        let bonusHtml = '';
-        if (unlocked && char.bonus) {
-            if (char.bonus.speedMultiplier) bonusHtml = `<div style="color:#3498db;font-size:9px;">⚡ +${Math.round((char.bonus.speedMultiplier - 1) * 100)}% Speed</div>`;
-            else if (char.bonus.stunResistance) bonusHtml = `<div style="color:#9b59b6;font-size:9px;">🛡 ${Math.round(char.bonus.stunResistance * 100)}% Stun Resist</div>`;
-            else if (char.bonus.punchRange) bonusHtml = `<div style="color:#e74c3c;font-size:9px;">👊 +${char.bonus.punchRange - 3} Punch Range</div>`;
-            else if (char.bonus.enemyDetectionRange) bonusHtml = `<div style="color:#95a5a6;font-size:9px;">👻 ${Math.round((1 - char.bonus.enemyDetectionRange) * 100)}% Stealth</div>`;
-        }
-
-        html += `<div onclick="${unlocked ? `selectCharacter('${id}');showCharacterSelect();` : ''}" style="background:rgba(0,0,0,0.5);border:2px solid ${borderColor};border-radius:8px;padding:15px;text-align:center;cursor:${unlocked ? 'pointer' : 'not-allowed'};opacity:${opacity};transition:all 0.2s;">
-            <div style="width:40px;height:40px;margin:0 auto 10px;background:${char.colors.shirt};border-radius:50%;border:3px solid ${char.colors.hair};"></div>
-            <div style="color:#fff;font-size:12px;font-weight:bold;margin-bottom:5px;">${char.name}</div>
-            <div style="color:#888;font-size:10px;margin-bottom:5px;">${char.description}</div>
-            ${bonusHtml}
-            ${unlocked ? (selected ? '<div style="color:#ffe66d;font-size:10px;margin-top:5px;">✓ SELECTED</div>' : '') : `<div style="color:#e74c3c;font-size:9px;">🔒 ${char.unlockCondition}</div>${progressHtml}`}
-        </div>`;
-    }
-
-    html += `</div>
-        <div style="text-align:center;margin-top:20px;">
-            <div style="color:#888;font-size:11px;margin-bottom:10px;">Unlocked: ${playerProgress.unlockedCharacters.length}/${Object.keys(CHARACTERS).length}</div>
-            <button onclick="document.getElementById('characterSelectModal').style.display='none'" style="padding:12px 30px;font-size:14px;background:linear-gradient(180deg,#4ecdc4 0%,#2a9d8f 100%);color:#fff;border:none;cursor:pointer;font-family:'Courier New',monospace;text-transform:uppercase;border-radius:4px;letter-spacing:2px;">BACK</button>
-        </div>
-    </div>`;
-
-    modal.innerHTML = html;
-    modal.style.display = 'flex';
-}
-
-function addCharacterSelectToTitle() {
-    const tertiaryRow = document.getElementById('tertiaryButtons');
-    if (tertiaryRow && !document.getElementById('titleCharacterBtn')) {
-        const charBtn = document.createElement('button');
-        charBtn.id = 'titleCharacterBtn';
-        charBtn.className = 'btn-tertiary';
-        charBtn.textContent = 'STAFF';
-        charBtn.onclick = showCharacterSelect;
-        tertiaryRow.appendChild(charBtn);
     }
 }
 
