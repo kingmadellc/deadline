@@ -33,6 +33,24 @@
             box-sizing: border-box;
         }
 
+        /* Gamepad menu navigation focus indicator */
+        .gamepad-focus {
+            outline: 3px solid #4ecdc4 !important;
+            outline-offset: 3px !important;
+            box-shadow: 0 0 20px rgba(78, 205, 196, 0.6), 0 0 40px rgba(78, 205, 196, 0.3) !important;
+            animation: gamepad-pulse 0.8s ease-in-out infinite alternate !important;
+        }
+
+        @keyframes gamepad-pulse {
+            from { outline-color: #4ecdc4; box-shadow: 0 0 20px rgba(78, 205, 196, 0.6), 0 0 40px rgba(78, 205, 196, 0.3); }
+            to { outline-color: #6ee7de; box-shadow: 0 0 25px rgba(110, 231, 222, 0.8), 0 0 50px rgba(78, 205, 196, 0.5); }
+        }
+
+        /* Special styling for slider when focused */
+        .difficulty-slider.gamepad-focus {
+            outline-offset: 6px !important;
+        }
+
         body {
             background: #1a1a2e;
             display: flex;

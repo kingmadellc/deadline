@@ -3084,6 +3084,205 @@ const gamepadState = {
     buttonCooldown: 0
 };
 
+// ============================================
+// GAMEPAD MENU NAVIGATION
+// ============================================
+const menuNavigation = {
+    enabled: false,
+    buttons: [],
+    currentIndex: 0,
+    lastNavTime: 0,
+    navDelay: 180,  // ms between navigation inputs
+    lastAButton: false,
+    lastBButton: false,
+    lastUpDown: false,
+    lastLeftRight: false
+};
+
+// Get navigable buttons for current menu state
+function getMenuButtons() {
+    const messageEl = document.getElementById('message');
+    const mainSettingsEl = document.getElementById('mainSettingsMenu');
+    const howToPlayEl = document.getElementById('howToPlayMenu');
+    const dailyChallengeEl = document.getElementById('dailyChallengeMenu');
+
+    // Check which menu is visible
+    if (mainSettingsEl && mainSettingsEl.style.display !== 'none') {
+        // Settings menu - get all menu-option-btn buttons plus back button
+        const buttons = Array.from(mainSettingsEl.querySelectorAll('.menu-option-btn, .back-btn'));
+        return buttons.filter(btn => btn.offsetParent !== null);
+    }
+
+    if (howToPlayEl && howToPlayEl.style.display !== 'none') {
+        return Array.from(howToPlayEl.querySelectorAll('.back-btn'));
+    }
+
+    if (dailyChallengeEl && dailyChallengeEl.style.display !== 'none') {
+        return Array.from(dailyChallengeEl.querySelectorAll('button'));
+    }
+
+    if (messageEl && messageEl.style.display !== 'none') {
+        // Main menu - get primary buttons, settings gear, and difficulty slider
+        const buttons = [];
+
+        // Settings gear icon
+        const settingsGear = document.querySelector('.corner-settings-btn');
+        if (settingsGear) buttons.push(settingsGear);
+
+        // Resume button (if visible)
+        const resumeBtn = document.getElementById('menuResumeBtn');
+        if (resumeBtn && resumeBtn.style.display !== 'none') {
+            buttons.push(resumeBtn);
+        }
+
+        // Play button
+        const playBtn = document.getElementById('menuPlayBtn');
+        if (playBtn) buttons.push(playBtn);
+
+        // Difficulty slider (special handling)
+        const slider = document.getElementById('difficultySlider');
+        if (slider) buttons.push(slider);
+
+        return buttons;
+    }
+
+    return [];
+}
+
+// Update visual focus on menu buttons
+function updateMenuFocus() {
+    // Remove focus from all buttons
+    document.querySelectorAll('.gamepad-focus').forEach(el => {
+        el.classList.remove('gamepad-focus');
+    });
+
+    if (menuNavigation.buttons.length > 0 && menuNavigation.currentIndex < menuNavigation.buttons.length) {
+        const focusedBtn = menuNavigation.buttons[menuNavigation.currentIndex];
+        focusedBtn.classList.add('gamepad-focus');
+
+        // Ensure the button is visible (scroll into view if needed)
+        if (focusedBtn.scrollIntoViewIfNeeded) {
+            focusedBtn.scrollIntoViewIfNeeded();
+        } else if (focusedBtn.scrollIntoView) {
+            focusedBtn.scrollIntoView({ block: 'nearest' });
+        }
+    }
+}
+
+// Handle gamepad input for menu navigation
+function updateGamepadMenuNavigation() {
+    if (!gamepadState.connected) return;
+
+    const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+    const gamepad = gamepads[gamepadState.index];
+    if (!gamepad) return;
+
+    // Check if any menu is visible
+    const messageEl = document.getElementById('message');
+    const mainSettingsEl = document.getElementById('mainSettingsMenu');
+    const howToPlayEl = document.getElementById('howToPlayMenu');
+    const dailyChallengeEl = document.getElementById('dailyChallengeMenu');
+
+    const menuVisible = (messageEl && messageEl.style.display !== 'none') ||
+                        (mainSettingsEl && mainSettingsEl.style.display !== 'none') ||
+                        (howToPlayEl && howToPlayEl.style.display !== 'none') ||
+                        (dailyChallengeEl && dailyChallengeEl.style.display !== 'none');
+
+    if (!menuVisible) {
+        menuNavigation.enabled = false;
+        return;
+    }
+
+    // Refresh button list if menu just became visible
+    if (!menuNavigation.enabled) {
+        menuNavigation.enabled = true;
+        menuNavigation.buttons = getMenuButtons();
+        menuNavigation.currentIndex = 0;
+        updateMenuFocus();
+    }
+
+    const now = Date.now();
+    const canNavigate = (now - menuNavigation.lastNavTime) > menuNavigation.navDelay;
+
+    // Read gamepad inputs
+    const leftStickY = gamepad.axes[1] || 0;
+    const leftStickX = gamepad.axes[0] || 0;
+    const dpadUp = gamepad.buttons[12] ? gamepad.buttons[12].pressed : false;
+    const dpadDown = gamepad.buttons[13] ? gamepad.buttons[13].pressed : false;
+    const dpadLeft = gamepad.buttons[14] ? gamepad.buttons[14].pressed : false;
+    const dpadRight = gamepad.buttons[15] ? gamepad.buttons[15].pressed : false;
+    const aButton = gamepad.buttons[0] ? gamepad.buttons[0].pressed : false;
+    const bButton = gamepad.buttons[1] ? gamepad.buttons[1].pressed : false;
+
+    const upPressed = dpadUp || leftStickY < -gamepadState.deadzone;
+    const downPressed = dpadDown || leftStickY > gamepadState.deadzone;
+    const leftPressed = dpadLeft || leftStickX < -gamepadState.deadzone;
+    const rightPressed = dpadRight || leftStickX > gamepadState.deadzone;
+
+    // Navigate up/down
+    if (canNavigate && (upPressed || downPressed) && !menuNavigation.lastUpDown) {
+        menuNavigation.buttons = getMenuButtons(); // Refresh in case visibility changed
+
+        if (upPressed && menuNavigation.currentIndex > 0) {
+            menuNavigation.currentIndex--;
+            menuNavigation.lastNavTime = now;
+            updateMenuFocus();
+        } else if (downPressed && menuNavigation.currentIndex < menuNavigation.buttons.length - 1) {
+            menuNavigation.currentIndex++;
+            menuNavigation.lastNavTime = now;
+            updateMenuFocus();
+        }
+    }
+    menuNavigation.lastUpDown = upPressed || downPressed;
+
+    // Handle left/right for difficulty slider
+    const focusedBtn = menuNavigation.buttons[menuNavigation.currentIndex];
+    if (focusedBtn && focusedBtn.id === 'difficultySlider') {
+        if (canNavigate && (leftPressed || rightPressed) && !menuNavigation.lastLeftRight) {
+            const slider = focusedBtn;
+            const currentVal = parseInt(slider.value);
+            if (leftPressed && currentVal > parseInt(slider.min)) {
+                slider.value = currentVal - 1;
+                slider.dispatchEvent(new Event('input'));
+                menuNavigation.lastNavTime = now;
+            } else if (rightPressed && currentVal < parseInt(slider.max)) {
+                slider.value = currentVal + 1;
+                slider.dispatchEvent(new Event('input'));
+                menuNavigation.lastNavTime = now;
+            }
+        }
+    }
+    menuNavigation.lastLeftRight = leftPressed || rightPressed;
+
+    // A button - activate/click the focused button
+    if (aButton && !menuNavigation.lastAButton) {
+        if (focusedBtn && focusedBtn.tagName !== 'INPUT') {
+            focusedBtn.click();
+            // Refresh buttons after click (menu may have changed)
+            setTimeout(() => {
+                menuNavigation.buttons = getMenuButtons();
+                menuNavigation.currentIndex = 0;
+                updateMenuFocus();
+            }, 100);
+        }
+    }
+    menuNavigation.lastAButton = aButton;
+
+    // B button - go back (click back button if available, or close menu)
+    if (bButton && !menuNavigation.lastBButton) {
+        const backBtn = document.querySelector('.back-btn:not([style*="display: none"])');
+        if (backBtn && backBtn.offsetParent !== null) {
+            backBtn.click();
+            setTimeout(() => {
+                menuNavigation.buttons = getMenuButtons();
+                menuNavigation.currentIndex = 0;
+                updateMenuFocus();
+            }, 100);
+        }
+    }
+    menuNavigation.lastBButton = bButton;
+}
+
 // Input abstraction - combines keyboard and gamepad
 const input = {
     up: false,
@@ -13334,6 +13533,9 @@ function gameLoop(timestamp) {
         deltaTime = 0.016; // Cap at ~60fps worth of time
     }
     lastTime = timestamp;
+
+    // Always update gamepad menu navigation (works even when game is paused/in menu)
+    updateGamepadMenuNavigation();
 
     // FPS calculation
     fpsCounter.frames++;
