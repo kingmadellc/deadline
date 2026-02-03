@@ -27,6 +27,13 @@ const RESOLUTIONS = {
     '1280x800': { width: 1280, height: 800, scale: 1.25, aspectRatio: '16:10' }
 };
 
+// ============================================
+// VIEWPORT / CAMERA SYSTEM - Player sees only a portion of the map
+// ============================================
+const VIEWPORT_WIDTH = 14;  // Visible tiles horizontally (~30% more zoomed than before)
+const VIEWPORT_HEIGHT = 14; // Visible tiles vertically - creates intimate exploration feel
+const CAMERA_LERP_SPEED = 8; // Smooth camera following speed
+
 // Dynamically calculate tile size based on resolution and VIEWPORT (not map size)
 function getTileSize() {
     const res = RESOLUTIONS[displaySettings.currentResolution] || RESOLUTIONS['640x640'];
@@ -44,13 +51,6 @@ function getCurrentAspectRatio() {
 let TILE_SIZE = 32; // Will be updated dynamically
 let MAP_WIDTH = 20; // Horizontal tiles (variable based on floor and aspect ratio)
 let MAP_HEIGHT = 20; // Vertical tiles (variable based on floor)
-
-// ============================================
-// VIEWPORT / CAMERA SYSTEM - Player sees only a portion of the map
-// ============================================
-const VIEWPORT_WIDTH = 14;  // Visible tiles horizontally (~30% more zoomed than before)
-const VIEWPORT_HEIGHT = 14; // Visible tiles vertically - creates intimate exploration feel
-const CAMERA_LERP_SPEED = 8; // Smooth camera following speed
 
 // ============================================
 // ENDLESS DESCENT MODE - Configuration
