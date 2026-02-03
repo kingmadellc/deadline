@@ -231,7 +231,7 @@ const atmosphericBackgrounds = {
 // ============================================
 // CHARACTER ASSET SYSTEM
 // ============================================
-// Player character asset (single playable character)
+// Player character assets (playable characters)
 const CHARACTER_ASSETS = {
     corporate_employee: {
         id: 'corporate_employee',
@@ -256,6 +256,31 @@ const CHARACTER_ASSETS = {
             primary: '#00d2d3',
             secondary: '#00b8b8',
             glow: 'rgba(0, 210, 211, 0.6)'
+        }
+    },
+    coffee_run_carl: {
+        id: 'coffee_run_carl',
+        name: 'Coffee Run Carl',
+        description: '"Just grabbing coffee" - for the last 45 minutes',
+        portrait: {
+            src: 'assets/characters/coffee-run-carl-portrait.png',
+            loaded: false,
+            image: null
+        },
+        animation: {
+            type: 'spritesheet',
+            src: 'assets/characters/coffee-run-carl-spritesheet.png',
+            loaded: false,
+            image: null,
+            frameCount: 8,
+            frameWidth: 78,
+            frameHeight: 78,
+            frameDuration: 0.075  // Slightly faster - sneaky corner-cutter
+        },
+        trailColor: {
+            primary: '#9b59b6',
+            secondary: '#8e44ad',
+            glow: 'rgba(155, 89, 182, 0.6)'
         }
     }
 };
@@ -443,9 +468,6 @@ const DOG_ASSETS = {
 
 // Enemy animation state tracking
 const enemyAnimationStates = new Map();
-
-// Player always uses corporate_employee
-const selectedCharacter = 'corporate_employee';
 
 // Character asset loader
 const characterAssetLoader = {
@@ -4427,21 +4449,49 @@ function hideMainSettings() {
 // ============================================
 // META-PROGRESSION SYSTEM
 // ============================================
-// Single playable character - Corporate Employee
-const PLAYER_CHARACTER = {
-    id: 'default',
-    name: 'Corporate Employee',
-    description: 'Just trying to survive another day',
-    colors: {
-        shirt: '#00b894',
-        shirtLight: '#55efc4',
-        shirtDark: '#00a884',
-        hair: '#5f3dc4',
-        pants: '#2d3436'
+// Playable characters with unlock conditions
+const PLAYABLE_CHARACTERS = {
+    corporate_employee: {
+        id: 'corporate_employee',
+        assetId: 'corporate_employee',
+        name: 'Corporate Employee',
+        description: 'Just trying to survive another day',
+        unlocked: true,  // Default character, always unlocked
+        unlockCondition: null,
+        unlockDescription: null,
+        colors: {
+            shirt: '#00b894',
+            shirtLight: '#55efc4',
+            shirtDark: '#00a884',
+            hair: '#5f3dc4',
+            pants: '#2d3436'
+        }
+    },
+    coffee_run_carl: {
+        id: 'coffee_run_carl',
+        assetId: 'coffee_run_carl',
+        name: 'Coffee Run Carl',
+        description: '"Just grabbing coffee" - sneaky corner-cutter',
+        unlocked: false,
+        unlockCondition: (progress, stats) => progress.totalWins >= 10 || (stats.endlessBestFloor && stats.endlessBestFloor >= 10),
+        unlockDescription: 'Complete 10 successful escapes OR reach floor -10 in Endless Mode',
+        colors: {
+            shirt: '#78909c',    // Gray-green polo
+            shirtLight: '#90a4ae',
+            shirtDark: '#546e7a',
+            hair: '#5d4037',     // Brown hair
+            pants: '#37474f'
+        },
+        bonus: { cornerCutting: true }  // Future: special ability
     }
 };
 
+// Currently selected character
+let selectedCharacter = 'corporate_employee';
+
 let playerProgress = {
+    selectedCharacter: 'corporate_employee',
+    unlockedCharacters: ['corporate_employee'],
     unlockedStatusThemes: ['core'],
     selectedStatusTheme: 'auto',
     totalRuns: 0,
@@ -4461,10 +4511,16 @@ function loadProgress() {
         const saved = localStorage.getItem('deadline_progress');
         if (saved) {
             const savedData = JSON.parse(saved);
-            // Migrate old save data - ignore character selection fields
-            const { selectedCharacter, unlockedCharacters, ...rest } = savedData;
-            playerProgress = { ...playerProgress, ...rest };
+            playerProgress = { ...playerProgress, ...savedData };
+            // Ensure default character is always in unlocked list
+            if (!playerProgress.unlockedCharacters.includes('corporate_employee')) {
+                playerProgress.unlockedCharacters.push('corporate_employee');
+            }
+            // Sync selectedCharacter global
+            selectedCharacter = playerProgress.selectedCharacter || 'corporate_employee';
         }
+        // Check for any new unlocks based on current progress
+        checkCharacterUnlocks();
     } catch (e) {
         console.log('Failed to load progress:', e);
     }
@@ -4587,7 +4643,9 @@ function showSaveNotification(message) {
 }
 
 function checkProgressUnlocks() {
-    // Check for status theme unlocks only (character unlocks removed)
+    // Check for character unlocks
+    checkCharacterUnlocks();
+    // Check for status theme unlocks
     checkStatusThemeUnlocks();
     saveProgress();
 }
@@ -4604,11 +4662,52 @@ function showStatusThemeUnlock(theme) {
 }
 
 function getSelectedCharacter() {
-    return PLAYER_CHARACTER;
+    return PLAYABLE_CHARACTERS[playerProgress.selectedCharacter] || PLAYABLE_CHARACTERS.corporate_employee;
+}
+
+function selectCharacter(charId) {
+    if (playerProgress.unlockedCharacters.includes(charId)) {
+        playerProgress.selectedCharacter = charId;
+        selectedCharacter = charId;
+        saveProgress();
+        updatePlayerColors();
+        return true;
+    }
+    return false;
+}
+
+function checkCharacterUnlocks() {
+    let newUnlocks = [];
+    for (const [id, char] of Object.entries(PLAYABLE_CHARACTERS)) {
+        if (!playerProgress.unlockedCharacters.includes(id) && char.unlockCondition) {
+            if (char.unlockCondition(playerProgress, playerStats)) {
+                playerProgress.unlockedCharacters.push(id);
+                newUnlocks.push(char);
+            }
+        }
+    }
+    for (const char of newUnlocks) {
+        showCharacterUnlock(char);
+    }
+    if (newUnlocks.length > 0) {
+        saveProgress();
+    }
+    return newUnlocks;
+}
+
+function showCharacterUnlock(character) {
+    const notification = document.createElement('div');
+    notification.innerHTML = `<div style="font-size:48px;margin-bottom:10px">🔓</div>
+        <div style="font-size:14px;color:#fff;letter-spacing:3px;margin-bottom:8px">CHARACTER UNLOCKED!</div>
+        <div style="font-size:24px;color:#ffe66d;font-weight:bold;margin-bottom:5px">${character.name}</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.8)">${character.description}</div>`;
+    notification.style.cssText = `position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:linear-gradient(180deg,rgba(78,205,196,0.95) 0%,rgba(46,134,130,0.95) 100%);padding:30px 50px;border-radius:12px;border:3px solid #ffe66d;box-shadow:0 0 60px rgba(255,230,109,0.6);z-index:500;text-align:center;font-family:'Courier New',monospace;`;
+    document.body.appendChild(notification);
+    setTimeout(() => { notification.style.opacity = '0'; notification.style.transition = 'opacity 0.5s'; setTimeout(() => notification.remove(), 500); }, 3000);
 }
 
 function updatePlayerColors() {
-    const char = PLAYER_CHARACTER;
+    const char = getSelectedCharacter();
     if (char.colors) {
         COLORS.playerShirt = char.colors.shirt;
         COLORS.playerShirtLight = char.colors.shirtLight;
@@ -7031,12 +7130,13 @@ function drawCompanion() {
         ctx.ellipse(x + TILE_SIZE / 2, y + TILE_SIZE - 2, 12, 4, 0, 0, Math.PI * 2);
         ctx.fill();
 
-        // Draw sprite with bounce
-        const scale = 2.0; // Scale factor for the dog sprite
-        const drawWidth = anim.frameWidth * scale * 0.5;
-        const drawHeight = anim.frameHeight * scale * 0.5;
+        // Draw sprite with bounce - dog should be about half the size of human characters
+        // Human characters use spriteScale of 2.5, so dog uses ~1.25 (half)
+        const dogScale = 1.25;
+        const drawWidth = TILE_SIZE * dogScale;
+        const drawHeight = TILE_SIZE * dogScale;
         const drawX = x + TILE_SIZE / 2 - drawWidth / 2;
-        const drawY = y + TILE_SIZE / 2 - drawHeight / 2 + bounce;
+        const drawY = y + TILE_SIZE / 2 - drawHeight / 2 + bounce + 4; // +4 to lower it slightly
 
         ctx.drawImage(
             anim.image,
@@ -7045,30 +7145,31 @@ function drawCompanion() {
         );
     } else {
         // Fallback to simple procedural drawing if sprite not loaded
+        // Dog should be about half the size of humans
         ctx.fillStyle = 'rgba(0,0,0,0.25)';
         ctx.beginPath();
-        ctx.ellipse(x + TILE_SIZE / 2, y + TILE_SIZE - 4, 10, 4, 0, 0, Math.PI * 2);
+        ctx.ellipse(x + TILE_SIZE / 2, y + TILE_SIZE - 2, 6, 2, 0, 0, Math.PI * 2);
         ctx.fill();
 
-        // Simple dog body
+        // Simple dog body (smaller)
         ctx.fillStyle = '#8d6e63';
         ctx.beginPath();
-        ctx.ellipse(x + TILE_SIZE / 2, y + TILE_SIZE / 2 + 4 + bounce, 12, 10, 0, 0, Math.PI * 2);
+        ctx.ellipse(x + TILE_SIZE / 2, y + TILE_SIZE / 2 + 6 + bounce, 8, 6, 0, 0, Math.PI * 2);
         ctx.fill();
 
-        // Dog head
+        // Dog head (smaller)
         ctx.fillStyle = '#a1887f';
         ctx.beginPath();
-        ctx.arc(x + TILE_SIZE / 2 + 8, y + TILE_SIZE / 2 - 4 + bounce, 9, 0, Math.PI * 2);
+        ctx.arc(x + TILE_SIZE / 2 + 5, y + TILE_SIZE / 2 + 2 + bounce, 6, 0, Math.PI * 2);
         ctx.fill();
 
-        // Eyes
+        // Eyes (smaller)
         ctx.fillStyle = '#000';
         ctx.beginPath();
-        ctx.arc(x + TILE_SIZE / 2 + 5, y + TILE_SIZE / 2 - 6 + bounce, 2, 0, Math.PI * 2);
+        ctx.arc(x + TILE_SIZE / 2 + 3, y + TILE_SIZE / 2 + bounce, 1.5, 0, Math.PI * 2);
         ctx.fill();
         ctx.beginPath();
-        ctx.arc(x + TILE_SIZE / 2 + 11, y + TILE_SIZE / 2 - 6 + bounce, 2, 0, Math.PI * 2);
+        ctx.arc(x + TILE_SIZE / 2 + 7, y + TILE_SIZE / 2 + bounce, 1.5, 0, Math.PI * 2);
         ctx.fill();
     }
 
@@ -14831,6 +14932,77 @@ function addSettingsToTitle() {
     }
 }
 
+// ============================================
+// CHARACTER SELECTION UI
+// ============================================
+function showCharacterSelect() {
+    let modal = document.getElementById('characterSelectModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'characterSelectModal';
+        modal.style.cssText = `position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);display:flex;justify-content:center;align-items:center;z-index:400;`;
+        document.body.appendChild(modal);
+    }
+
+    let html = `<div style="background:linear-gradient(180deg,rgba(30,40,60,0.98) 0%,rgba(15,20,35,0.99) 100%);padding:30px;border-radius:12px;border:3px solid #4ecdc4;max-width:600px;max-height:80vh;overflow-y:auto;">
+        <h2 style="color:#4ecdc4;text-align:center;margin-bottom:20px;letter-spacing:3px;">SELECT CHARACTER</h2>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:15px;">`;
+
+    for (const [id, char] of Object.entries(PLAYABLE_CHARACTERS)) {
+        const unlocked = playerProgress.unlockedCharacters.includes(id);
+        const selected = playerProgress.selectedCharacter === id;
+        const borderColor = selected ? '#ffe66d' : (unlocked ? '#4ecdc4' : '#555');
+        const opacity = unlocked ? '1' : '0.6';
+
+        // Calculate unlock progress for locked characters
+        let progressHtml = '';
+        if (!unlocked && char.unlockCondition) {
+            const wins = playerProgress.totalWins || 0;
+            const endlessFloor = playerStats.endlessBestFloor || 0;
+            const winsProgress = Math.min(wins, 10);
+            const endlessProgress = Math.min(endlessFloor, 10);
+            const bestProgress = Math.max(winsProgress / 10, endlessProgress / 10) * 100;
+
+            progressHtml = `
+                <div style="margin-top:8px;">
+                    <div style="background:rgba(0,0,0,0.5);border-radius:4px;height:6px;overflow:hidden;">
+                        <div style="background:linear-gradient(90deg,#4ecdc4,#2a9d8f);width:${bestProgress}%;height:100%;transition:width 0.3s;"></div>
+                    </div>
+                    <div style="color:#4ecdc4;font-size:9px;margin-top:3px;">${wins}/10 wins OR ${endlessFloor}/10 endless</div>
+                </div>`;
+        }
+
+        html += `<div onclick="${unlocked ? `selectCharacter('${id}');showCharacterSelect();` : ''}" style="background:rgba(0,0,0,0.5);border:2px solid ${borderColor};border-radius:8px;padding:15px;text-align:center;cursor:${unlocked ? 'pointer' : 'not-allowed'};opacity:${opacity};transition:all 0.2s;">
+            <div style="width:50px;height:50px;margin:0 auto 10px;background:${char.colors.shirt};border-radius:50%;border:3px solid ${char.colors.hair};"></div>
+            <div style="color:#fff;font-size:13px;font-weight:bold;margin-bottom:5px;">${char.name}</div>
+            <div style="color:#888;font-size:10px;margin-bottom:5px;">${char.description}</div>
+            ${unlocked ? (selected ? '<div style="color:#ffe66d;font-size:10px;margin-top:5px;">✓ SELECTED</div>' : '') : `<div style="color:#e74c3c;font-size:9px;">🔒 ${char.unlockDescription || 'Locked'}</div>${progressHtml}`}
+        </div>`;
+    }
+
+    html += `</div>
+        <div style="text-align:center;margin-top:20px;">
+            <div style="color:#888;font-size:11px;margin-bottom:10px;">Unlocked: ${playerProgress.unlockedCharacters.length}/${Object.keys(PLAYABLE_CHARACTERS).length}</div>
+            <button onclick="document.getElementById('characterSelectModal').style.display='none'" style="padding:12px 30px;font-size:14px;background:linear-gradient(180deg,#4ecdc4 0%,#2a9d8f 100%);color:#fff;border:none;cursor:pointer;font-family:'Courier New',monospace;text-transform:uppercase;border-radius:4px;letter-spacing:2px;">BACK</button>
+        </div>
+    </div>`;
+
+    modal.innerHTML = html;
+    modal.style.display = 'flex';
+}
+
+function addCharacterSelectToTitle() {
+    const tertiaryRow = document.getElementById('tertiaryButtons');
+    if (tertiaryRow && !document.getElementById('titleCharacterBtn')) {
+        const charBtn = document.createElement('button');
+        charBtn.id = 'titleCharacterBtn';
+        charBtn.className = 'btn-tertiary';
+        charBtn.textContent = 'STAFF';
+        charBtn.onclick = showCharacterSelect;
+        tertiaryRow.appendChild(charBtn);
+    }
+}
+
 // === HIGH SCORE DISPLAY: Show best floor on title screen ===
 function updateTitleHighScore() {
     const middleContent = document.querySelector('#message .middle-content');
@@ -14905,6 +15077,7 @@ loadSettings();
 loadProgress();
 initDifficultyButtons();
 addResumeButtonToTitle();
+addCharacterSelectToTitle(); // Add character selection button
 updatePlayerColors();
 loadStats();  // Load player stats from localStorage
 updateVaultBadge(); // Show vault badge if discovered
