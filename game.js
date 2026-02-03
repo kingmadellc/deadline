@@ -2325,7 +2325,7 @@ const PERKS = {
     timeLord: {
         id: 'timeLord',
         name: 'Time Lord',
-        description: '+15s at floor start, knockouts give +100% time',
+        description: '+10s at floor start, knockouts give +50% time',
         icon: '⏳',
         category: 'passive',
         rarity: 'legendary'
@@ -2535,6 +2535,7 @@ let gameState = {
     lastTimerSecond: -1,    // Track timer changes for pulse effect
     timerPulseScale: 1.0,   // Current timer scale for pulse animation
     enemySpawnFlash: 0,     // Flash when enemies spawn
+    damageFlashTimer: 0,    // Red vignette flash when player takes damage
     // === PERK SYSTEM ===
     perks: [],              // Active perks for this run
     perkChoices: null,      // Current floor's perk choices (null = no choice pending)
@@ -3927,8 +3928,8 @@ function loadProgress() {
         if (saved) {
             playerProgress = { ...playerProgress, ...JSON.parse(saved) };
         }
-        // Force default character only - other characters disabled until new differentiated designs
-        playerProgress.selectedCharacter = 'default';
+        // Characters are now enabled! Let player use their unlocked characters
+        // playerProgress.selectedCharacter = 'default'; // REMOVED - characters enabled
         // Sync the global selectedCharacter for asset lookups
         selectedCharacter = CHARACTER_ID_TO_ASSET[playerProgress.selectedCharacter] || 'corporate_employee';
         checkUnlocks();
@@ -5151,16 +5152,17 @@ function initLevel() {
             showPersonalBestProximityAlert(pbStatus);
         }
     } else {
-        // Standard mode timer calculation - smoother early learning curve
+        // Standard mode timer calculation - smoothed difficulty curve
+        // Floor timers (base): 13=45, 12=43, 11=41, 10=38, 9=36, 8=34, 7=31, 6=29, 5=27, 4-1=25
         if (gameState.floor >= 11) {
-            // Opening floors (13-11): 45, 42, 40
-            gameState.timer = 45 - (13 - gameState.floor) * 2.5;
+            // Opening floors (13-11): 45, 43, 41 (2s steps)
+            gameState.timer = 45 - (13 - gameState.floor) * 2;
         } else if (gameState.floor >= 8) {
-            // Early-mid floors (10-8): 36, 34, 32
-            gameState.timer = 36 - (10 - gameState.floor) * 2;
+            // Early-mid floors (10-8): 38, 36, 34 (2s steps, smooth transition from 41)
+            gameState.timer = 38 - (10 - gameState.floor) * 2;
         } else if (gameState.floor >= 5) {
-            // Mid floors (7-5): 30, 28, 27
-            gameState.timer = 30 - (7 - gameState.floor) * 1.5;
+            // Mid floors (7-5): 31, 29, 27 (2s steps, smooth transition from 34)
+            gameState.timer = 31 - (7 - gameState.floor) * 2;
         } else {
             // Late floors (4-1): 25 base
             gameState.timer = 25;
@@ -8462,6 +8464,19 @@ function draw() {
         ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
 
+    // === DAMAGE FLASH: Red vignette when player takes damage ===
+    if (gameState.damageFlashTimer > 0) {
+        const intensity = gameState.damageFlashTimer / 0.3; // Normalize to 0-1
+        const gradient = ctx.createRadialGradient(
+            canvas.width / 2, canvas.height / 2, canvas.width * 0.2,
+            canvas.width / 2, canvas.height / 2, canvas.width * 0.6
+        );
+        gradient.addColorStop(0, 'rgba(255, 0, 0, 0)');
+        gradient.addColorStop(1, `rgba(255, 0, 0, ${intensity * 0.4})`);
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
     // Restore context after screen shake
     ctx.restore();
 }
@@ -9704,6 +9719,7 @@ function handlePlayerEnemyCollision(enemy) {
         AudioManager.play('hit'); // Player hit sound
         screenShake.trigger(10, 0.25); // Medium shake when hit
         triggerFreezeFrame('playerHit'); // Impact freeze frame for game feel
+        gameState.damageFlashTimer = 0.3; // Red vignette flash for impact feedback
 
         gameState.player.hitCount++;
         gameState.player.lastHitTime = Date.now();
@@ -10125,6 +10141,22 @@ function performDash() {
     gameState.player.dashInvincible = dashInvincibility;
     gameState.player.dashCooldown = dashCooldown;
 
+    // === DASH SOUND: Quick whoosh effect ===
+    if (AudioManager.context) {
+        // Descending frequency sweep for satisfying whoosh
+        const osc = AudioManager.context.createOscillator();
+        const gain = AudioManager.context.createGain();
+        osc.connect(gain);
+        gain.connect(AudioManager.sfxGain);
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(400, AudioManager.context.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(200, AudioManager.context.currentTime + 0.08);
+        gain.gain.setValueAtTime(0.12, AudioManager.context.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, AudioManager.context.currentTime + 0.1);
+        osc.start();
+        osc.stop(AudioManager.context.currentTime + 0.1);
+    }
+
     // === DASH DAMAGE PERK: Stun enemies we dash through ===
     if (gameState.perks.includes('dashDamage')) {
         for (const enemy of gameState.enemies) {
@@ -10404,8 +10436,8 @@ function performPunch() {
             let baseReward = PUNCH_TIME_REWARD;
             // Perk: Time Vampire - 50% more time per kill
             if (gameState.perks.includes('punchVampire')) baseReward = Math.floor(baseReward * 1.5);
-            // Perk: Time Lord (Legendary) - 100% more time per kill (stacks with Time Vampire!)
-            if (gameState.perks.includes('timeLord')) baseReward = Math.floor(baseReward * 2);
+            // Perk: Time Lord (Legendary) - 50% more time per kill (nerfed from 100%, stacks with Time Vampire!)
+            if (gameState.perks.includes('timeLord')) baseReward = Math.floor(baseReward * 1.5);
             const timeReward = Math.floor(baseReward * (1 + (comboMultiplier - 1) * 0.5)); // 4, 6, 8, 10...
             gameState.timer += timeReward;
             timeGained += timeReward;
@@ -10451,7 +10483,9 @@ function performPunch() {
 
     // Audio and visual feedback based on hits
     if (enemiesHit > 0) {
-        AudioManager.play('punch1', 0.8);
+        // Escalating combo audio - pitch increases with kill combo
+        const comboPitch = 1.0 + Math.min(gameState.killCombo, 10) * 0.06; // Up to 1.6x at combo 10
+        AudioManager.play('punch1', 0.8, comboPitch);
 
         // === SLOW-MO ON MULTI-KILLS ===
         if (enemiesHit >= 5) {
@@ -11758,7 +11792,7 @@ function purchasePerk(perkId, price) {
         gameState.timer += 5;
     }
     if (perkId === 'timeLord') {
-        gameState.timer += 15; // Immediate +15s bonus on purchase
+        gameState.timer += 10; // Immediate +10s bonus on purchase (nerfed from +15s)
     }
     if (perkId === 'shieldStart') {
         gameState.player.shielded = 5;
@@ -12807,6 +12841,11 @@ function update(deltaTime) {
     // === ENEMY SPAWN FLASH: Decay flash effect ===
     if (gameState.enemySpawnFlash > 0) {
         gameState.enemySpawnFlash -= deltaTime * 3;
+    }
+
+    // === DAMAGE FLASH: Decay red vignette when hit ===
+    if (gameState.damageFlashTimer > 0) {
+        gameState.damageFlashTimer -= deltaTime;
     }
 
     // === SMOOTH MOVEMENT: Lerp visual position toward logical position ===
@@ -13997,12 +14036,7 @@ function addSettingsToTitle() {
 // CHARACTER SELECTION UI
 // ============================================
 function showCharacterSelect() {
-    // Character selection disabled - only default character available
-    // New differentiated characters will be added in a future update
-    console.log('Character selection is currently disabled');
-    return;
-
-    // Original code preserved below for future re-enablement
+    // Character selection RE-ENABLED!
     let modal = document.getElementById('characterSelectModal');
     if (!modal) {
         modal = document.createElement('div');
@@ -14019,13 +14053,62 @@ function showCharacterSelect() {
         const unlocked = playerProgress.unlockedCharacters.includes(id);
         const selected = playerProgress.selectedCharacter === id;
         const borderColor = selected ? '#ffe66d' : (unlocked ? '#4ecdc4' : '#555');
-        const opacity = unlocked ? '1' : '0.5';
+        const opacity = unlocked ? '1' : '0.6';
+
+        // Calculate unlock progress for locked characters
+        let progressHtml = '';
+        if (!unlocked && id !== 'default') {
+            let progress = 0;
+            let progressMax = 1;
+            let progressLabel = '';
+
+            if (id === 'speedster') {
+                // Perfect run - binary (achieved or not)
+                progress = playerProgress.perfectRunAchieved ? 1 : 0;
+                progressMax = 1;
+                progressLabel = 'Perfect Run';
+            } else if (id === 'tank') {
+                // 50 total zaps
+                progress = Math.min(playerProgress.totalZaps || 0, 50);
+                progressMax = 50;
+                progressLabel = `${progress}/${progressMax} Zaps`;
+            } else if (id === 'fighter') {
+                // 100 total punches
+                progress = Math.min(playerProgress.totalPunches || 0, 100);
+                progressMax = 100;
+                progressLabel = `${progress}/${progressMax} Punches`;
+            } else if (id === 'ghost') {
+                // Secret exit - binary
+                progress = playerProgress.secretExitFound ? 1 : 0;
+                progressMax = 1;
+                progressLabel = 'Secret Exit';
+            }
+
+            const progressPercent = (progress / progressMax) * 100;
+            progressHtml = `
+                <div style="margin-top:8px;">
+                    <div style="background:rgba(0,0,0,0.5);border-radius:4px;height:6px;overflow:hidden;">
+                        <div style="background:linear-gradient(90deg,#4ecdc4,#2a9d8f);width:${progressPercent}%;height:100%;transition:width 0.3s;"></div>
+                    </div>
+                    <div style="color:#4ecdc4;font-size:9px;margin-top:3px;">${progressLabel}</div>
+                </div>`;
+        }
+
+        // Show character bonus for unlocked characters
+        let bonusHtml = '';
+        if (unlocked && char.bonus) {
+            if (char.bonus.speedMultiplier) bonusHtml = `<div style="color:#3498db;font-size:9px;">⚡ +${Math.round((char.bonus.speedMultiplier - 1) * 100)}% Speed</div>`;
+            else if (char.bonus.stunResistance) bonusHtml = `<div style="color:#9b59b6;font-size:9px;">🛡 ${Math.round(char.bonus.stunResistance * 100)}% Stun Resist</div>`;
+            else if (char.bonus.punchRange) bonusHtml = `<div style="color:#e74c3c;font-size:9px;">👊 +${char.bonus.punchRange - 3} Punch Range</div>`;
+            else if (char.bonus.enemyDetectionRange) bonusHtml = `<div style="color:#95a5a6;font-size:9px;">👻 ${Math.round((1 - char.bonus.enemyDetectionRange) * 100)}% Stealth</div>`;
+        }
 
         html += `<div onclick="${unlocked ? `selectCharacter('${id}');showCharacterSelect();` : ''}" style="background:rgba(0,0,0,0.5);border:2px solid ${borderColor};border-radius:8px;padding:15px;text-align:center;cursor:${unlocked ? 'pointer' : 'not-allowed'};opacity:${opacity};transition:all 0.2s;">
             <div style="width:40px;height:40px;margin:0 auto 10px;background:${char.colors.shirt};border-radius:50%;border:3px solid ${char.colors.hair};"></div>
             <div style="color:#fff;font-size:12px;font-weight:bold;margin-bottom:5px;">${char.name}</div>
             <div style="color:#888;font-size:10px;margin-bottom:5px;">${char.description}</div>
-            ${unlocked ? (selected ? '<div style="color:#ffe66d;font-size:10px;">SELECTED</div>' : '') : `<div style="color:#e74c3c;font-size:9px;">🔒 ${char.unlockCondition}</div>`}
+            ${bonusHtml}
+            ${unlocked ? (selected ? '<div style="color:#ffe66d;font-size:10px;margin-top:5px;">✓ SELECTED</div>' : '') : `<div style="color:#e74c3c;font-size:9px;">🔒 ${char.unlockCondition}</div>${progressHtml}`}
         </div>`;
     }
 
@@ -14049,6 +14132,57 @@ function addCharacterSelectToTitle() {
         charBtn.textContent = 'CHARACTERS';
         charBtn.onclick = showCharacterSelect;
         tertiaryRow.appendChild(charBtn);
+    }
+}
+
+// === HIGH SCORE DISPLAY: Show best floor on title screen ===
+function updateTitleHighScore() {
+    const middleContent = document.querySelector('#message .middle-content');
+    if (!middleContent) return;
+
+    // Remove existing high score display
+    let existing = document.getElementById('titleHighScore');
+    if (existing) existing.remove();
+
+    // Only show if player has actually played (best floor < 13)
+    if (playerProgress.bestFloor < 13) {
+        const highScoreDiv = document.createElement('div');
+        highScoreDiv.id = 'titleHighScore';
+        highScoreDiv.style.cssText = `
+            margin-top: 12px;
+            padding: 8px 20px;
+            background: linear-gradient(90deg, rgba(78,205,196,0.1), rgba(78,205,196,0.2), rgba(78,205,196,0.1));
+            border-radius: 20px;
+            display: inline-block;
+        `;
+
+        // Determine achievement level
+        let badge = '';
+        let badgeColor = '#4ecdc4';
+        if (playerProgress.bestFloor === 1) {
+            badge = '🏆 ';
+            badgeColor = '#ffd700';
+        } else if (playerProgress.bestFloor <= 3) {
+            badge = '⭐ ';
+            badgeColor = '#e74c3c';
+        } else if (playerProgress.bestFloor <= 5) {
+            badge = '🎯 ';
+            badgeColor = '#f39c12';
+        }
+
+        highScoreDiv.innerHTML = `
+            <span style="color: ${badgeColor}; font-size: 14px; letter-spacing: 2px; font-family: 'Courier New', monospace;">
+                ${badge}BEST: FLOOR ${playerProgress.bestFloor}
+            </span>
+        `;
+
+        // Insert after tagline-small
+        const tagline = middleContent.querySelector('.tagline-small');
+        if (tagline && tagline.parentNode) {
+            tagline.parentNode.insertBefore(highScoreDiv, tagline.nextSibling);
+        } else {
+            middleContent.appendChild(highScoreDiv);
+        }
     }
 }
 
@@ -14078,6 +14212,7 @@ addResumeButtonToTitle();
 updatePlayerColors();
 loadStats();  // Load player stats from localStorage
 updateVaultBadge(); // Show vault badge if discovered
+updateTitleHighScore(); // Show best floor reached
 initTouchControls();
 
 // Watch for modal visibility changes to toggle HUD/canvas visibility
