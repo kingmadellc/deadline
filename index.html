@@ -201,6 +201,33 @@
             /* Auto-fit to viewport for handheld devices */
             max-width: 100vw;
             max-height: 90vh;
+            display: block;
+            margin: auto;
+        }
+
+        /* Fullscreen mode - use entire screen */
+        :fullscreen #gameCanvas,
+        :-webkit-full-screen #gameCanvas {
+            max-width: 100vw !important;
+            max-height: 100vh !important;
+            border: none !important;
+        }
+
+        :fullscreen #gameContainer,
+        :-webkit-full-screen #gameContainer {
+            gap: 0;
+        }
+
+        :fullscreen #hud,
+        :-webkit-full-screen #hud {
+            position: fixed;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            background: rgba(0,0,0,0.7);
+            padding: 8px 20px;
+            border-radius: 8px;
         }
 
         #message {

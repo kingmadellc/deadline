@@ -620,8 +620,13 @@ function setResolution(resKey) {
 // Auto-fit canvas to viewport while maintaining aspect ratio
 // This ensures the game is visible on devices where the viewport is smaller than the canvas
 function fitCanvasToViewport() {
-    const maxWidth = window.innerWidth - 20;   // Small margin for edges
-    const maxHeight = window.innerHeight - 80; // Account for HUD and margins
+    // In fullscreen mode, use maximum available space
+    const isFullscreen = document.fullscreenElement || displaySettings.fullscreen;
+    const marginX = isFullscreen ? 0 : 20;   // No margin in fullscreen
+    const marginY = isFullscreen ? 0 : 60;   // No margin in fullscreen (HUD is overlaid)
+
+    const maxWidth = window.innerWidth - marginX;
+    const maxHeight = window.innerHeight - marginY;
 
     const canvasRatio = canvas.width / canvas.height;
     const viewportRatio = maxWidth / maxHeight;
@@ -635,6 +640,10 @@ function fitCanvasToViewport() {
         canvas.style.height = maxHeight + 'px';
         canvas.style.width = Math.floor(maxHeight * canvasRatio) + 'px';
     }
+
+    // Center the canvas
+    canvas.style.margin = 'auto';
+    canvas.style.display = 'block';
 }
 
 // Re-fit canvas on window resize
@@ -716,6 +725,8 @@ function toggleFullscreen() {
 // Handle fullscreen change events
 document.addEventListener('fullscreenchange', () => {
     displaySettings.fullscreen = !!document.fullscreenElement;
+    // Re-fit canvas to use full screen space
+    setTimeout(fitCanvasToViewport, 100);
 });
 
 // Re-detect resolution on resize/orientation change (if auto-detect enabled)
