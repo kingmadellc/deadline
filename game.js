@@ -2436,12 +2436,9 @@ const PERK_TIER_UNLOCK = {
     ultimate: 3    // Unlock at floor 3 or below (expensive late-game perks)
 };
 
-// Get number of shop slots based on floor (more choices on later floors)
+// Get number of shop slots - consistent 4 options every floor
 function getShopSlotCount(floor) {
-    if (floor >= 10) return 3;  // Floors 13-10: 3 choices
-    if (floor >= 7) return 4;   // Floors 9-7: 4 choices
-    if (floor >= 4) return 5;   // Floors 6-4: 5 choices
-    return 6;                    // Floors 3-1: 6 choices (includes legendary)
+    return 4; // Consistent experience every floor
 }
 
 // Get random perks for floor selection (no duplicates from current perks)
@@ -2466,8 +2463,10 @@ function getRandomPerkChoices(count = 3) {
         if (perk.rarity === 'rare' && currentFloor === 10) weight = 2;
         if (perk.rarity === 'epic' && currentFloor === 7) weight = 2;
         if (perk.rarity === 'legendary' && currentFloor === 4) weight = 3;
-        // Legendary always has higher weight when available (reward for late game)
+        if (perk.rarity === 'ultimate' && currentFloor === 3) weight = 4;
+        // Legendary/Ultimate always have higher weight when available (reward for late game)
         if (perk.rarity === 'legendary') weight = 2;
+        if (perk.rarity === 'ultimate') weight = 3; // Ensure ultimate perks appear when available
         for (let i = 0; i < weight; i++) weighted.push(perk);
     }
 
@@ -2482,7 +2481,24 @@ function getRandomPerkChoices(count = 3) {
             unique.push(perk);
         }
     }
-    return unique.slice(0, Math.min(count, unique.length));
+    const result = unique.slice(0, Math.min(count, unique.length));
+
+    // Fill remaining slots with Coin Stash options when perk pool is depleted
+    let stashIndex = 0;
+    while (result.length < count) {
+        const bonusAmount = 50 + stashIndex * 25;
+        result.push({
+            id: `coinStash_${stashIndex}`,
+            name: 'Coin Stash',
+            description: `Found ${bonusAmount} coins hidden in a desk drawer!`,
+            icon: '💰',
+            rarity: 'common',
+            isCoinStash: true,
+            bonusAmount: bonusAmount
+        });
+        stashIndex++;
+    }
+    return result;
 }
 
 // === ENEMY TYPE SELECTION ===
@@ -2608,11 +2624,13 @@ let gameState = {
     // Zen mode flag
     zenMode: false,
     // === NEW: Collectibles System (Dopamine Breadcrumbs) ===
-    coins: [],              // Coins scattered throughout maze
-    coinsCollected: 0,      // Coin value collected this run (for points)
-    coinsCollectedCount: 0, // Actual number of coins collected (for display)
-    coinCombo: 0,           // Rapid collection combo
-    coinComboTimer: 0,      // Time remaining for combo
+    coins: [],               // Coins scattered throughout maze
+    coinsCollected: 0,       // Total coin value collected this run (for points/stats)
+    coinsCollectedCount: 0,  // Total coin count collected this run (for display/stats)
+    coinsBanked: 0,          // Spendable coins banked between rounds (shop currency)
+    coinsEarnedThisFloor: 0, // Coins earned during the current floor (tabulated on exit)
+    coinCombo: 0,            // Rapid collection combo
+    coinComboTimer: 0,       // Time remaining for combo
     // === NEW: Quick Run Mode ===
     quickRunMode: false,    // 5-floor quick run
     quickRunStartFloor: 5,   // Starting floor for quick run
@@ -2663,6 +2681,32 @@ let gameState = {
     vaultAnimationPlaying: false, // Currently playing vault discovery animation
     showingVaultFloor: false      // Floor -100 has special vault exit rendering
 };
+
+// ============================================
+// COIN ECONOMY HELPERS
+// ============================================
+function awardCoins(amount) {
+    if (!amount || amount <= 0) return;
+    gameState.coinsEarnedThisFloor = (gameState.coinsEarnedThisFloor || 0) + amount;
+    gameState.coinsCollected = (gameState.coinsCollected || 0) + amount;
+    gameState.coinsCollectedCount = (gameState.coinsCollectedCount || 0) + amount;
+}
+
+function bankCoinsForFloor() {
+    const earned = gameState.coinsEarnedThisFloor || 0;
+    if (earned > 0) {
+        gameState.coinsBanked = (gameState.coinsBanked || 0) + earned;
+    }
+    gameState.coinsEarnedThisFloor = 0;
+}
+
+function getBankedCoins() {
+    return gameState.coinsBanked || 0;
+}
+
+function getLiveCoinTotal() {
+    return getBankedCoins() + (gameState.coinsEarnedThisFloor || 0);
+}
 
 // Comprehensive stats tracking (persisted)
 let playerStats = {
@@ -3171,7 +3215,7 @@ let keys = {};
 let keyPressTime = {}; // Track when each key was first pressed
 let keyMoved = {}; // Track if a key has already triggered a move (for tap detection)
 let lastMove = 0;
-const MOVE_DELAY = 100; // Reduced from 150ms for snappier, more precise movement
+const MOVE_DELAY = 115; // Balanced: responsive but not frantic (was 100ms)
 const HOLD_THRESHOLD = 180; // Must hold key this long (ms) before continuous movement kicks in
 
 // ============================================
@@ -3214,13 +3258,15 @@ function updateFlow(deltaTime) {
 function getEffectiveMoveDelay() {
     let delay = MOVE_DELAY;
     if (gameState && gameState.perks && gameState.perks.includes('speedBoost')) delay *= 0.75; // 25% faster
-    if (gameState && gameState.powerup === 'speed') delay *= 0.5; // Speed powerup stacks
-    if (gameState && gameState.powerup === 'overclock') delay *= 0.4; // Panic speed boost
+    if (gameState && gameState.powerup === 'speed') delay *= 0.6; // Speed powerup (~1.67x, was 2x)
+    if (gameState && gameState.powerup === 'overclock') delay *= 0.5; // Panic speed boost (2x, was 2.5x)
     if (gameState && gameState.playerSlowed) delay *= 1.5; // Coffee spill slow effect
     if (gameState && gameState.flow) {
         const flowBoost = Math.min(gameState.flow, FLOW_MAX) / FLOW_MAX;
         delay *= (1 - (flowBoost * 0.2)); // Up to 20% faster at full flow
     }
+    // Speed floor to prevent extreme stacking
+    delay = Math.max(delay, 50);
     return delay;
 }
 
@@ -4135,7 +4181,12 @@ const CELEBRATIONS = {
     cooldown: { text: '⏳ RECHARGING...', color: '#3498db' },
     // === THE VAULT CELEBRATIONS ===
     severance: { text: '💼⚡ SEVERANCE PACKAGE!', color: '#3498db' },
-    vaultFound: { text: '🔐💰 VAULT DISCOVERED!', color: '#f1c40f' }
+    vaultFound: { text: '🔐💰 VAULT DISCOVERED!', color: '#f1c40f' },
+    // === TIER UNLOCK CELEBRATIONS ===
+    tierUnlockRare: { text: '🔓 RARE PERKS NOW AVAILABLE!', color: '#9b59b6' },
+    tierUnlockEpic: { text: '🔓 EPIC PERKS NOW AVAILABLE!', color: '#f39c12' },
+    tierUnlockLegendary: { text: '⭐ LEGENDARY TIER UNLOCKED!', color: '#ffd700' },
+    tierUnlockUltimate: { text: '💎 ULTIMATE PERKS UNLOCKED!', color: '#ff1493' }
 };
 
 // ============================================
@@ -4546,6 +4597,10 @@ function saveGameState() {
         flow: gameState.flow || 0,
         flowStateActive: gameState.flowStateActive || false,
         flowBonusLastFloor: gameState.flowBonusLastFloor || 0,
+        coinsBanked: gameState.coinsBanked || 0,
+        coinsEarnedThisFloor: gameState.coinsEarnedThisFloor || 0,
+        coinsCollected: gameState.coinsCollected || 0,
+        coinsCollectedCount: gameState.coinsCollectedCount || 0,
         player: { ...gameState.player },
         enemies: gameState.enemies.map(e => ({ ...e })),
         enemiesKnockedOut: gameState.enemiesKnockedOut,
@@ -4621,6 +4676,10 @@ function resumeGame() {
     gameState.flow = saveData.flow || 0;
     gameState.flowStateActive = saveData.flowStateActive || false;
     gameState.flowBonusLastFloor = saveData.flowBonusLastFloor || 0;
+    gameState.coinsBanked = saveData.coinsBanked || 0;
+    gameState.coinsEarnedThisFloor = saveData.coinsEarnedThisFloor || 0;
+    gameState.coinsCollected = saveData.coinsCollected || 0;
+    gameState.coinsCollectedCount = saveData.coinsCollectedCount || 0;
     gameState.player.x = saveData.player.x;
     gameState.player.y = saveData.player.y;
     gameState.player.hitCount = saveData.player.hitCount || 0;
@@ -5745,20 +5804,20 @@ function initLevel() {
             showPersonalBestProximityAlert(pbStatus);
         }
     } else {
-        // Standard mode timer calculation - smoothed difficulty curve
-        // Floor timers (base): 13=45, 12=43, 11=41, 10=38, 9=36, 8=34, 7=31, 6=29, 5=27, 4-1=25
+        // Standard mode timer calculation - increased for more deliberate pacing
+        // Floor timers (base): 13=60, 12=57, 11=54, 10=50, 9=47, 8=44, 7=40, 6=37, 5=34, 4-1=30
         if (gameState.floor >= 11) {
-            // Opening floors (13-11): 45, 43, 41 (2s steps)
-            gameState.timer = 45 - (13 - gameState.floor) * 2;
+            // Opening floors (13-11): 60, 57, 54 (3s steps)
+            gameState.timer = 60 - (13 - gameState.floor) * 3;
         } else if (gameState.floor >= 8) {
-            // Early-mid floors (10-8): 38, 36, 34 (2s steps, smooth transition from 41)
-            gameState.timer = 38 - (10 - gameState.floor) * 2;
+            // Early-mid floors (10-8): 50, 47, 44 (3s steps)
+            gameState.timer = 50 - (10 - gameState.floor) * 3;
         } else if (gameState.floor >= 5) {
-            // Mid floors (7-5): 31, 29, 27 (2s steps, smooth transition from 34)
-            gameState.timer = 31 - (7 - gameState.floor) * 2;
+            // Mid floors (7-5): 40, 37, 34 (3s steps)
+            gameState.timer = 40 - (7 - gameState.floor) * 3;
         } else {
-            // Late floors (4-1): 25 base
-            gameState.timer = 25;
+            // Late floors (4-1): 30 base
+            gameState.timer = 30;
         }
 
         // Give more time on larger maps (based on area)
@@ -5871,7 +5930,7 @@ function initLevel() {
     }
     // Vault Master: +100 starting coins each floor
     if (gameState.perks.includes('vaultMaster')) {
-        gameState.coinsCollected += 100;
+        awardCoins(100);
     }
 
     // Add cafeteria on floors 10, 7, 4 (rebalanced for 13-floor game)
@@ -8599,7 +8658,7 @@ function checkCelebrationTriggers(event, data = {}) {
                 showCelebration('speedster');
                 // Speed bonus coins!
                 const speedBonus = Math.floor(gameState.timer * 2);
-                gameState.coinsCollected += speedBonus;
+                awardCoins(speedBonus);
                 showCelebration('speedBonus', { coins: speedBonus });
             }
             // Flawless: no hits this floor
@@ -8607,13 +8666,13 @@ function checkCelebrationTriggers(event, data = {}) {
                 showCelebration('flawless');
                 // Flawless bonus coins!
                 const flawlessBonus = 25 + (13 - gameState.floor) * 5; // More on later floors
-                gameState.coinsCollected += flawlessBonus;
+                awardCoins(flawlessBonus);
                 showCelebration('flawlessBonus', { coins: flawlessBonus });
             }
             // DOMINATION: Both speedster AND flawless!
             if (gameState.timer >= 10 && gameState.floorHits === 0) {
                 showCelebration('domination');
-                gameState.coinsCollected += 50; // Extra domination bonus
+                awardCoins(50); // Extra domination bonus
             }
             break;
         case 'enemyStunned':
@@ -9208,8 +9267,8 @@ function updateHUD() {
     const coinDisplay = document.getElementById('coinDisplay');
     if (coinDisplay) {
         const comboText = gameState.coinCombo > 1 ? ` x${gameState.coinCombo}` : '';
-        // Show coinsCollected (the actual currency value) not the count
-        coinDisplay.textContent = `🪙 ${gameState.coinsCollected || 0}${comboText}`;
+        // Show banked + current-floor coins for real-time accuracy
+        coinDisplay.textContent = `🪙 ${getLiveCoinTotal()}${comboText}`;
         coinDisplay.style.color = gameState.coinCombo > 2 ? '#f39c12' : '#f1c40f';
     }
 
@@ -10526,8 +10585,7 @@ function movePlayer(dx, dy) {
                 let coinMultiplier = 1;
                 if (gameState.perks.includes('vaultMaster')) coinMultiplier = 3;
                 else if (gameState.perks.includes('luckyCoins')) coinMultiplier = 2;
-                gameState.coinsCollected += coin.value * coinMultiplier;
-                gameState.coinsCollectedCount++;
+                awardCoins(coin.value * coinMultiplier);
 
                 // Combo system for rapid collection
                 // Each coin extends the combo timer, making it easier to chain!
@@ -10963,8 +11021,7 @@ function performDash() {
                 let coinMultiplier = 1;
                 if (gameState.perks.includes('vaultMaster')) coinMultiplier = 3;
                 else if (gameState.perks.includes('luckyCoins')) coinMultiplier = 2;
-                gameState.coinsCollected += coin.value * coinMultiplier;
-                gameState.coinsCollectedCount++;
+                awardCoins(coin.value * coinMultiplier);
                 gameState.coinCombo++;
                 gameState.coinComboTimer = 2.0;
             }
@@ -11070,7 +11127,7 @@ function performPunch() {
 
                 // === SHOP ECONOMY: Enemies drop coins when defeated ===
                 const coinDrop = 5 + Math.floor(Math.random() * 10); // 5-14 coins
-                gameState.coinsCollected += coinDrop;
+                awardCoins(coinDrop);
 
                 // Coin drop visual effect
                 for (let c = 0; c < 3; c++) {
@@ -11920,6 +11977,9 @@ function nextFloor() {
     // Check for celebration triggers before advancing
     checkCelebrationTriggers('floorComplete');
 
+    // Tabulate coins earned this floor into the bank for the shop
+    bankCoinsForFloor();
+
     // === ENDLESS MODE: No win condition, always continue ===
     if (gameState.endlessMode) {
         // Track time bonus for this floor
@@ -12408,6 +12468,36 @@ function getPerkPrice(rarity, floor) {
 const BASE_PERK_PRICES = PERK_PRICES;
 
 function showPerkSelection(floor) {
+    // Check for tier unlocks and show celebrations
+    if (!gameState.tierUnlocksShown) gameState.tierUnlocksShown = {};
+
+    // Show tier unlock celebration with slight delay for dramatic effect
+    if (floor === 10 && !gameState.tierUnlocksShown.rare) {
+        gameState.tierUnlocksShown.rare = true;
+        setTimeout(() => {
+            showCelebration('tierUnlockRare');
+            Haptics.pulse('tierUnlock', 0.5, 0.3, 200);
+        }, 300);
+    } else if (floor === 7 && !gameState.tierUnlocksShown.epic) {
+        gameState.tierUnlocksShown.epic = true;
+        setTimeout(() => {
+            showCelebration('tierUnlockEpic');
+            Haptics.pulse('tierUnlock', 0.5, 0.3, 200);
+        }, 300);
+    } else if (floor === 4 && !gameState.tierUnlocksShown.legendary) {
+        gameState.tierUnlocksShown.legendary = true;
+        setTimeout(() => {
+            showCelebration('tierUnlockLegendary');
+            Haptics.pulse('tierUnlock', 0.6, 0.4, 300);
+        }, 300);
+    } else if (floor === 3 && !gameState.tierUnlocksShown.ultimate) {
+        gameState.tierUnlocksShown.ultimate = true;
+        setTimeout(() => {
+            showCelebration('tierUnlockUltimate');
+            Haptics.pulse('tierUnlock', 0.7, 0.5, 400);
+        }, 300);
+    }
+
     // Create perk selection overlay if it doesn't exist
     let perkScreen = document.getElementById('perkSelection');
     if (!perkScreen) {
@@ -12438,11 +12528,11 @@ function showPerkSelection(floor) {
 
     perkScreen.innerHTML = `
         <h2 style="color: #fff; margin-bottom: 10px; font-size: 24px;">FLOOR ${floor} - SUPPLY CLOSET</h2>
-        <p style="color: #f1c40f; font-size: 20px; margin-bottom: 20px;">Coins: ${gameState.coinsCollected}</p>
+        <p style="color: #f1c40f; font-size: 20px; margin-bottom: 20px;">Coins: ${getBankedCoins()}</p>
         <div style="display: flex; gap: 15px; flex-wrap: wrap; justify-content: center; max-width: ${maxWidth};">
             ${perks.map((perk, index) => {
                 const price = getPerkPrice(perk.rarity, floor);
-                const canAfford = gameState.coinsCollected >= price;
+                const canAfford = getBankedCoins() >= price;
                 return `
                 <div class="perk-card"
                     data-perk-id="${perk.id}"
@@ -12551,7 +12641,7 @@ function showPerkSelection(floor) {
         if (keyNum >= 1 && keyNum <= 6 && perks[keyNum - 1]) {
             const perk = perks[keyNum - 1];
             const price = getPerkPrice(perk.rarity, floor);
-            if (gameState.coinsCollected >= price) {
+            if (getBankedCoins() >= price) {
                 purchasePerk(perk.id, price);
             }
         } else if (e.key === ' ' || e.key === 'Escape') {
@@ -12566,17 +12656,39 @@ function showPerkSelection(floor) {
 
 // Purchase a perk from the shop
 function purchasePerk(perkId, price) {
+    // Handle Coin Stash special items (filler when perk pool depleted)
+    if (perkId.startsWith('coinStash_')) {
+        const stashPerk = gameState.perkChoices.find(p => p.id === perkId);
+        if (!stashPerk) return;
+
+        // Check if can afford
+        if (getBankedCoins() < price) {
+            AudioManager.play('footstep', 0.5);
+            return;
+        }
+
+        // Deduct price and add bonus coins (net gain)
+        gameState.coinsBanked = getBankedCoins() - price + stashPerk.bonusAmount;
+        gameState.coinsCollected = (gameState.coinsCollected || 0) + stashPerk.bonusAmount;
+        gameState.coinsCollectedCount = (gameState.coinsCollectedCount || 0) + stashPerk.bonusAmount;
+
+        AudioManager.play('powerup', 0.8);
+        showCelebration('perkPurchased', { perk: 'Coin Stash', price: `+${stashPerk.bonusAmount - price} net` });
+        closeShop();
+        return;
+    }
+
     const perk = PERKS[perkId];
     if (!perk) return;
 
     // Check if can afford
-    if (gameState.coinsCollected < price) {
+    if (getBankedCoins() < price) {
         AudioManager.play('footstep', 0.5); // Error sound
         return;
     }
 
     // Deduct coins
-    gameState.coinsCollected -= price;
+    gameState.coinsBanked = getBankedCoins() - price;
 
     // Add perk to player's collection
     gameState.perks.push(perkId);
@@ -13734,8 +13846,7 @@ function update(deltaTime) {
                         let coinMultiplier = 1;
                         if (gameState.perks.includes('vaultMaster')) coinMultiplier = 3;
                         else if (gameState.perks.includes('luckyCoins')) coinMultiplier = 2;
-                        gameState.coinsCollected += coin.value * coinMultiplier;
-                        gameState.coinsCollectedCount++;
+                        awardCoins(coin.value * coinMultiplier);
 
                         // Coin combo
                         if (gameState.coinComboTimer > 0) {
@@ -14344,7 +14455,9 @@ function startGame(mode = 'normal') {
     gameState.fireSpawnTimer = 0;
 
     // === SHOP ECONOMY: Start with coins to buy first upgrade ===
-    gameState.coinsCollected = 50; // Starting coins for first shop purchase
+    gameState.coinsBanked = 50; // Starting coins for first shop purchase
+    gameState.coinsEarnedThisFloor = 0;
+    gameState.coinsCollected = 0;
     gameState.coinsCollectedCount = 0;
     gameState.coinCombo = 0;
     gameState.coinComboTimer = 0;
