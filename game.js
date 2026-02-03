@@ -3096,6 +3096,72 @@ const gamepadState = {
 };
 
 // ============================================
+// HAPTICS / RUMBLE SUPPORT
+// ============================================
+const Haptics = {
+    enabled: true,
+    last: {},
+
+    getActiveGamepad() {
+        const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+        for (let i = 0; i < gamepads.length; i++) {
+            const gp = gamepads[i];
+            if (gp && gp.connected && (gp.vibrationActuator || (gp.hapticActuators && gp.hapticActuators[0]))) {
+                return gp;
+            }
+        }
+        return null;
+    },
+
+    _clamp(v, min, max) {
+        return Math.min(max, Math.max(min, v));
+    },
+
+    _play(strong, weak, duration) {
+        const gp = this.getActiveGamepad();
+        if (!gp) return;
+        const act = gp.vibrationActuator || (gp.hapticActuators && gp.hapticActuators[0]);
+        if (!act) return;
+        const dur = this._clamp(duration, 20, 1000);
+        const s = this._clamp(strong, 0, 1);
+        const w = this._clamp(weak, 0, 1);
+
+        if (act.playEffect) {
+            act.playEffect('dual-rumble', {
+                duration: dur,
+                strongMagnitude: s,
+                weakMagnitude: w
+            }).catch(() => {});
+        } else if (act.pulse) {
+            act.pulse(this._clamp(Math.max(s, w), 0, 1), dur);
+        }
+    },
+
+    pulse(name, strong, weak, duration, minInterval = 80) {
+        if (!this.enabled) return;
+        const now = performance.now();
+        if (this.last[name] && now - this.last[name] < minInterval) return;
+        this.last[name] = now;
+        this._play(strong, weak, duration);
+    },
+
+    sequence(name, steps, minInterval = 200) {
+        if (!this.enabled) return;
+        const now = performance.now();
+        if (this.last[name] && now - this.last[name] < minInterval) return;
+        this.last[name] = now;
+
+        let offset = 0;
+        steps.forEach((step, i) => {
+            const dur = step.duration || 80;
+            const delay = step.delayAfter !== undefined ? step.delayAfter : 40;
+            setTimeout(() => this._play(step.strong || 0, step.weak || 0, dur), offset);
+            offset += dur + delay;
+        });
+    }
+};
+
+// ============================================
 // GAMEPAD MENU NAVIGATION
 // ============================================
 const menuNavigation = {
@@ -8949,10 +9015,12 @@ function updateHUD() {
         const timerVal = gameState.powerupTimer || gameState.player.shielded || gameState.player.invincible || 0;
         if (!gameState._powerupWarnedAt3 && timerVal <= 3 && timerVal > 2.9) {
             AudioManager.play('timerWarning', 0.28, 1.35);
+            Haptics.pulse('powerupWarn', 0.18, 0.22, 70, 300);
             gameState._powerupWarnedAt3 = true;
         }
         if (!gameState._powerupWarnedAt1 && timerVal <= 1 && timerVal > 0.9) {
             AudioManager.play('timerWarning', 0.45, 1.8);
+            Haptics.pulse('powerupWarn', 0.28, 0.35, 90, 300);
             gameState._powerupWarnedAt1 = true;
         }
     } else {
@@ -9117,6 +9185,7 @@ function pushEnemyAway(enemy, fromX, fromY) {
 
 function fryEnemy(enemy) {
     AudioManager.play('zap'); // Electric zap sound
+    Haptics.pulse('zap', 0.7, 0.45, 120, 80);
     screenShake.trigger(8, 0.2); // Small shake on zap
     triggerFreezeFrame('electricZap'); // Longer freeze for satisfying zap
 
@@ -9641,6 +9710,7 @@ function updateFires(deltaTime) {
             if (gameState.player.burning <= 0) {
                 gameState.player.burning = 2.0;  // 2 seconds of burn
                 playerStats.timesBurned++;
+                Haptics.pulse('burn', 0.6, 0.4, 140, 200);
             }
         }
 
@@ -9926,6 +9996,7 @@ function handlePlayerEnemyCollision(enemy) {
         // Push enemy away and stun briefly without hurting player
         enemy.stunned = 1.5;
         pushEnemyAway(enemy, gameState.player.x, gameState.player.y);
+        Haptics.pulse('shieldBlock', 0.4, 0.25, 90, 120);
         return;
     }
 
@@ -9951,6 +10022,7 @@ function handlePlayerEnemyCollision(enemy) {
             });
         }
         AudioManager.play('punch1', 0.8);
+        Haptics.pulse('invincibleHit', 0.35, 0.3, 90, 80);
         return;
     }
 
@@ -9996,6 +10068,7 @@ function handlePlayerEnemyCollision(enemy) {
     // Only apply if player isn't already stunned (prevent stacking)
     if (gameState.player.stunned <= 0) {
         AudioManager.play('hit'); // Player hit sound
+        Haptics.pulse('playerHit', 0.9, 0.7, 180, 120);
         screenShake.trigger(10, 0.25); // Medium shake when hit
         triggerFreezeFrame('playerHit'); // Impact freeze frame for game feel
         gameState.damageFlashTimer = 0.3; // Red vignette flash for impact feedback
@@ -10165,6 +10238,7 @@ function movePlayer(dx, dy) {
                 // Play coin collect sound with pitch scaling (Mario-style ascending notes)
                 const pitchScale = 1.0 + (gameState.coinCombo * 0.08); // Higher pitch per combo
                 AudioManager.play('powerup', 0.5, Math.min(pitchScale, 2.0)); // Cap at 2x pitch
+                Haptics.pulse('coin', 0.12, 0.25, 40, 40);
 
                 // Visual feedback - small particle burst
                 for (let j = 0; j < 4; j++) {
@@ -10214,6 +10288,14 @@ function movePlayer(dx, dy) {
                     default:
                         AudioManager.play('powerup'); // Fallback
                 }
+                // Haptics: type-specific pulse
+                let hStrong = 0.3;
+                let hWeak = 0.4;
+                if (pu.type === 'electric') { hStrong = 0.55; hWeak = 0.45; }
+                else if (pu.type === 'knockout') { hStrong = 0.45; hWeak = 0.3; }
+                else if (pu.type === 'ghost') { hStrong = 0.2; hWeak = 0.45; }
+                else if (pu.type === 'speed') { hStrong = 0.35; hWeak = 0.5; }
+                Haptics.pulse('powerup', hStrong, hWeak, 90, 80);
                 // Quick freeze frame on powerup collection
                 triggerFreezeFrame('powerupCollect');
 
@@ -10435,6 +10517,7 @@ function performDash() {
         osc.start();
         osc.stop(AudioManager.context.currentTime + 0.1);
     }
+    Haptics.pulse('dash', 0.25, 0.45, 70, 80);
 
     // === DASH DAMAGE PERK: Stun enemies we dash through ===
     if (gameState.perks.includes('dashDamage')) {
@@ -10763,6 +10846,8 @@ function performPunch() {
     // Audio and visual feedback based on hits
     if (enemiesHit > 0) {
         // Escalating combo audio - pitch increases with kill combo
+        const comboBoost = Math.min(gameState.killCombo || 0, 10) / 10;
+        Haptics.pulse('punch', 0.35 + comboBoost * 0.25, 0.2 + comboBoost * 0.15, 90, 70);
         const comboPitch = 1.0 + Math.min(gameState.killCombo, 10) * 0.06; // Up to 1.6x at combo 10
         AudioManager.play('punch1', 0.8, comboPitch);
 
@@ -10940,6 +11025,7 @@ function performWallBreak() {
 
         // Audio - heavy impact sound
         AudioManager.play('punch1', 1.0);
+        Haptics.pulse('wallBreak', 0.85, 0.6, 160, 120);
 
         // Screen shake - big one!
         screenShake.trigger(15 + wallsBroken * 5, 0.3);
@@ -11025,6 +11111,10 @@ function activateSeverancePackage() {
 
     // Audio - epic activation sound
     AudioManager.play('victory', 0.8);
+    Haptics.sequence('severance', [
+        { strong: 1.0, weak: 0.7, duration: 120 },
+        { strong: 0.5, weak: 1.0, duration: 200 }
+    ], 500);
 
     // Massive screen shake
     screenShake.trigger(25, 0.5);
@@ -11546,6 +11636,11 @@ function nextFloor() {
         gameState.won = true;
         saveGhostReplay(); // Save ghost replay on victory
         AudioManager.play('victory'); // Victory fanfare
+        Haptics.sequence('victory', [
+            { strong: 0.3, weak: 0.6, duration: 120 },
+            { strong: 0.5, weak: 0.4, duration: 100 },
+            { strong: 0.2, weak: 0.7, duration: 160 }
+        ], 700);
         showVictoryScreen();
         return;
     }
@@ -11568,6 +11663,11 @@ function showEndlessLevelTransition(floor) {
 
     // Triumphant stinger on floor clear
     AudioManager.play('floorClear', 0.8);
+    Haptics.sequence('floorClear', [
+        { strong: 0.35, weak: 0.55, duration: 90 },
+        { strong: 0.2, weak: 0.4, duration: 70 },
+        { strong: 0.4, weak: 0.6, duration: 120 }
+    ], 500);
 
     // Start falling debris particle effect
     transitionParticles.start();
@@ -11908,6 +12008,11 @@ function showLevelTransition(floor) {
 
     // Triumphant stinger on floor clear
     AudioManager.play('floorClear', 0.8);
+    Haptics.sequence('floorClear', [
+        { strong: 0.35, weak: 0.55, duration: 90 },
+        { strong: 0.2, weak: 0.4, duration: 70 },
+        { strong: 0.4, weak: 0.6, duration: 120 }
+    ], 500);
 
     // Start falling debris particle effect
     transitionParticles.start();
@@ -12949,6 +13054,11 @@ function drawGhost() {
 
 function startImplosion() {
     AudioManager.play('collapse'); // Floor collapse sound
+    Haptics.sequence('collapse', [
+        { strong: 0.9, weak: 0.6, duration: 200 },
+        { strong: 0.6, weak: 0.9, duration: 260 },
+        { strong: 0.4, weak: 0.7, duration: 220 }
+    ], 800);
     screenShake.trigger(20, 1.5); // Intense, long shake during collapse
 
     gameState.imploding = true;
@@ -13211,6 +13321,7 @@ function update(deltaTime) {
                         // Pitch-scaled coin sound
                         const pitchScale = 1.0 + (gameState.coinCombo * 0.08);
                         AudioManager.play('powerup', 0.5, Math.min(pitchScale, 2.0));
+                        Haptics.pulse('coin', 0.12, 0.25, 40, 40);
                     }
                 }
             }
@@ -13224,6 +13335,7 @@ function update(deltaTime) {
             const volume = 0.35 + urgency * 0.35;
             const pitch = 1.0 + urgency * 0.25;
             AudioManager.play('warning', volume, pitch);
+            Haptics.pulse('timerWarning', 0.2 + urgency * 0.25, 0.25 + urgency * 0.3, 80, 350);
             gameState.lastWarningTime = Date.now();
         }
     }
@@ -13235,6 +13347,7 @@ function update(deltaTime) {
             const volume = 0.4 + urgency * 0.4;
             const pitch = 1.0 + urgency * 0.3;
             AudioManager.play('panicStinger', volume, pitch);
+            Haptics.pulse('panic', 0.35 + urgency * 0.35, 0.4 + urgency * 0.3, 120, 600);
             gameState.lastPanicTime = Date.now();
         }
     }
@@ -13246,6 +13359,7 @@ function update(deltaTime) {
         if (!gameState.lastHeartbeatTime || Date.now() - gameState.lastHeartbeatTime > heartbeatInterval) {
             const intensity = 1 - (gameState.timer / 10);
             AudioManager.playHeartbeat(intensity);
+            Haptics.pulse('heartbeat', 0.15 + intensity * 0.2, 0.12 + intensity * 0.18, 70, heartbeatInterval - 100);
             gameState.lastHeartbeatTime = Date.now();
         }
     }
@@ -13368,6 +13482,7 @@ function update(deltaTime) {
         gameState.powerupTimer -= deltaTime;
         if (gameState.powerupTimer <= 0 && (gameState.powerup === 'speed' || gameState.powerup === 'electric')) {
             AudioManager.play('powerupExpire'); // Power-down sound
+            Haptics.pulse('powerupExpire', 0.2, 0.35, 90, 200);
             gameState.powerup = null;
         }
     }
@@ -13382,6 +13497,7 @@ function update(deltaTime) {
         gameState.player.invincible -= deltaTime;
         if (gameState.player.invincible <= 0) {
             AudioManager.play('powerupExpire');
+            Haptics.pulse('powerupExpire', 0.2, 0.35, 90, 200);
         }
     }
 
@@ -13396,6 +13512,7 @@ function update(deltaTime) {
                 enemy.frozen = false;
             }
             AudioManager.play('powerupExpire');
+            Haptics.pulse('powerupExpire', 0.2, 0.35, 90, 200);
         }
     }
 
@@ -13422,12 +13539,14 @@ function update(deltaTime) {
         if (gameState.coinMagnetTimer <= 0) {
             gameState.coinMagnetActive = false;
             AudioManager.play('powerupExpire');
+            Haptics.pulse('powerupExpire', 0.2, 0.35, 90, 200);
         }
     }
 
     // Ghost Walk powerup expiration (already handled in powerupTimer, but need to handle ghost specifically)
     if (gameState.powerup === 'ghost' && gameState.powerupTimer <= 0) {
         AudioManager.play('powerupExpire');
+        Haptics.pulse('powerupExpire', 0.2, 0.35, 90, 200);
         gameState.powerup = null;
     }
 
