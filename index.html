@@ -2717,6 +2717,11 @@
                         <input type="checkbox" id="screenShakeToggle" checked onchange="toggleScreenShake(this.checked)">
                     </div>
                     <div class="setting-row">
+                        <label>Haptics Strength:</label>
+                        <input type="range" id="hapticsStrength" min="0" max="100" value="100" onchange="setHapticsStrength(this.value)">
+                        <span id="hapticsStrengthVal">100%</span>
+                    </div>
+                    <div class="setting-row">
                         <label>Colorblind Mode:</label>
                         <select id="colorblindMode" onchange="setColorblindMode(this.value)">
                             <option value="off">Off</option>

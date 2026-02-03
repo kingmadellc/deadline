@@ -3101,6 +3101,7 @@ const gamepadState = {
 const Haptics = {
     enabled: true,
     last: {},
+    strength: 1.0,
 
     getActiveGamepad() {
         const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
@@ -3122,9 +3123,10 @@ const Haptics = {
         if (!gp) return;
         const act = gp.vibrationActuator || (gp.hapticActuators && gp.hapticActuators[0]);
         if (!act) return;
+        if (this.strength <= 0) return;
         const dur = this._clamp(duration, 20, 1000);
-        const s = this._clamp(strong, 0, 1);
-        const w = this._clamp(weak, 0, 1);
+        const s = this._clamp(strong * this.strength, 0, 1);
+        const w = this._clamp(weak * this.strength, 0, 1);
 
         if (act.playEffect) {
             act.playEffect('dual-rumble', {
@@ -3330,10 +3332,12 @@ function updateGamepadMenuNavigation() {
             menuNavigation.currentIndex--;
             menuNavigation.lastNavTime = now;
             updateMenuFocus();
+            Haptics.pulse('menuNav', 0.08, 0.12, 40, 80);
         } else if (downPressed && menuNavigation.currentIndex < menuNavigation.buttons.length - 1) {
             menuNavigation.currentIndex++;
             menuNavigation.lastNavTime = now;
             updateMenuFocus();
+            Haptics.pulse('menuNav', 0.08, 0.12, 40, 80);
         }
     }
     menuNavigation.lastUpDown = upPressed || downPressed;
@@ -3403,6 +3407,7 @@ function updateGamepadMenuNavigation() {
                 // Range sliders handled by left/right, skip A button
             } else if (tagName === 'BUTTON') {
                 focusedBtn.click();
+                Haptics.pulse('menuSelect', 0.2, 0.25, 60, 120);
                 // Refresh buttons after click (menu may have changed)
                 setTimeout(() => {
                     menuNavigation.buttons = getMenuButtons();
@@ -3419,6 +3424,7 @@ function updateGamepadMenuNavigation() {
         const backBtn = document.querySelector('.back-btn:not([style*="display: none"])');
         if (backBtn && backBtn.offsetParent !== null) {
             backBtn.click();
+            Haptics.pulse('menuBack', 0.18, 0.2, 60, 120);
             setTimeout(() => {
                 menuNavigation.buttons = getMenuButtons();
                 menuNavigation.currentIndex = 0;
@@ -3880,6 +3886,7 @@ const DEFAULT_SETTINGS = {
     masterVolume: 1.0,
     musicVolume: 0.7,
     sfxVolume: 0.8,
+    hapticsStrength: 1.0,
     // New playtest settings
     difficulty: 'normal',
     gameSpeed: 1.0,
@@ -4085,6 +4092,9 @@ function loadSettings() {
         if (settings.colorblindMode && settings.colorblindMode !== 'off') {
             applyColorblindMode(settings.colorblindMode);
         }
+
+        // Apply haptics strength
+        Haptics.strength = (settings.hapticsStrength !== undefined) ? settings.hapticsStrength : 1.0;
 
         console.log('Settings loaded:', settings);
     } catch (e) {
@@ -13797,6 +13807,7 @@ function startGame(mode = 'normal') {
     AudioManager.init();
     AudioManager.resume();
     AudioManager.play('select');
+    Haptics.pulse('menuSelect', 0.2, 0.25, 60, 120);
 
     // Start procedural background music
     AudioManager.startProceduralMusic();
@@ -13945,8 +13956,10 @@ function togglePause() {
         pauseScreen.style.backgroundPosition = 'center';
 
         pauseScreen.style.display = 'flex';
+        Haptics.pulse('pause', 0.18, 0.28, 80, 150);
     } else {
         pauseScreen.style.display = 'none';
+        Haptics.pulse('resume', 0.12, 0.2, 60, 150);
     }
 }
 
@@ -14146,6 +14159,13 @@ function updateSettingsUI() {
     if (sfxVolume) {
         sfxVolume.value = settings.sfxVolume * 100;
         document.getElementById('sfxVolumeVal').textContent = Math.round(settings.sfxVolume * 100) + '%';
+    }
+
+    const hapticsStrength = document.getElementById('hapticsStrength');
+    if (hapticsStrength) {
+        const val = Math.round((settings.hapticsStrength !== undefined ? settings.hapticsStrength : 1.0) * 100);
+        hapticsStrength.value = val;
+        document.getElementById('hapticsStrengthVal').textContent = val + '%';
     }
 
     // Update Game Feel settings
@@ -14418,6 +14438,14 @@ function setSfxVolume(value) {
     document.getElementById('sfxVolumeVal').textContent = value + '%';
     saveSettings();
     AudioManager.setSfxVolume(settings.sfxVolume);
+}
+
+function setHapticsStrength(value) {
+    settings.hapticsStrength = value / 100;
+    Haptics.strength = settings.hapticsStrength;
+    const span = document.getElementById('hapticsStrengthVal');
+    if (span) span.textContent = value + '%';
+    saveSettings();
 }
 
 // Add settings button to title screen
