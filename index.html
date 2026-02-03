@@ -182,6 +182,9 @@
             border: 4px solid #e94560;
             image-rendering: pixelated;
             image-rendering: crisp-edges;
+            /* Auto-fit to viewport for handheld devices */
+            max-width: 100vw;
+            max-height: 90vh;
         }
 
         #message {
@@ -2516,11 +2519,11 @@
             <div class="how-section">
                 <h3>📍 SPECIAL ZONES</h3>
                 <div class="zones-grid">
-                    <span>☕ Cafeteria</span><span>Timer slows down, enemies move slower</span>
-                    <span>🚻 Restroom</span><span>Complete safe zone</span>
-                    <span>🌿 Garden</span><span>Grab a protective shield</span>
+                    <span>☕ Cafeteria</span><span>Timer slows, rivals slog</span>
+                    <span>🚻 Restroom</span><span>Safe zone. HR-approved</span>
+                    <span>🌿 Garden</span><span>Claim a protective shield</span>
                     <span>🐕 Dog Park</span><span>Find a loyal companion</span>
-                    <span>🚪 Exits</span><span>Always in the corners</span>
+                    <span>🚪 Exits</span><span>Corner exits. No excuses</span>
                 </div>
             </div>
 
@@ -2528,8 +2531,8 @@
                 <h3>💡 TIPS</h3>
                 <ul class="tips-list">
                     <li>Enemies get faster and smarter on lower floors</li>
-                    <li>Fire hazards appear below floor 9</li>
-                    <li>Look for secret exits on floor 7...</li>
+                    <li>Fire hazards begin on floor 9</li>
+                    <li>Rumor says floor 7 hides a shortcut...</li>
                 </ul>
             </div>
 
@@ -2598,19 +2601,19 @@
     <!-- Main Menu Settings (Game Modes, Characters, Achievements, Stats) -->
     <div id="mainSettingsMenu" style="display: none;">
         <div class="overlay main-settings-overlay">
-            <h2>⚙️ MENU</h2>
+            <h2>⚙️ OPERATIONS</h2>
             <div class="main-settings-buttons">
                 <!-- Game Modes Section -->
-                <div class="menu-section-label">GAME MODES</div>
+                <div class="menu-section-label">RUN MODES</div>
                 <button onclick="hideMainSettings(); startGame('quick_normal')" class="menu-option-btn">
                     <span class="menu-icon">⚡</span>
                     <span class="menu-text">QUICK RUN</span>
-                    <span class="menu-desc">5 floors — fast-paced escape</span>
+                    <span class="menu-desc">5 floors. Fast-paced exit</span>
                 </button>
                 <button onclick="hideMainSettings(); showDailyChallenge()" class="menu-option-btn">
                     <span class="menu-icon">📅</span>
                     <span class="menu-text">DAILY CHALLENGE</span>
-                    <span class="menu-desc">Same seed for everyone</span>
+                    <span class="menu-desc">Same seed. Different excuses</span>
                 </button>
                 <button onclick="hideMainSettings(); startGame('endless')" class="menu-option-btn">
                     <span class="menu-icon">🔥</span>
@@ -2619,11 +2622,11 @@
                 </button>
 
                 <!-- Progress Section -->
-                <div class="menu-section-label">PROGRESS</div>
+                <div class="menu-section-label">RECORDS</div>
                 <button onclick="showMilestonesMenu()" class="menu-option-btn">
                     <span class="menu-icon">🏆</span>
                     <span class="menu-text">MILESTONES</span>
-                    <span class="menu-desc">Track your achievements</span>
+                    <span class="menu-desc">Track your paperwork</span>
                 </button>
                 <button onclick="showStats()" class="menu-option-btn">
                     <span class="menu-icon">📊</span>
@@ -2636,12 +2639,12 @@
                 <button onclick="showHowToPlay()" class="menu-option-btn">
                     <span class="menu-icon">📖</span>
                     <span class="menu-text">HOW TO PLAY</span>
-                    <span class="menu-desc">Controls & mechanics</span>
+                    <span class="menu-desc">Controls and mechanics</span>
                 </button>
                 <button onclick="showSettingsMenu()" class="menu-option-btn">
                     <span class="menu-icon">⚙️</span>
-                    <span class="menu-text">SETTINGS</span>
-                    <span class="menu-desc">Display, audio & accessibility</span>
+                    <span class="menu-text">SYSTEMS</span>
+                    <span class="menu-desc">Display, audio, accessibility</span>
                 </button>
             </div>
             <button onclick="hideMainSettings()" class="back-btn">← BACK</button>
@@ -2651,15 +2654,15 @@
     <!-- Pause Screen -->
     <div id="pauseScreen">
         <div class="overlay">
-            <h2>PAUSED</h2>
+            <h2>ON HOLD</h2>
             <p class="pause-info">
-                Floor: <span id="pauseFloor">13</span><br>
-                Time remaining: <span id="pauseTime">30</span>s
+                FLOOR <span id="pauseFloor">13</span><br>
+                TIME LEFT <span id="pauseTime">30</span>s
             </p>
             <p class="pause-controls">
-                Press ESC or P to resume
+                Press ESC or P to clock back in
             </p>
-            <button onclick="resumeGame()">RESUME</button>
+            <button onclick="resumeGame()">CLOCK BACK IN</button>
             <button onclick="showSettingsMenu()">SETTINGS</button>
             <button onclick="saveAndQuit()" style="background:linear-gradient(180deg,#2ecc71 0%,#27ae60 100%);box-shadow:0 4px 20px rgba(46,204,113,0.4);">SAVE & QUIT</button>
             <button class="quit-btn" onclick="quitToMenu()">QUIT (NO SAVE)</button>
@@ -2669,7 +2672,7 @@
     <!-- Settings Menu -->
     <div id="settingsMenu">
         <div class="overlay">
-            <h2>SETTINGS</h2>
+            <h2>SYSTEMS</h2>
             <div class="settings-content">
                 <div class="settings-section">
                     <h3>Display</h3>
@@ -2823,7 +2826,7 @@
                         <p style="margin: 3px 0;">Left Stick / D-Pad - Move</p>
                         <p style="margin: 3px 0;">A Button - Use Power-up</p>
                         <p style="margin: 3px 0;">Start - Pause</p>
-                        <p id="controllerStatus" class="controller-status">No controller detected</p>
+                        <p id="controllerStatus" class="controller-status">No controller on file</p>
                     </div>
                 </div>
             </div>

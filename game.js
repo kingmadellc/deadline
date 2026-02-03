@@ -601,8 +601,36 @@ function setResolution(resKey) {
     // Save preference
     saveSettings();
 
+    // Fit canvas to viewport
+    fitCanvasToViewport();
+
     console.log(`Resolution set to ${resKey}, tile size: ${TILE_SIZE}`);
 }
+
+// Auto-fit canvas to viewport while maintaining aspect ratio
+// This ensures the game is visible on devices where the viewport is smaller than the canvas
+function fitCanvasToViewport() {
+    const maxWidth = window.innerWidth - 20;   // Small margin for edges
+    const maxHeight = window.innerHeight - 80; // Account for HUD and margins
+
+    const canvasRatio = canvas.width / canvas.height;
+    const viewportRatio = maxWidth / maxHeight;
+
+    if (canvasRatio > viewportRatio) {
+        // Canvas is wider than viewport - constrain by width
+        canvas.style.width = maxWidth + 'px';
+        canvas.style.height = Math.floor(maxWidth / canvasRatio) + 'px';
+    } else {
+        // Canvas is taller than viewport - constrain by height
+        canvas.style.height = maxHeight + 'px';
+        canvas.style.width = Math.floor(maxHeight * canvasRatio) + 'px';
+    }
+}
+
+// Re-fit canvas on window resize
+window.addEventListener('resize', () => {
+    fitCanvasToViewport();
+});
 
 function getDeviceProfileInfo() {
     const ua = navigator.userAgent || '';
@@ -13144,7 +13172,7 @@ function showMessage(title, text, isWin) {
     msg.querySelectorAll('p')[0].textContent = text;
     msg.querySelectorAll('p')[1].textContent = isWin ? 'You made it out alive!' : 'Try again?';
     msg.querySelectorAll('p')[2].style.display = 'none';
-    msg.querySelector('button').textContent = isWin ? 'PLAY AGAIN' : 'TRY AGAIN';
+    msg.querySelector('button').textContent = isWin ? 'RUN AGAIN' : 'RUN IT BACK';
     msg.style.display = 'block';
 }
 
@@ -14348,7 +14376,7 @@ function captureKeybind(action) {
     const btn = document.getElementById(`keybind-${action}`);
     if (btn) {
         btn.classList.add('capturing');
-        btn.textContent = 'Press key...';
+        btn.textContent = 'Assign key...';
     }
 
     // Add capture handler
@@ -14482,7 +14510,7 @@ function addSettingsToTitle() {
         const settingsBtn = document.createElement('button');
         settingsBtn.id = 'titleSettingsBtn';
         settingsBtn.className = 'btn-tertiary';
-        settingsBtn.textContent = 'SETTINGS';
+        settingsBtn.textContent = 'SYSTEMS';
         settingsBtn.onclick = showSettingsMenu;
         tertiaryRow.appendChild(settingsBtn);
     }
@@ -14684,5 +14712,8 @@ const modalObserver = new MutationObserver((mutations) => {
 modalObserver.observe(messageModal, { attributes: true, attributeFilter: ['style'] });
 // Set initial state
 document.body.classList.add('menu-active');
+
+// Fit canvas to viewport on init
+fitCanvasToViewport();
 
 requestAnimationFrame(gameLoop);
