@@ -30,14 +30,21 @@ const RESOLUTIONS = {
 // ============================================
 // VIEWPORT / CAMERA SYSTEM - Player sees only a portion of the map
 // ============================================
-const VIEWPORT_WIDTH = 14;  // Visible tiles horizontally (~30% more zoomed than before)
 const VIEWPORT_HEIGHT = 14; // Visible tiles vertically - creates intimate exploration feel
 const CAMERA_LERP_SPEED = 8; // Smooth camera following speed
+
+// Calculate viewport width based on aspect ratio (fills screen width)
+function getViewportWidth() {
+    const res = RESOLUTIONS[displaySettings.currentResolution] || RESOLUTIONS['640x640'];
+    const aspectRatio = res.width / res.height;
+    // Scale viewport width to match screen aspect ratio
+    return Math.ceil(VIEWPORT_HEIGHT * aspectRatio);
+}
 
 // Dynamically calculate tile size based on resolution and VIEWPORT (not map size)
 function getTileSize() {
     const res = RESOLUTIONS[displaySettings.currentResolution] || RESOLUTIONS['640x640'];
-    // Use VIEWPORT_HEIGHT (not MAP_HEIGHT) to keep tiles large regardless of map size
+    // Use VIEWPORT_HEIGHT to keep tiles large regardless of map size
     // This ensures tiles stay readable even on massive 90x90 maps
     return Math.floor(res.height / VIEWPORT_HEIGHT);
 }
@@ -3305,11 +3312,12 @@ function updateCamera(deltaTime) {
     const player = gameState.player;
 
     // Target: center camera on player's visual position
-    cam.targetX = player.visualX - VIEWPORT_WIDTH / 2 + 0.5;
+    const vpWidth = getViewportWidth();
+    cam.targetX = player.visualX - vpWidth / 2 + 0.5;
     cam.targetY = player.visualY - VIEWPORT_HEIGHT / 2 + 0.5;
 
     // Clamp target to map bounds (don't show void outside map)
-    cam.targetX = Math.max(0, Math.min(MAP_WIDTH - VIEWPORT_WIDTH, cam.targetX));
+    cam.targetX = Math.max(0, Math.min(MAP_WIDTH - vpWidth, cam.targetX));
     cam.targetY = Math.max(0, Math.min(MAP_HEIGHT - VIEWPORT_HEIGHT, cam.targetY));
 
     // Smooth lerp toward target
@@ -3330,11 +3338,12 @@ function initCamera() {
     const player = gameState.player;
 
     // Immediately snap camera to player (no lerp on level start)
-    cam.x = player.x - VIEWPORT_WIDTH / 2 + 0.5;
+    const vpWidth = getViewportWidth();
+    cam.x = player.x - vpWidth / 2 + 0.5;
     cam.y = player.y - VIEWPORT_HEIGHT / 2 + 0.5;
 
     // Clamp to map bounds
-    cam.x = Math.max(0, Math.min(MAP_WIDTH - VIEWPORT_WIDTH, cam.x));
+    cam.x = Math.max(0, Math.min(MAP_WIDTH - vpWidth, cam.x));
     cam.y = Math.max(0, Math.min(MAP_HEIGHT - VIEWPORT_HEIGHT, cam.y));
 
     cam.targetX = cam.x;
@@ -3967,6 +3976,21 @@ const touchState = {
 
 let lastTouchActionTime = 0;
 
+// Touch controls fade timer
+let touchControlsFadeTimer = null;
+
+function showTouchControls() {
+    const controls = document.getElementById('touchControls');
+    if (!controls) return;
+    controls.classList.add('active');
+    // Clear existing timer
+    if (touchControlsFadeTimer) clearTimeout(touchControlsFadeTimer);
+    // Fade after 3 seconds of inactivity
+    touchControlsFadeTimer = setTimeout(() => {
+        controls.classList.remove('active');
+    }, 3000);
+}
+
 function initTouchControls() {
     const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
     const controls = document.getElementById('touchControls');
@@ -3975,6 +3999,11 @@ function initTouchControls() {
         controls.style.display = 'flex';
         controls.style.pointerEvents = 'auto';
         controls.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+        // Show controls when touched anywhere
+        controls.addEventListener('pointerdown', showTouchControls);
+        controls.addEventListener('touchstart', showTouchControls, { passive: true });
+        // Initially show controls
+        showTouchControls();
     }
 
     const bindHold = (id, setState) => {
@@ -9038,11 +9067,12 @@ function draw() {
     ctx.translate(camOffsetX, camOffsetY);
 
     // Calculate visible tile range (only draw what's on screen + 1 tile buffer)
+    const vpWidth = getViewportWidth();
     const camX = Math.floor(gameState.camera.x);
     const camY = Math.floor(gameState.camera.y);
     const startX = Math.max(0, camX - 1);
     const startY = Math.max(0, camY - 1);
-    const endX = Math.min(MAP_WIDTH, camX + VIEWPORT_WIDTH + 2);
+    const endX = Math.min(MAP_WIDTH, camX + vpWidth + 2);
     const endY = Math.min(MAP_HEIGHT, camY + VIEWPORT_HEIGHT + 2);
 
     // Draw only visible tiles (performance optimization for large maps)
@@ -9364,7 +9394,7 @@ function drawOffScreenExitIndicators() {
         const exitScreenY = (exit.y - cam.y) * TILE_SIZE + TILE_SIZE / 2;
 
         // Check if exit is outside visible viewport
-        const viewportPixelW = VIEWPORT_WIDTH * TILE_SIZE;
+        const viewportPixelW = getViewportWidth() * TILE_SIZE;
         const viewportPixelH = VIEWPORT_HEIGHT * TILE_SIZE;
 
         if (exitScreenX < 0 || exitScreenX > viewportPixelW ||
@@ -9478,7 +9508,7 @@ function drawMiniMap() {
     if (gameState.camera) {
         const viewX = miniMapX + gameState.camera.x * cellWidth;
         const viewY = miniMapY + gameState.camera.y * cellHeight;
-        const viewW = VIEWPORT_WIDTH * cellWidth;
+        const viewW = getViewportWidth() * cellWidth;
         const viewH = VIEWPORT_HEIGHT * cellHeight;
 
         ctx.strokeStyle = 'rgba(78, 205, 196, 0.9)';
