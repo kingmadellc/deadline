@@ -2981,7 +2981,11 @@ let gameState = {
     // === THE VAULT (Floor -100 Per-Run State) ===
     severanceAvailable: true,     // Can use Severance Package this run (resets each run)
     vaultAnimationPlaying: false, // Currently playing vault discovery animation
-    showingVaultFloor: false      // Floor -100 has special vault exit rendering
+    showingVaultFloor: false,     // Floor -100 has special vault exit rendering
+    // === EXPLODING WINDOWS SYSTEM ===
+    explodedWindows: new Set(),   // Set of "x,y" keys for windows that have exploded
+    windowExplosionTimer: 0,      // Timer until next window explosion
+    windowExplosionQueue: []      // Queued explosions (for chain reactions)
 };
 
 // ============================================
@@ -6633,6 +6637,10 @@ function initLevel() {
     gameState.fires = [];
     gameState.fireSpawnTimer = 5;  // Start spawning fires after 5 seconds
 
+    // Reset exploding windows for new floor
+    gameState.explodedWindows = new Set();
+    gameState.windowExplosionTimer = 3; // Start explosions after 3 seconds
+
     // Reset environmental hazards for new floor
     gameState.sparkingWires = [];
     gameState.coffeeSpills = [];
@@ -7514,62 +7522,111 @@ function drawTile(x, y) {
         ctx.fillRect(screenX + 10, screenY + 6, 12, 4);
 
     } else if (tile === TILE.WINDOW) {
-        // Exterior highrise window (glass looking out at night cityscape)
-        // Window frame
-        ctx.fillStyle = COLORS.windowFrame;
-        ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
+        // Check if this window has exploded
+        const exploded = isWindowExploded(x, y);
 
-        // Frame highlights
-        ctx.fillStyle = COLORS.windowFrameLight;
-        ctx.fillRect(screenX, screenY, TILE_SIZE, 2);
-        ctx.fillRect(screenX, screenY, 2, TILE_SIZE);
+        if (exploded) {
+            // EXPLODED WINDOW - Broken glass, fire visible through opening
+            // Window frame (still intact but damaged)
+            ctx.fillStyle = '#1a1a1a';
+            ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
 
-        // Glass pane (inner area)
-        ctx.fillStyle = COLORS.windowGlass;
-        ctx.fillRect(screenX + 3, screenY + 3, TILE_SIZE - 6, TILE_SIZE - 6);
+            // Charred/burnt frame edges
+            ctx.fillStyle = '#0d0d0d';
+            ctx.fillRect(screenX, screenY, TILE_SIZE, 3);
+            ctx.fillRect(screenX, screenY, 3, TILE_SIZE);
+            ctx.fillRect(screenX, screenY + TILE_SIZE - 3, TILE_SIZE, 3);
+            ctx.fillRect(screenX + TILE_SIZE - 3, screenY, 3, TILE_SIZE);
 
-        // Night sky gradient effect
-        ctx.fillStyle = COLORS.windowSky;
-        ctx.fillRect(screenX + 3, screenY + 3, TILE_SIZE - 6, 8);
-        ctx.fillStyle = COLORS.windowGlassLight;
-        ctx.fillRect(screenX + 3, screenY + 11, TILE_SIZE - 6, TILE_SIZE - 14);
+            // Open void/fire visible through broken window
+            ctx.fillStyle = '#0a0505';
+            ctx.fillRect(screenX + 4, screenY + 4, TILE_SIZE - 8, TILE_SIZE - 8);
 
-        // Distant city building silhouettes (deterministic per tile)
-        const buildingSeed = (x * 13 + y * 7) % 100;
-        ctx.fillStyle = '#0a0a0a';
+            // Animated fire glow from outside (building is burning)
+            const fireFlicker = Math.sin(gameState.animationTime * 8 + x * 2 + y * 3) * 0.3 + 0.5;
+            ctx.fillStyle = `rgba(255, 80, 0, ${fireFlicker * 0.6})`;
+            ctx.fillRect(screenX + 5, screenY + 5, TILE_SIZE - 10, TILE_SIZE - 10);
 
-        // Building 1
-        const b1Height = 8 + (buildingSeed % 8);
-        const b1X = screenX + 5 + (buildingSeed % 4);
-        ctx.fillRect(b1X, screenY + TILE_SIZE - 3 - b1Height, 5, b1Height);
+            // Deeper fire core
+            const coreFlicker = Math.sin(gameState.animationTime * 12 + x + y) * 0.2 + 0.6;
+            ctx.fillStyle = `rgba(255, 150, 0, ${coreFlicker * 0.5})`;
+            ctx.fillRect(screenX + 8, screenY + 8, TILE_SIZE - 16, TILE_SIZE - 16);
 
-        // Building 2
-        const b2Height = 6 + ((buildingSeed * 3) % 6);
-        const b2X = screenX + 18 + ((buildingSeed * 2) % 4);
-        ctx.fillRect(b2X, screenY + TILE_SIZE - 3 - b2Height, 6, b2Height);
+            // Jagged broken glass shards around edges
+            ctx.fillStyle = '#88ccff';
+            // Top edge shards
+            if ((x + y) % 3 === 0) ctx.fillRect(screenX + 6, screenY + 4, 3, 5);
+            if ((x + y) % 2 === 0) ctx.fillRect(screenX + 20, screenY + 4, 4, 4);
+            // Bottom edge shards
+            if ((x * y) % 3 === 1) ctx.fillRect(screenX + 10, screenY + TILE_SIZE - 8, 3, 4);
+            // Side shards
+            if ((x + y * 2) % 3 === 0) ctx.fillRect(screenX + 4, screenY + 14, 4, 3);
+            if ((x * 2 + y) % 3 === 1) ctx.fillRect(screenX + TILE_SIZE - 8, screenY + 10, 4, 3);
 
-        // Building window lights (tiny flickering lights)
-        const lightColors = [COLORS.windowCityLight1, COLORS.windowCityLight2, COLORS.windowCityLight3];
-        for (let i = 0; i < 3; i++) {
-            const lx = screenX + 6 + ((buildingSeed + i * 5) % 18);
-            const ly = screenY + 12 + ((buildingSeed + i * 3) % 10);
-            const flickerOn = Math.sin(gameState.animationTime * 3 + i + x * 2 + y * 3) > 0;
-            if (flickerOn) {
-                ctx.fillStyle = lightColors[i % 3];
-                ctx.fillRect(lx, ly, 2, 2);
+            // Smoke wisps rising (animated)
+            const smokeOffset = Math.sin(gameState.animationTime * 2 + x) * 3;
+            ctx.fillStyle = 'rgba(60, 60, 60, 0.4)';
+            ctx.fillRect(screenX + 12 + smokeOffset, screenY + 2, 4, 6);
+            ctx.fillRect(screenX + 18 - smokeOffset, screenY, 3, 5);
+
+        } else {
+            // INTACT WINDOW - Normal rendering
+            // Window frame
+            ctx.fillStyle = COLORS.windowFrame;
+            ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
+
+            // Frame highlights
+            ctx.fillStyle = COLORS.windowFrameLight;
+            ctx.fillRect(screenX, screenY, TILE_SIZE, 2);
+            ctx.fillRect(screenX, screenY, 2, TILE_SIZE);
+
+            // Glass pane (inner area)
+            ctx.fillStyle = COLORS.windowGlass;
+            ctx.fillRect(screenX + 3, screenY + 3, TILE_SIZE - 6, TILE_SIZE - 6);
+
+            // Night sky gradient effect
+            ctx.fillStyle = COLORS.windowSky;
+            ctx.fillRect(screenX + 3, screenY + 3, TILE_SIZE - 6, 8);
+            ctx.fillStyle = COLORS.windowGlassLight;
+            ctx.fillRect(screenX + 3, screenY + 11, TILE_SIZE - 6, TILE_SIZE - 14);
+
+            // Distant city building silhouettes (deterministic per tile)
+            const buildingSeed = (x * 13 + y * 7) % 100;
+            ctx.fillStyle = '#0a0a0a';
+
+            // Building 1
+            const b1Height = 8 + (buildingSeed % 8);
+            const b1X = screenX + 5 + (buildingSeed % 4);
+            ctx.fillRect(b1X, screenY + TILE_SIZE - 3 - b1Height, 5, b1Height);
+
+            // Building 2
+            const b2Height = 6 + ((buildingSeed * 3) % 6);
+            const b2X = screenX + 18 + ((buildingSeed * 2) % 4);
+            ctx.fillRect(b2X, screenY + TILE_SIZE - 3 - b2Height, 6, b2Height);
+
+            // Building window lights (tiny flickering lights)
+            const lightColors = [COLORS.windowCityLight1, COLORS.windowCityLight2, COLORS.windowCityLight3];
+            for (let i = 0; i < 3; i++) {
+                const lx = screenX + 6 + ((buildingSeed + i * 5) % 18);
+                const ly = screenY + 12 + ((buildingSeed + i * 3) % 10);
+                const flickerOn = Math.sin(gameState.animationTime * 3 + i + x * 2 + y * 3) > 0;
+                if (flickerOn) {
+                    ctx.fillStyle = lightColors[i % 3];
+                    ctx.fillRect(lx, ly, 2, 2);
+                }
             }
-        }
 
-        // Fire glow on bottom edge windows (building is on fire below)
-        if (y === MAP_HEIGHT - 1) {
-            ctx.fillStyle = 'rgba(255, 100, 0, 0.35)';
-            ctx.fillRect(screenX + 3, screenY + TILE_SIZE - 12, TILE_SIZE - 6, 9);
-        }
+            // Fire glow on bottom edge windows (building is on fire below)
+            if (y === MAP_HEIGHT - 1) {
+                ctx.fillStyle = 'rgba(255, 100, 0, 0.35)';
+                ctx.fillRect(screenX + 3, screenY + TILE_SIZE - 12, TILE_SIZE - 6, 9);
+            }
 
-        // Glass reflection highlight (top-left corner)
-        ctx.fillStyle = COLORS.windowReflection;
-        ctx.fillRect(screenX + 5, screenY + 5, 6, 2);
-        ctx.fillRect(screenX + 5, screenY + 7, 2, 4);
+            // Glass reflection highlight (top-left corner)
+            ctx.fillStyle = COLORS.windowReflection;
+            ctx.fillRect(screenX + 5, screenY + 5, 6, 2);
+            ctx.fillRect(screenX + 5, screenY + 7, 2, 4);
+        }
     }
 }
 
@@ -7590,17 +7647,67 @@ function getPowerupOverlayColor(powerupType, stunned) {
     if (stunned > 0) {
         return 'rgba(155, 89, 182, 0.35)';  // Purple stun tint
     }
+    return null;
+}
+
+function getPowerupAuraColor(powerupType) {
     switch (powerupType) {
         case 'speed':
-            return 'rgba(0, 210, 211, 0.25)';   // Cyan tint
+            return { r: 0, g: 210, b: 211 };
         case 'knockout':
-            return 'rgba(231, 76, 60, 0.25)';   // Red tint
+            return { r: 238, g: 90, b: 36 };
         case 'electric':
-            return 'rgba(241, 196, 15, 0.25)';  // Yellow tint
+            return { r: 241, g: 196, b: 15 };
+        case 'ghost':
+            return { r: 100, g: 180, b: 255 };
         case 'overclock':
-            return 'rgba(255, 107, 107, 0.25)';  // Hot red tint
+            return { r: 255, g: 107, b: 107 };
         default:
             return null;
+    }
+}
+
+function drawPowerupAura(x, y, powerupType, powerupTimer) {
+    if (!powerupType || powerupTimer <= 0) return;
+    const color = getPowerupAuraColor(powerupType);
+    if (!color) return;
+
+    const cx = x + TILE_SIZE / 2;
+    const cy = y + TILE_SIZE / 2;
+    const time = gameState.animationTime;
+    const pulse = Math.sin(time * 6) * 0.2 + 0.8;
+    const radius = TILE_SIZE / 2 + 8;
+
+    ctx.save();
+
+    // Inner glow
+    ctx.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${0.18 * pulse})`;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius - 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Rotating dashed ring
+    ctx.translate(cx, cy);
+    ctx.rotate(time * 1.6);
+    ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${0.75 * pulse})`;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    // Orbiting sparks
+    for (let i = 0; i < 3; i++) {
+        const angle = time * 3.2 + i * (Math.PI * 2 / 3);
+        const sparkRadius = radius - 2 + Math.sin(time * 4 + i) * 2;
+        const sx = cx + Math.cos(angle) * sparkRadius;
+        const sy = cy + Math.sin(angle) * sparkRadius;
+        ctx.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, 0.85)`;
+        ctx.beginPath();
+        ctx.arc(sx, sy, 2, 0, Math.PI * 2);
+        ctx.fill();
     }
 }
 
@@ -7910,6 +8017,9 @@ function drawPlayer() {
     ctx.beginPath();
     ctx.ellipse(x + 16, y + 30, 9, 3, 0, 0, Math.PI * 2);
     ctx.fill();
+
+    // Powerup aura (persistent for powerup duration)
+    drawPowerupAura(x, y, gameState.powerup, gameState.powerupTimer);
 
     // Try sprite-based rendering first
     const facingRight = characterAnimationState.player.facingDirection >= 0;
@@ -9830,6 +9940,9 @@ function draw() {
         drawPunchEffect(punch);
     }
 
+    // Draw particles (glass shards, embers, etc.)
+    drawParticles();
+
     // Draw enemies
     for (const enemy of gameState.enemies) {
         drawEnemy(enemy);
@@ -10447,9 +10560,12 @@ function canMove(x, y) {
     if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return false;
     const tile = gameState.maze[y][x];
 
-    // Ghost Walk power-up: Pass through walls and desks
+    // Exterior windows are ALWAYS impassable (can't walk out of building!)
+    if (tile === TILE.WINDOW) return false;
+
+    // Ghost Walk power-up: Pass through interior walls and obstacles
     if (gameState.powerup === 'ghost' && gameState.powerupTimer > 0) {
-        // Can pass through anything except map boundaries (already checked)
+        // Can pass through anything except map boundaries and windows
         return tile !== undefined;
     }
 
@@ -11216,6 +11332,284 @@ function drawFireSpreadWarning(fire) {
     }
 }
 
+// ============================================
+// EXPLODING WINDOWS SYSTEM
+// Windows randomly blow out from fire pressure
+// ============================================
+
+// Get all exterior window positions (border tiles)
+function getExteriorWindowPositions() {
+    const windows = [];
+    for (let x = 0; x < MAP_WIDTH; x++) {
+        windows.push({ x, y: 0 });                    // Top edge
+        windows.push({ x, y: MAP_HEIGHT - 1 });       // Bottom edge
+    }
+    for (let y = 1; y < MAP_HEIGHT - 1; y++) {
+        windows.push({ x: 0, y });                    // Left edge
+        windows.push({ x: MAP_WIDTH - 1, y });        // Right edge
+    }
+    return windows;
+}
+
+// Trigger a window explosion at position (x, y) with 2-3 block section
+function triggerWindowExplosion(startX, startY) {
+    if (!gameState.explodedWindows) gameState.explodedWindows = new Set();
+
+    // Determine explosion direction (along the edge)
+    const isTopOrBottom = (startY === 0 || startY === MAP_HEIGHT - 1);
+    const sectionSize = 2 + Math.floor(Math.random() * 2); // 2-3 blocks
+
+    const explodedPositions = [];
+
+    for (let i = 0; i < sectionSize; i++) {
+        let x, y;
+        if (isTopOrBottom) {
+            // Horizontal section along top/bottom
+            x = startX + i;
+            y = startY;
+            if (x < 0 || x >= MAP_WIDTH) continue;
+        } else {
+            // Vertical section along left/right
+            x = startX;
+            y = startY + i;
+            if (y < 0 || y >= MAP_HEIGHT) continue;
+        }
+
+        const key = `${x},${y}`;
+        if (!gameState.explodedWindows.has(key)) {
+            gameState.explodedWindows.add(key);
+            explodedPositions.push({ x, y });
+        }
+    }
+
+    // Spawn glass shard particles for each exploded window
+    for (const pos of explodedPositions) {
+        spawnWindowExplosionParticles(pos.x, pos.y);
+    }
+
+    // Play explosion sound
+    if (explodedPositions.length > 0) {
+        AudioManager.play('punch1', 0.6); // Use punch sound as glass break
+        screenShake.trigger(6 + explodedPositions.length * 2, 0.2);
+    }
+}
+
+// Spawn glass shard particles shooting outward from exploded window
+function spawnWindowExplosionParticles(tileX, tileY) {
+    const centerX = tileX * TILE_SIZE + TILE_SIZE / 2;
+    const centerY = tileY * TILE_SIZE + TILE_SIZE / 2;
+
+    // Determine outward direction based on which edge
+    let baseAngle = 0;
+    if (tileY === 0) baseAngle = -Math.PI / 2;        // Top: shoot up
+    else if (tileY === MAP_HEIGHT - 1) baseAngle = Math.PI / 2;  // Bottom: shoot down
+    else if (tileX === 0) baseAngle = Math.PI;         // Left: shoot left
+    else baseAngle = 0;                                // Right: shoot right
+
+    // Spawn 8-12 glass shards
+    const numShards = 8 + Math.floor(Math.random() * 5);
+    for (let i = 0; i < numShards; i++) {
+        const angle = baseAngle + (Math.random() - 0.5) * 1.2; // Spread ±35°
+        const speed = 4 + Math.random() * 6;
+        const size = 2 + Math.random() * 4;
+
+        // Glass shard colors (light blue tints)
+        const colors = ['#88ccff', '#aaddff', '#66bbee', '#99ddff', '#77ccee', '#ffffff'];
+        const color = colors[Math.floor(Math.random() * colors.length)];
+
+        gameState.particles.push({
+            x: centerX + (Math.random() - 0.5) * TILE_SIZE,
+            y: centerY + (Math.random() - 0.5) * TILE_SIZE,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            size: size,
+            color: color,
+            alpha: 1.0,
+            lifetime: 1.5 + Math.random() * 0.5,
+            age: 0,
+            type: 'glass',
+            rotation: Math.random() * Math.PI * 2,
+            rotationSpeed: (Math.random() - 0.5) * 10,
+            gravity: 0.15
+        });
+    }
+
+    // Add some fire/ember particles too (the pressure is from fire)
+    for (let i = 0; i < 4; i++) {
+        const angle = baseAngle + (Math.random() - 0.5) * 0.8;
+        const speed = 2 + Math.random() * 3;
+
+        gameState.particles.push({
+            x: centerX,
+            y: centerY,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            size: 3 + Math.random() * 3,
+            color: ['#ff6600', '#ff9900', '#ffcc00'][Math.floor(Math.random() * 3)],
+            alpha: 0.9,
+            lifetime: 0.8 + Math.random() * 0.4,
+            age: 0,
+            type: 'ember'
+        });
+    }
+}
+
+// Update exploding windows system
+function updateExplodingWindows(deltaTime) {
+    if (!gameState.started || gameState.gameOver || gameState.paused) return;
+    if (!gameState.explodedWindows) gameState.explodedWindows = new Set();
+    if (!gameState.windowExplosionTimer) gameState.windowExplosionTimer = 0;
+
+    // Update explosion timer
+    gameState.windowExplosionTimer += deltaTime;
+
+    // Explosion frequency based on floor (more frequent on lower floors)
+    let explosionInterval;
+    if (gameState.floor >= 10) {
+        explosionInterval = 8 + Math.random() * 6; // Floors 10-13: every 8-14 seconds
+    } else if (gameState.floor >= 6) {
+        explosionInterval = 5 + Math.random() * 4; // Floors 6-9: every 5-9 seconds
+    } else {
+        explosionInterval = 3 + Math.random() * 3; // Floors 1-5: every 3-6 seconds
+    }
+
+    if (gameState.windowExplosionTimer >= explosionInterval) {
+        gameState.windowExplosionTimer = 0;
+
+        // Find windows that haven't exploded yet
+        const windows = getExteriorWindowPositions();
+        const availableWindows = windows.filter(w => {
+            const key = `${w.x},${w.y}`;
+            return !gameState.explodedWindows.has(key);
+        });
+
+        // Pick a random starting window
+        if (availableWindows.length > 0) {
+            const window = availableWindows[Math.floor(Math.random() * availableWindows.length)];
+            triggerWindowExplosion(window.x, window.y);
+        }
+    }
+}
+
+// Check if a window tile is exploded (for rendering)
+function isWindowExploded(x, y) {
+    if (!gameState.explodedWindows) return false;
+    return gameState.explodedWindows.has(`${x},${y}`);
+}
+
+// Update all particles (glass shards, embers, etc.)
+function updateParticles(deltaTime) {
+    if (!gameState.particles) return;
+
+    // Update each particle
+    for (const p of gameState.particles) {
+        // Update age and lifetime
+        if (p.age !== undefined) {
+            p.age += deltaTime;
+        }
+
+        // Apply gravity for glass shards
+        if (p.gravity) {
+            p.vy += p.gravity;
+        }
+
+        // Apply rotation for glass shards
+        if (p.rotation !== undefined && p.rotationSpeed !== undefined) {
+            p.rotation += p.rotationSpeed * deltaTime;
+        }
+
+        // Update position
+        p.x += p.vx;
+        p.y += p.vy;
+
+        // Update alpha based on age/lifetime
+        if (p.lifetime && p.age !== undefined) {
+            p.alpha = Math.max(0, 1 - (p.age / p.lifetime));
+        }
+
+        // Slow down over time (friction)
+        p.vx *= 0.98;
+        p.vy *= 0.98;
+
+        // Shrink over time
+        if (p.type !== 'glass') {
+            p.size *= 0.99;
+        }
+    }
+
+    // Remove dead particles
+    gameState.particles = gameState.particles.filter(p => {
+        // Remove if too small
+        if (p.size < 0.5) return false;
+        // Remove if lifetime exceeded
+        if (p.lifetime && p.age >= p.lifetime) return false;
+        // Remove if too far off screen
+        if (p.x < -100 || p.x > canvas.width + 100 || p.y < -100 || p.y > canvas.height + 100) return false;
+        // Remove if alpha is zero
+        if (p.alpha !== undefined && p.alpha <= 0) return false;
+        return true;
+    });
+}
+
+// Draw all particles (glass shards, embers, dust, etc.)
+function drawParticles() {
+    if (!gameState.particles || gameState.particles.length === 0) return;
+
+    const cam = gameState.camera;
+    const camOffsetX = cam ? cam.x * TILE_SIZE : 0;
+    const camOffsetY = cam ? cam.y * TILE_SIZE : 0;
+
+    for (const p of gameState.particles) {
+        // Calculate screen position
+        const screenX = p.x - camOffsetX;
+        const screenY = p.y - camOffsetY;
+
+        // Skip if off screen
+        if (screenX < -50 || screenX > canvas.width + 50 ||
+            screenY < -50 || screenY > canvas.height + 50) continue;
+
+        const alpha = p.alpha !== undefined ? p.alpha : 1;
+
+        ctx.save();
+
+        if (p.type === 'glass') {
+            // Glass shard - draw as rotated rectangle
+            ctx.translate(screenX, screenY);
+            ctx.rotate(p.rotation || 0);
+
+            // Glass with transparency and reflection
+            ctx.fillStyle = p.color;
+            ctx.globalAlpha = alpha * 0.9;
+
+            // Draw shard as elongated shape
+            const w = p.size;
+            const h = p.size * 0.4;
+            ctx.fillRect(-w/2, -h/2, w, h);
+
+            // Glass shine highlight
+            ctx.fillStyle = '#ffffff';
+            ctx.globalAlpha = alpha * 0.4;
+            ctx.fillRect(-w/4, -h/4, w/3, h/2);
+
+        } else {
+            // Default particle (ember, dust, etc.) - simple circle
+            ctx.globalAlpha = alpha;
+
+            // Motion blur trail
+            ctx.fillStyle = p.color + '40';
+            ctx.fillRect(screenX - p.vx * 2, screenY - p.vy * 2, p.size * 0.7, p.size * 0.7);
+
+            // Main particle
+            ctx.fillStyle = p.color;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, p.size / 2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        ctx.restore();
+    }
+}
+
 // Draw fire hazard
 function drawFire(fire) {
     const x = fire.x * TILE_SIZE;
@@ -11872,9 +12266,10 @@ function performDash() {
         let canPass = canMove(checkX, checkY);
 
         // Phase Dash (Legendary): Allow passing through walls AND all obstacles
+        // BUT NOT exterior windows - you can't phase out of the building!
         if (!canPass && hasPhaseDash) {
-            if (isBlockingTile(tile)) {
-                canPass = true; // Phase through everything!
+            if (isBlockingTile(tile) && tile !== TILE.WINDOW) {
+                canPass = true; // Phase through everything except exterior windows!
             }
         }
         // deskVault perk: Allow passing through breakable obstacles (not walls/windows)
@@ -14961,6 +15356,12 @@ function update(deltaTime) {
 
     // Update fires - spawn new ones and grow existing
     updateFires(deltaTime);
+
+    // Update exploding windows - random sections blow out from fire pressure
+    updateExplodingWindows(deltaTime);
+
+    // Update particles (glass shards, embers, dust, etc.)
+    updateParticles(deltaTime);
 
     // Update environmental hazards (sparking wires, coffee spills, copiers)
     // Spawn hazards after initial delay
