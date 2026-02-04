@@ -2602,7 +2602,7 @@ const PERKS = {
     coinMagnet: {
         id: 'coinMagnet',
         name: 'Money Magnet',
-        description: 'Coins are attracted from 3 tiles away',
+        description: 'Coins are attracted from 4 tiles away',
         icon: '🧲',
         category: 'passive',
         rarity: 'common'
@@ -7012,24 +7012,24 @@ function initLevel() {
     gameState.lastChanceTimer = 0;
 
     // === COIN SPAWNING: Count scales by floor for economy balance ===
-    // Coins are always value 1; later floors spawn fewer coins
+    // Generous early game hooks players, coins decrease as difficulty rises
     gameState.coins = [];
     let numCoins;
     if (gameState.floor >= 11) {
-        numCoins = 18 + Math.floor(gameRandom() * 8); // 18-25 coins (early floors)
+        numCoins = 28 + Math.floor(gameRandom() * 11); // 28-38 coins (early floors - GENEROUS)
     } else if (gameState.floor >= 7) {
-        numCoins = 15 + Math.floor(gameRandom() * 6); // 15-20 coins (mid floors)
+        numCoins = 22 + Math.floor(gameRandom() * 9);  // 22-30 coins (mid floors)
     } else if (gameState.floor >= 4) {
-        numCoins = 12 + Math.floor(gameRandom() * 5); // 12-16 coins (late floors)
+        numCoins = 16 + Math.floor(gameRandom() * 7);  // 16-22 coins (late floors)
     } else {
-        numCoins = 10 + Math.floor(gameRandom() * 4); // 10-13 coins (final floors)
+        numCoins = 12 + Math.floor(gameRandom() * 5);  // 12-16 coins (final floors)
     }
 
     if (gameState.coinStashBonus && gameState.coinStashBonus > 0) {
         numCoins += gameState.coinStashBonus;
         gameState.coinStashBonus = 0;
     }
-    const MIN_COIN_DISTANCE = 4; // Minimum distance between coins
+    const MIN_COIN_DISTANCE = 2; // Allow coin clusters/trails for satisfying collection
 
     for (let i = 0; i < numCoins; i++) {
         let cx, cy, attempts = 0;
@@ -9979,9 +9979,6 @@ function draw() {
     // Draw clone decoy (if active)
     drawClone();
 
-    // === OFF-SCREEN EXIT INDICATORS: Show arrows pointing to exits outside viewport ===
-    drawOffScreenExitIndicators();
-
     // === END WORLD-SPACE DRAWING: Restore camera transform for screen-space effects ===
     ctx.restore(); // Restore from camera transform
 
@@ -10206,63 +10203,6 @@ function draw() {
 
     // Restore context after screen shake
     ctx.restore();
-}
-
-// === OFF-SCREEN EXIT INDICATORS: Arrows pointing toward exits outside viewport ===
-function drawOffScreenExitIndicators() {
-    if (!gameState.exits || !gameState.camera) return;
-
-    const cam = gameState.camera;
-    const padding = 40; // Distance from screen edge
-    const arrowSize = 20;
-    const pulse = Math.sin(gameState.animationTime * 4) * 0.3 + 0.7;
-
-    for (const exit of gameState.exits) {
-        // Calculate exit position relative to camera (in pixels)
-        const exitScreenX = (exit.x - cam.x) * TILE_SIZE + TILE_SIZE / 2;
-        const exitScreenY = (exit.y - cam.y) * TILE_SIZE + TILE_SIZE / 2;
-
-        // Check if exit is outside visible viewport
-        const viewportPixelW = getViewportWidth() * TILE_SIZE;
-        const viewportPixelH = VIEWPORT_HEIGHT * TILE_SIZE;
-
-        if (exitScreenX < 0 || exitScreenX > viewportPixelW ||
-            exitScreenY < 0 || exitScreenY > viewportPixelH) {
-
-            // Calculate arrow position (clamped to screen edge)
-            let arrowX = Math.max(padding, Math.min(viewportPixelW - padding, exitScreenX));
-            let arrowY = Math.max(padding, Math.min(viewportPixelH - padding, exitScreenY));
-
-            // Calculate angle from arrow position to actual exit
-            const angle = Math.atan2(exitScreenY - arrowY, exitScreenX - arrowX);
-
-            // Draw glowing arrow
-            ctx.save();
-            ctx.translate(arrowX, arrowY);
-            ctx.rotate(angle);
-
-            // Glow effect
-            ctx.shadowColor = '#f1c40f';
-            ctx.shadowBlur = 15 + pulse * 10;
-
-            // Arrow shape
-            ctx.fillStyle = `rgba(255, 200, 50, ${0.7 + pulse * 0.3})`;
-            ctx.beginPath();
-            ctx.moveTo(arrowSize, 0);
-            ctx.lineTo(-arrowSize / 2, -arrowSize / 2);
-            ctx.lineTo(-arrowSize / 4, 0);
-            ctx.lineTo(-arrowSize / 2, arrowSize / 2);
-            ctx.closePath();
-            ctx.fill();
-
-            // Border
-            ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-
-            ctx.restore();
-        }
-    }
 }
 
 // Draw a mini-map showing player position and exits
@@ -13879,13 +13819,13 @@ function showLevelTransition(floor) {
 }
 
 // === PERK SELECTION UI ===
-// Flat pricing by rarity - legendary/ultimate are premium (1-2 per run max)
+// Flat pricing by rarity - legendary/ultimate are aspirational but achievable
 const PERK_PRICES = {
-    common: 10,
-    rare: 18,
-    epic: 30,
-    legendary: 45,   // Top-tier but achievable late
-    ultimate: 65     // Endgame purchase for skilled play
+    common: 10,      // Unchanged - accessible each floor
+    rare: 15,        // Was 18 - affordable mid-game
+    epic: 25,        // Was 30 - requires some saving
+    legendary: 38,   // Was 45 - achievable with exploration
+    ultimate: 55     // Was 65 - still premium, but reachable
 };
 
 // Simple pricing - flat rates with optional Penny Pincher discount
@@ -15245,13 +15185,13 @@ function update(deltaTime) {
     // === CAMERA UPDATE: Smooth follow player ===
     updateCamera(deltaTime);
 
-    // === COIN MAGNET PERK: Attract coins from 3 tiles away ===
+    // === COIN MAGNET PERK: Attract coins from 4 tiles away ===
     if (gameState.perks.includes('coinMagnet')) {
         for (const coin of gameState.coins) {
             if (coin.collected) continue;
 
             const dist = Math.abs(coin.x - gameState.player.x) + Math.abs(coin.y - gameState.player.y);
-            if (dist <= 3 && dist > 0) {
+            if (dist <= 4 && dist > 0) {
                 // Initialize magnet animation state if not present
                 if (!coin.magnetizing) {
                     coin.magnetizing = true;
@@ -15920,7 +15860,7 @@ async function startGame(mode = 'normal') {
     gameState.fireSpawnTimer = 0;
 
     // === SHOP ECONOMY: Start with coins to buy first upgrade ===
-    gameState.coinsBanked = 0; // Start with zero coins
+    gameState.coinsBanked = 5; // Safety net for bad RNG on floor 13
     gameState.coinsEarnedThisFloor = 0;
     gameState.coinStashBonus = 0;
     gameState.coinsCollected = 0;
