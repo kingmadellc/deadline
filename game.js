@@ -608,6 +608,9 @@ const DOG_ASSETS = {
 // Enemy animation state tracking
 const enemyAnimationStates = new Map();
 
+// Track if character assets have finished loading
+let characterAssetsReady = false;
+
 // Character asset loader
 const characterAssetLoader = {
     loadedCount: 0,
@@ -6785,8 +6788,16 @@ function initLevel() {
             const difficultyPreset = DIFFICULTY_PRESETS[settings.difficulty] || DIFFICULTY_PRESETS.normal;
             numEnemies = Math.max(1, Math.round(numEnemies * (difficultyPreset.enemyMultiplier || 1.0)));
 
-            // Enemy AI difficulty also scales - rebalanced for 13-floor game
-            enemyDifficulty = gameState.floor >= 13 ? 'easy' : (gameState.floor >= 7 ? 'medium' : 'hard');
+            // Enemy AI difficulty scales by floor - rebalanced for 13-floor game
+            let baseDifficulty = gameState.floor >= 13 ? 'easy' : (gameState.floor >= 7 ? 'medium' : 'hard');
+
+            // FIX: Scale UP enemy AI for harder difficulty settings (Intense/Crunch)
+            if (difficultyPreset.enemyMultiplier >= 1.5) {
+                // Bump all enemies up one AI tier for harder difficulties
+                if (baseDifficulty === 'easy') baseDifficulty = 'medium';
+                else if (baseDifficulty === 'medium') baseDifficulty = 'hard';
+            }
+            enemyDifficulty = baseDifficulty;
 
             // First-run onboarding: gentler enemy ramp on early floors
             if (gameState.firstRunTutorial) {
@@ -6853,6 +6864,14 @@ function initLevel() {
     } else {
         numPowerups = 8 + Math.floor(gameRandom() * 4);  // 8-11 powerups (late game gets more chaos)
     }
+
+    // FIX: Scale power-ups by difficulty - fewer on harder difficulties
+    const powerupDifficultyPreset = DIFFICULTY_PRESETS[settings.difficulty] || DIFFICULTY_PRESETS.normal;
+    if (powerupDifficultyPreset.enemyMultiplier >= 1.5) {
+        // Intense/Crunch: 25% fewer power-ups for increased challenge
+        numPowerups = Math.floor(numPowerups * 0.75);
+    }
+
     const weeklyMods = getWeeklyModifiers();
     const powerupsDisabled = weeklyMods && weeklyMods.powerupMultiplier === 0;
 
@@ -11149,6 +11168,10 @@ function updateSpatialAudio() {
 
 // Update fire system
 function updateFires(deltaTime) {
+    // FIX: Check difficulty preset's fireEnabled flag first
+    const difficultyPreset = DIFFICULTY_PRESETS[settings.difficulty] || DIFFICULTY_PRESETS.normal;
+    if (!difficultyPreset.fireEnabled) return;  // No fires on Zen/Chill modes
+
     const maxFires = getMaxFiresForFloor(gameState.floor);
     if (maxFires === 0) return;  // No fires on this floor
 
@@ -11171,6 +11194,12 @@ function updateFires(deltaTime) {
     } else {
         baseInterval = 6;   // Floors 1-4: fast spawning
         randomRange = 4;
+    }
+
+    // FIX: Apply fireSpreadFaster multiplier for Intense/Crunch difficulties
+    if (difficultyPreset.fireSpreadFaster) {
+        baseInterval *= 0.6;  // 40% faster fire spawning
+        randomRange *= 0.6;
     }
 
     if (gameState.fireSpawnTimer > baseInterval + Math.random() * randomRange) {
@@ -15799,7 +15828,14 @@ function gameLoop(timestamp) {
     requestAnimationFrame(gameLoop);
 }
 
-function startGame(mode = 'normal') {
+async function startGame(mode = 'normal') {
+    // Ensure character assets are loaded before starting
+    if (!characterAssetsReady) {
+        console.log('Waiting for character assets to load...');
+        await characterAssetLoader.preloadAll();
+        characterAssetsReady = true;
+    }
+
     // Starting a new run should not inherit any saved/resume state
     clearSavedGame();
     // Initialize audio system on first user interaction
@@ -16610,10 +16646,17 @@ document.addEventListener('DOMContentLoaded', () => {
     updatePlayerColors();
     initTouchControls();
 
-    // Preload character assets in background
+    // Preload character assets - enable start button when ready
     characterAssetLoader.preloadAll().then(count => {
+        characterAssetsReady = true;
         if (count > 0) {
             console.log('Character sprites ready');
+        }
+        // Enable start button now that assets are ready
+        const playBtn = document.getElementById('menuPlayBtn');
+        if (playBtn) {
+            playBtn.disabled = false;
+            playBtn.textContent = '▶ START RUN';
         }
     });
 });
