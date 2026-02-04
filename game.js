@@ -8841,18 +8841,6 @@ function drawExit(exit) {
     ctx.fillRect(x + 20, y - 4, 3, 1);
     ctx.fillRect(x + 21, y - 4, 1, 5);
 
-    // Arrow
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.moveTo(x + 16, y + 26 + arrowBob);
-    ctx.lineTo(x + 10, y + 18 + arrowBob);
-    ctx.lineTo(x + 14, y + 18 + arrowBob);
-    ctx.lineTo(x + 14, y + 12 + arrowBob);
-    ctx.lineTo(x + 18, y + 12 + arrowBob);
-    ctx.lineTo(x + 18, y + 18 + arrowBob);
-    ctx.lineTo(x + 22, y + 18 + arrowBob);
-    ctx.closePath();
-    ctx.fill();
 }
 
 // === THE VAULT: Draw Vault Door for Floor -100 ===
@@ -9528,30 +9516,6 @@ function drawSecretExitHints() {
     ctx.fillText('Floor 13... Something is different', canvas.width / 2, 54);
     ctx.textAlign = 'left';
 
-    // Subtle arrow/light beam pointing toward secret exit (only if player is far away)
-    const dist = Math.sqrt(Math.pow(secretX - playerX, 2) + Math.pow(secretY - playerY, 2));
-    if (dist > 150) {
-        const angle = Math.atan2(secretY - playerY, secretX - playerX);
-        const beamStartX = playerX + Math.cos(angle) * 40;
-        const beamStartY = playerY + Math.sin(angle) * 40;
-
-        // Draw pulsing arrow
-        ctx.save();
-        ctx.translate(beamStartX, beamStartY);
-        ctx.rotate(angle);
-
-        const arrowPulse = Math.sin(time * 4) * 0.3 + 0.5;
-        ctx.fillStyle = `rgba(155, 89, 182, ${arrowPulse})`;
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.lineTo(-8, -5);
-        ctx.lineTo(-5, 0);
-        ctx.lineTo(-8, 5);
-        ctx.closePath();
-        ctx.fill();
-
-        ctx.restore();
-    }
 }
 
 function drawImplosion() {
