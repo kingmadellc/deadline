@@ -2244,7 +2244,71 @@ const COLORS = {
     dogParkGrassDark: '#689f38',
     dogParkFence: '#8d6e63',
     dogParkSand: '#fff8e1',
-    dogParkToy: '#f44336'
+    dogParkToy: '#f44336',
+
+    // Office Chair (matches start screen debris)
+    chairBase: '#2a2a2a',
+    chairColumn: '#3a3a3a',
+    chairSeat: '#1a1a2e',
+    chairSeatLight: '#2d2d4a',
+    chairArm: '#2a2a2a',
+
+    // Filing Cabinet (matches start screen debris)
+    cabinetBody: '#4a4a4a',
+    cabinetTop: '#5a5a5a',
+    cabinetDrawer: '#555555',
+    cabinetHandle: '#888888',
+
+    // Monitor Station (matches start screen debris)
+    monitorFrame: '#1a1a1a',
+    monitorScreen: '#0f3460',
+    monitorText1: '#4ecdc4',
+    monitorText2: '#e94560',
+    monitorText3: '#ffe66d',
+    monitorStand: '#2a2a2a',
+
+    // Potted Plant (matches start screen debris)
+    plantPot: '#a04820',
+    plantPotRim: '#c05828',
+    plantSoil: '#3a2a1a',
+    plantLeaf: '#2d6b2f',
+    plantLeafLight: '#4a8b4c',
+
+    // Water Cooler (matches start screen debris)
+    coolerBase: '#d0d0d0',
+    coolerBaseLight: '#e8e8e8',
+    coolerJug: '#4ecdc4',
+    coolerJugLight: '#6ee4dc',
+    coolerCap: '#2a9d8f',
+    coolerTapHot: '#e94560',
+    coolerTapCold: '#4ecdc4',
+
+    // Trashcan (matches start screen debris)
+    trashBody: '#3a3a3a',
+    trashInner: '#4a4a4a',
+    trashRim: '#5a5a5a',
+    trashPaper: '#f0f0e8',
+
+    // Desk Lamp (matches start screen debris)
+    lampBase: '#2a2a2a',
+    lampPole: '#3a3a3a',
+    lampShade: '#1a1a2e',
+    lampShadeLight: '#2d2d4a',
+    lampGlow: '#ffe66d',
+
+    // Exterior Windows (highrise glass)
+    windowFrame: '#2a2a2a',
+    windowFrameLight: '#404040',
+    windowGlass: '#1a2a3a',
+    windowGlassLight: '#2a3a4a',
+    windowSky: '#0a0a15',
+    windowReflection: '#4a5a6a',
+    windowCityLight1: '#ffaa00',
+    windowCityLight2: '#ff6600',
+    windowCityLight3: '#00aaff',
+
+    // Floor enhancements
+    floorSeam: '#2e2e2e'
 };
 
 // Store original colors for colorblind mode toggle
@@ -2367,7 +2431,16 @@ const TILE = {
     SECRET_EXIT: 5,
     FIRE: 6,
     GARDEN: 7,
-    DOG_PARK: 8
+    DOG_PARK: 8,
+    // New obstacle types (match start screen debris)
+    CHAIR: 9,           // Office swivel chair
+    FILING_CABINET: 10, // Metal filing cabinet
+    MONITOR: 11,        // CRT monitor on stand
+    PLANT: 12,          // Potted office plant
+    WATER_COOLER: 13,   // Water dispenser
+    TRASHCAN: 14,       // Office trash can
+    LAMP: 15,           // Desk lamp
+    WINDOW: 16          // Exterior wall windows (highrise glass)
 };
 
 // Checkpoint system constants (must be defined before gameState)
@@ -5934,9 +6007,9 @@ function generateMaze() {
     for (let y = 0; y < MAP_HEIGHT; y++) {
         maze[y] = [];
         for (let x = 0; x < MAP_WIDTH; x++) {
-            // Border is always wall
+            // Border is exterior windows (highrise glass)
             if (x === 0 || x === MAP_WIDTH - 1 || y === 0 || y === MAP_HEIGHT - 1) {
-                maze[y][x] = TILE.WALL;
+                maze[y][x] = TILE.WINDOW;
             } else {
                 maze[y][x] = TILE.FLOOR;
             }
@@ -6106,7 +6179,30 @@ function addBottleneckCorridors(maze, corners, startX, startY) {
     console.log('Bottleneck corridors added near exits');
 }
 
-// Add desks after maze generation, verifying they don't block paths
+// Office obstacle types with weights (matches start screen debris system)
+const OBSTACLE_TYPES = [
+    { type: TILE.DESK, weight: 8 },
+    { type: TILE.CHAIR, weight: 10 },
+    { type: TILE.FILING_CABINET, weight: 7 },
+    { type: TILE.MONITOR, weight: 12 },
+    { type: TILE.PLANT, weight: 9 },
+    { type: TILE.WATER_COOLER, weight: 4 },
+    { type: TILE.TRASHCAN, weight: 9 },
+    { type: TILE.LAMP, weight: 7 }
+];
+const OBSTACLE_TOTAL_WEIGHT = OBSTACLE_TYPES.reduce((sum, o) => sum + o.weight, 0);
+
+// Get a random obstacle type using weighted selection
+function getRandomObstacleType() {
+    let r = gameRandom() * OBSTACLE_TOTAL_WEIGHT;
+    for (const obstacle of OBSTACLE_TYPES) {
+        r -= obstacle.weight;
+        if (r <= 0) return obstacle.type;
+    }
+    return TILE.DESK; // fallback
+}
+
+// Add varied office obstacles after maze generation, verifying they don't block paths
 function addDesksToMaze(maze) {
     const startX = Math.floor(MAP_WIDTH / 2);
     const startY = Math.floor(MAP_HEIGHT / 2);
@@ -6117,12 +6213,12 @@ function addDesksToMaze(maze) {
         { x: MAP_WIDTH - 2, y: MAP_HEIGHT - 2 }
     ];
 
-    let desksAdded = 0;
+    let obstaclesAdded = 0;
     let attempts = 0;
-    const maxDesks = 8;
-    const maxAttempts = 80;
+    const maxObstacles = 14; // Increased from 8 for more variety
+    const maxAttempts = 120;
 
-    while (desksAdded < maxDesks && attempts < maxAttempts) {
+    while (obstaclesAdded < maxObstacles && attempts < maxAttempts) {
         attempts++;
         const x = Math.floor(gameRandom() * (MAP_WIDTH - 8)) + 4;
         const y = Math.floor(gameRandom() * (MAP_HEIGHT - 8)) + 4;
@@ -6143,8 +6239,11 @@ function addDesksToMaze(maze) {
         }
         if (nearExit) continue;
 
-        // Temporarily place desk and check if paths still exist
-        maze[y][x] = TILE.DESK;
+        // Pick a random obstacle type
+        const obstacleType = getRandomObstacleType();
+
+        // Temporarily place obstacle and check if paths still exist
+        maze[y][x] = obstacleType;
 
         let allPathsExist = true;
         for (const corner of corners) {
@@ -6155,13 +6254,13 @@ function addDesksToMaze(maze) {
         }
 
         if (allPathsExist) {
-            desksAdded++;
+            obstaclesAdded++;
         } else {
-            // Remove desk if it blocks a path
+            // Remove obstacle if it blocks a path
             maze[y][x] = TILE.FLOOR;
         }
     }
-    console.log(`Added ${desksAdded} desks`);
+    console.log(`Added ${obstaclesAdded} office obstacles`);
 }
 
 // Add cafeteria zone (on some floors)
@@ -7194,6 +7293,236 @@ function drawTile(x, y) {
 
         ctx.fillStyle = COLORS.deskTop;
         ctx.fillRect(screenX + 14, screenY + 14, 4, 2);
+
+    } else if (tile === TILE.CHAIR) {
+        // Office swivel chair (matches start screen debris)
+        // Wheel base - star pattern
+        ctx.fillStyle = COLORS.chairBase;
+        ctx.fillRect(screenX + 6, screenY + 24, 4, 4);
+        ctx.fillRect(screenX + 22, screenY + 24, 4, 4);
+        ctx.fillRect(screenX + 14, screenY + 26, 4, 3);
+
+        // Center column
+        ctx.fillStyle = COLORS.chairColumn;
+        ctx.fillRect(screenX + 14, screenY + 16, 4, 10);
+
+        // Seat cushion
+        ctx.fillStyle = COLORS.chairSeat;
+        ctx.fillRect(screenX + 4, screenY + 12, 24, 6);
+        ctx.fillStyle = COLORS.chairSeatLight;
+        ctx.fillRect(screenX + 6, screenY + 13, 20, 4);
+
+        // Back rest
+        ctx.fillStyle = COLORS.chairSeat;
+        ctx.fillRect(screenX + 6, screenY + 2, 20, 10);
+        ctx.fillStyle = COLORS.chairSeatLight;
+        ctx.fillRect(screenX + 8, screenY + 3, 16, 8);
+
+        // Arm rests
+        ctx.fillStyle = COLORS.chairArm;
+        ctx.fillRect(screenX + 2, screenY + 8, 4, 6);
+        ctx.fillRect(screenX + 26, screenY + 8, 4, 6);
+
+    } else if (tile === TILE.FILING_CABINET) {
+        // Metal filing cabinet (matches start screen debris)
+        // Cabinet body
+        ctx.fillStyle = COLORS.cabinetBody;
+        ctx.fillRect(screenX + 4, screenY + 2, 24, 28);
+
+        // Top edge highlight
+        ctx.fillStyle = COLORS.cabinetTop;
+        ctx.fillRect(screenX + 4, screenY + 2, 24, 3);
+
+        // Drawer faces
+        ctx.fillStyle = COLORS.cabinetDrawer;
+        ctx.fillRect(screenX + 6, screenY + 6, 20, 7);
+        ctx.fillRect(screenX + 6, screenY + 14, 20, 7);
+        ctx.fillRect(screenX + 6, screenY + 22, 20, 7);
+
+        // Drawer handles
+        ctx.fillStyle = COLORS.cabinetHandle;
+        ctx.fillRect(screenX + 13, screenY + 8, 6, 2);
+        ctx.fillRect(screenX + 13, screenY + 16, 6, 2);
+        ctx.fillRect(screenX + 13, screenY + 24, 6, 2);
+
+    } else if (tile === TILE.MONITOR) {
+        // CRT monitor on stand (matches start screen debris)
+        // Stand base
+        ctx.fillStyle = COLORS.monitorStand;
+        ctx.fillRect(screenX + 8, screenY + 26, 16, 3);
+
+        // Stand neck
+        ctx.fillStyle = COLORS.monitorStand;
+        ctx.fillRect(screenX + 13, screenY + 20, 6, 6);
+
+        // Monitor frame
+        ctx.fillStyle = COLORS.monitorFrame;
+        ctx.fillRect(screenX + 2, screenY + 2, 28, 20);
+
+        // Screen
+        ctx.fillStyle = COLORS.monitorScreen;
+        ctx.fillRect(screenX + 4, screenY + 4, 24, 16);
+
+        // Screen content - animated glow lines
+        const glowOffset = Math.sin(gameState.animationTime * 3 + x + y) * 0.5 + 0.5;
+        ctx.fillStyle = COLORS.monitorText1;
+        ctx.fillRect(screenX + 6, screenY + 6, 10, 2);
+        ctx.fillStyle = COLORS.monitorText2;
+        ctx.fillRect(screenX + 6, screenY + 10, 16, 2);
+        ctx.fillStyle = COLORS.monitorText3;
+        ctx.fillRect(screenX + 6, screenY + 14, 8, 2);
+
+        // Animated cursor blink
+        if (glowOffset > 0.5) {
+            ctx.fillStyle = COLORS.monitorText1;
+            ctx.fillRect(screenX + 18, screenY + 14, 3, 2);
+        }
+
+    } else if (tile === TILE.PLANT) {
+        // Potted office plant (matches start screen debris)
+        // Pot
+        ctx.fillStyle = COLORS.plantPot;
+        ctx.fillRect(screenX + 10, screenY + 20, 12, 10);
+        ctx.fillStyle = COLORS.plantPotRim;
+        ctx.fillRect(screenX + 8, screenY + 18, 16, 3);
+
+        // Soil
+        ctx.fillStyle = COLORS.plantSoil;
+        ctx.fillRect(screenX + 11, screenY + 19, 10, 2);
+
+        // Leaves
+        ctx.fillStyle = COLORS.plantLeaf;
+        ctx.fillRect(screenX + 14, screenY + 10, 4, 9);
+        ctx.fillRect(screenX + 8, screenY + 6, 5, 6);
+        ctx.fillRect(screenX + 19, screenY + 4, 5, 8);
+        ctx.fillRect(screenX + 5, screenY + 10, 4, 5);
+        ctx.fillRect(screenX + 23, screenY + 8, 4, 5);
+
+        // Leaf highlights
+        ctx.fillStyle = COLORS.plantLeafLight;
+        ctx.fillRect(screenX + 9, screenY + 7, 3, 4);
+        ctx.fillRect(screenX + 20, screenY + 5, 3, 4);
+
+    } else if (tile === TILE.WATER_COOLER) {
+        // Water cooler dispenser (matches start screen debris)
+        // Base/dispenser unit
+        ctx.fillStyle = COLORS.coolerBase;
+        ctx.fillRect(screenX + 8, screenY + 18, 16, 12);
+        ctx.fillStyle = COLORS.coolerBaseLight;
+        ctx.fillRect(screenX + 10, screenY + 20, 12, 8);
+
+        // Water jug
+        ctx.fillStyle = COLORS.coolerJug;
+        ctx.fillRect(screenX + 11, screenY + 2, 10, 16);
+        ctx.fillStyle = COLORS.coolerJugLight;
+        ctx.fillRect(screenX + 13, screenY + 3, 6, 14);
+
+        // Jug cap
+        ctx.fillStyle = COLORS.coolerCap;
+        ctx.fillRect(screenX + 12, screenY + 0, 8, 3);
+
+        // Taps
+        ctx.fillStyle = COLORS.coolerTapHot;
+        ctx.fillRect(screenX + 5, screenY + 22, 4, 4);
+        ctx.fillStyle = COLORS.coolerTapCold;
+        ctx.fillRect(screenX + 23, screenY + 22, 4, 4);
+
+    } else if (tile === TILE.TRASHCAN) {
+        // Office trash can (matches start screen debris)
+        // Can body
+        ctx.fillStyle = COLORS.trashBody;
+        ctx.fillRect(screenX + 8, screenY + 8, 16, 20);
+        ctx.fillStyle = COLORS.trashInner;
+        ctx.fillRect(screenX + 10, screenY + 10, 12, 16);
+
+        // Rim
+        ctx.fillStyle = COLORS.trashRim;
+        ctx.fillRect(screenX + 6, screenY + 6, 20, 4);
+
+        // Crumpled paper sticking out
+        ctx.fillStyle = COLORS.trashPaper;
+        ctx.fillRect(screenX + 12, screenY + 2, 5, 5);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(screenX + 16, screenY + 0, 4, 6);
+
+    } else if (tile === TILE.LAMP) {
+        // Desk lamp (matches start screen debris)
+        // Base
+        ctx.fillStyle = COLORS.lampBase;
+        ctx.fillRect(screenX + 10, screenY + 26, 12, 3);
+
+        // Pole
+        ctx.fillStyle = COLORS.lampPole;
+        ctx.fillRect(screenX + 14, screenY + 10, 4, 16);
+
+        // Shade
+        ctx.fillStyle = COLORS.lampShade;
+        ctx.fillRect(screenX + 6, screenY + 2, 20, 10);
+        ctx.fillStyle = COLORS.lampShadeLight;
+        ctx.fillRect(screenX + 8, screenY + 4, 16, 6);
+
+        // Light glow (animated)
+        const lampGlow = Math.sin(gameState.animationTime * 2 + x + y) * 0.2 + 0.6;
+        ctx.fillStyle = `rgba(255, 230, 109, ${lampGlow})`;
+        ctx.fillRect(screenX + 10, screenY + 6, 12, 4);
+
+    } else if (tile === TILE.WINDOW) {
+        // Exterior highrise window (glass looking out at night cityscape)
+        // Window frame
+        ctx.fillStyle = COLORS.windowFrame;
+        ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
+
+        // Frame highlights
+        ctx.fillStyle = COLORS.windowFrameLight;
+        ctx.fillRect(screenX, screenY, TILE_SIZE, 2);
+        ctx.fillRect(screenX, screenY, 2, TILE_SIZE);
+
+        // Glass pane (inner area)
+        ctx.fillStyle = COLORS.windowGlass;
+        ctx.fillRect(screenX + 3, screenY + 3, TILE_SIZE - 6, TILE_SIZE - 6);
+
+        // Night sky gradient effect
+        ctx.fillStyle = COLORS.windowSky;
+        ctx.fillRect(screenX + 3, screenY + 3, TILE_SIZE - 6, 8);
+        ctx.fillStyle = COLORS.windowGlassLight;
+        ctx.fillRect(screenX + 3, screenY + 11, TILE_SIZE - 6, TILE_SIZE - 14);
+
+        // Distant city building silhouettes (deterministic per tile)
+        const buildingSeed = (x * 13 + y * 7) % 100;
+        ctx.fillStyle = '#0a0a0a';
+
+        // Building 1
+        const b1Height = 8 + (buildingSeed % 8);
+        const b1X = screenX + 5 + (buildingSeed % 4);
+        ctx.fillRect(b1X, screenY + TILE_SIZE - 3 - b1Height, 5, b1Height);
+
+        // Building 2
+        const b2Height = 6 + ((buildingSeed * 3) % 6);
+        const b2X = screenX + 18 + ((buildingSeed * 2) % 4);
+        ctx.fillRect(b2X, screenY + TILE_SIZE - 3 - b2Height, 6, b2Height);
+
+        // Building window lights (tiny flickering lights)
+        const lightColors = [COLORS.windowCityLight1, COLORS.windowCityLight2, COLORS.windowCityLight3];
+        for (let i = 0; i < 3; i++) {
+            const lx = screenX + 6 + ((buildingSeed + i * 5) % 18);
+            const ly = screenY + 12 + ((buildingSeed + i * 3) % 10);
+            const flickerOn = Math.sin(gameState.animationTime * 3 + i + x * 2 + y * 3) > 0;
+            if (flickerOn) {
+                ctx.fillStyle = lightColors[i % 3];
+                ctx.fillRect(lx, ly, 2, 2);
+            }
+        }
+
+        // Fire glow on bottom edge windows (building is on fire below)
+        if (y === MAP_HEIGHT - 1) {
+            ctx.fillStyle = 'rgba(255, 100, 0, 0.35)';
+            ctx.fillRect(screenX + 3, screenY + TILE_SIZE - 12, TILE_SIZE - 6, 9);
+        }
+
+        // Glass reflection highlight (top-left corner)
+        ctx.fillStyle = COLORS.windowReflection;
+        ctx.fillRect(screenX + 5, screenY + 5, 6, 2);
+        ctx.fillRect(screenX + 5, screenY + 7, 2, 4);
     }
 }
 
