@@ -592,14 +592,15 @@ const DOG_ASSETS = {
             image: null
         },
         animation: {
-            type: 'spritesheet',
-            src: 'assets/characters/office-dog-spritesheet.png',
+            // Use the provided portrait as the only dog image (no spritesheet)
+            type: 'still',
+            src: 'assets/characters/office-dog-portrait.png',
             loaded: false,
             image: null,
-            frameCount: 8,
-            frameWidth: 78,
-            frameHeight: 78,
-            frameDuration: 0.083
+            frameCount: 1,
+            frameWidth: 0,
+            frameHeight: 0,
+            frameDuration: 0.0
         }
     }
 };
@@ -644,7 +645,7 @@ const characterAssetLoader = {
             if (dog.portrait) {
                 promises.push(this.loadImage(dog.portrait));
             }
-            if (dog.animation.type === 'spritesheet') {
+            if (dog.animation && dog.animation.src) {
                 promises.push(this.loadImage(dog.animation));
             }
         }
