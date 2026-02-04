@@ -2,6 +2,128 @@ const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
 // ============================================
+// PERFORMANCE OPTIMIZATION: GRADIENT CACHE
+// ============================================
+// Gradients are expensive to create. Cache them and recreate only on canvas resize.
+const gradientCache = {
+    width: 0,
+    height: 0,
+    urgencyVignette: null,
+    heartbeatGradient: null,
+    blackoutGradient: null,
+    timerDanger: null,
+    damageFlash: null,
+
+    // Invalidate cache when canvas size changes
+    invalidate() {
+        this.urgencyVignette = null;
+        this.heartbeatGradient = null;
+        this.blackoutGradient = null;
+        this.timerDanger = null;
+        this.damageFlash = null;
+    },
+
+    // Check if cache needs refresh
+    needsRefresh() {
+        return this.width !== canvas.width || this.height !== canvas.height;
+    },
+
+    // Refresh dimensions
+    refreshDimensions() {
+        if (this.needsRefresh()) {
+            this.width = canvas.width;
+            this.height = canvas.height;
+            this.invalidate();
+        }
+    }
+};
+
+// ============================================
+// PERFORMANCE OPTIMIZATION: ANIMATION CACHE
+// ============================================
+// Pre-calculate common trig values once per frame instead of 80+ times
+const animCache = {
+    time: 0,
+    sin2: 0, sin3: 0, sin4: 0, sin5: 0, sin6: 0, sin8: 0, sin10: 0, sin12: 0, sin15: 0, sin20: 0,
+    cos3: 0, cos4: 0, cos5: 0, cos6: 0, cos8: 0, cos10: 0, cos18: 0,
+
+    // Update all cached values at start of frame
+    update(animationTime) {
+        this.time = animationTime;
+        this.sin2 = Math.sin(animationTime * 2);
+        this.sin3 = Math.sin(animationTime * 3);
+        this.sin4 = Math.sin(animationTime * 4);
+        this.sin5 = Math.sin(animationTime * 5);
+        this.sin6 = Math.sin(animationTime * 6);
+        this.sin8 = Math.sin(animationTime * 8);
+        this.sin10 = Math.sin(animationTime * 10);
+        this.sin12 = Math.sin(animationTime * 12);
+        this.sin15 = Math.sin(animationTime * 15);
+        this.sin20 = Math.sin(animationTime * 20);
+        this.cos3 = Math.cos(animationTime * 3);
+        this.cos4 = Math.cos(animationTime * 4);
+        this.cos5 = Math.cos(animationTime * 5);
+        this.cos6 = Math.cos(animationTime * 6);
+        this.cos8 = Math.cos(animationTime * 8);
+        this.cos10 = Math.cos(animationTime * 10);
+        this.cos18 = Math.cos(animationTime * 18);
+    }
+};
+
+// ============================================
+// PERFORMANCE OPTIMIZATION: PARTICLE POOL
+// ============================================
+// Object pooling eliminates GC pressure from particle allocation
+const ParticlePool = {
+    pool: [],
+    maxPoolSize: 500,
+
+    // Get a particle from the pool or create new one
+    get() {
+        if (this.pool.length > 0) {
+            return this.pool.pop();
+        }
+        return {
+            x: 0, y: 0, vx: 0, vy: 0,
+            size: 0, color: '', alpha: 1,
+            lifetime: 0, age: 0,
+            type: 'default'
+        };
+    },
+
+    // Return particle to pool for reuse
+    release(particle) {
+        if (this.pool.length < this.maxPoolSize) {
+            this.pool.push(particle);
+        }
+    },
+
+    // Spawn a new particle with given properties
+    spawn(x, y, vx, vy, size, color, lifetime, type = 'default') {
+        const p = this.get();
+        p.x = x;
+        p.y = y;
+        p.vx = vx;
+        p.vy = vy;
+        p.size = size;
+        p.color = color;
+        p.alpha = 1;
+        p.lifetime = lifetime;
+        p.age = 0;
+        p.type = type;
+        return p;
+    }
+};
+
+// ============================================
+// PERFORMANCE HELPER: O(1) PERK LOOKUP
+// ============================================
+// Use this instead of gameState.perks.includes() for O(1) lookup
+function hasPerk(perkId) {
+    return gameState && gameState.perkSet && gameState.perkSet.has(perkId);
+}
+
+// ============================================
 // RESOLUTION SCALING SYSTEM
 // ============================================
 const displaySettings = {
@@ -171,7 +293,8 @@ powerupImages.knockout.src = 'powerup-knockout.png';
 powerupImages.electric.src = 'powerup-electric.png';
 // Garden/Dog park powerups - will fall back to drawn versions if images don't exist
 powerupImages.shield.src = 'powerup-shield.png';
-powerupImages.companion.src = 'powerup-companion.png';
+// Use the provided dog portrait for the park companion pickup
+powerupImages.companion.src = 'assets/characters/office-dog-portrait.png';
 // New powerups - will fall back to drawn versions
 powerupImages.timeFreeze.src = 'powerup-timefreeze.png';
 powerupImages.coinMagnet.src = 'powerup-magnet.png';
@@ -592,6 +715,9 @@ function setResolution(resKey) {
     // Update canvas size
     canvas.width = res.width;
     canvas.height = res.height;
+
+    // Invalidate gradient cache on resolution change
+    gradientCache.invalidate();
 
     // Recalculate tile size
     TILE_SIZE = getTileSize();
@@ -1030,12 +1156,34 @@ const AudioManager = {
             return (drop * 0.5 + air) * env * 0.6;
         }, 0.3);
 
+        // COIN COLLECT - bucket-of-change clink (multi-hit metallic rattle)
         this.sounds.coin = this.createSound((t) => {
-            const ding = Math.sin(t * 2400 * Math.PI * 2);
-            const ring = Math.sin(t * 3600 * Math.PI * 2) * 0.5;
-            const env = Math.exp(-t * 18);
-            return (ding + ring) * env * 0.6;
-        }, 0.14);
+            const impacts = [
+                { time: 0.0, amp: 1.0, freq: 2300 },
+                { time: 0.028, amp: 0.7, freq: 1800 },
+                { time: 0.058, amp: 0.5, freq: 2600 },
+                { time: 0.095, amp: 0.35, freq: 1500 }
+            ];
+
+            let clink = 0;
+            for (const impact of impacts) {
+                const dt = t - impact.time;
+                if (dt >= 0 && dt < 0.14) {
+                    const attack = Math.min(1, dt * 500);
+                    const decay = Math.exp(-dt * 55);
+                    const ring = Math.sin(dt * impact.freq * Math.PI * 2);
+                    const ring2 = Math.sin(dt * impact.freq * 1.55 * Math.PI * 2) * 0.45;
+                    const click = noise01() * Math.sin(dt * 7800 * Math.PI * 2) * 0.18 * Math.exp(-dt * 120);
+                    clink += (ring + ring2 + click) * attack * decay * impact.amp;
+                }
+            }
+
+            // Bucket body resonance (short, warm thunk)
+            const bucket = Math.sin(t * 320 * Math.PI * 2) * Math.exp(-t * 8) * 0.25;
+            const sizzle = noise01() * Math.sin(t * 1400 * Math.PI * 2) * Math.exp(-t * 18) * 0.08;
+
+            return (clink * 0.6 + bucket + sizzle) * 0.75;
+        }, 0.22);
 
         this.sounds.countdown = this.createSound((t) => {
             const tick = Math.sin(t * 1400 * Math.PI * 2);
@@ -2494,6 +2642,8 @@ function getRandomPerkChoices(count = 3) {
     const availablePerks = Object.values(PERKS).filter(perk => {
         // Don't offer already-owned perks
         if (gameState.perks.includes(perk.id)) return false;
+        // Remove coin multiplier perks (coins are always 1)
+        if (perk.id === 'luckyCoins' || perk.id === 'vaultMaster') return false;
 
         // Check tier unlock based on floor
         const unlockFloor = PERK_TIER_UNLOCK[perk.rarity];
@@ -2532,11 +2682,11 @@ function getRandomPerkChoices(count = 3) {
     // Fill remaining slots with Coin Stash options when perk pool is depleted
     let stashIndex = 0;
     while (result.length < count) {
-        const bonusAmount = 12 + stashIndex * 6;
+        const bonusAmount = 6 + stashIndex * 3;
         result.push({
             id: `coinStash_${stashIndex}`,
             name: 'Coin Stash',
-            description: `Found ${bonusAmount} coins hidden in a desk drawer!`,
+            description: `Adds ${bonusAmount} extra coins on the next floor.`,
             icon: '💰',
             rarity: 'common',
             isCoinStash: true,
@@ -2680,6 +2830,7 @@ let gameState = {
     coinsCollectedCount: 0,  // Total coin count collected this run (for display/stats)
     coinsBanked: 0,          // Spendable coins banked between rounds (shop currency)
     coinsEarnedThisFloor: 0, // Coins earned during the current floor (tabulated on exit)
+    coinStashBonus: 0,       // Extra coins to spawn next floor (from Coin Stash)
     coinCombo: 0,            // Rapid collection combo
     coinComboTimer: 0,       // Time remaining for combo
     // === NEW: Quick Run Mode ===
@@ -3308,7 +3459,7 @@ function updateFlow(deltaTime) {
 // Calculate effective move delay with perks and powerups
 function getEffectiveMoveDelay() {
     let delay = MOVE_DELAY;
-    if (gameState && gameState.perks && gameState.perks.includes('speedBoost')) delay *= 0.75; // 25% faster
+    if (hasPerk('speedBoost')) delay *= 0.75; // 25% faster (OPTIMIZED: O(1) lookup)
     if (gameState && gameState.powerup === 'speed') delay *= 0.6; // Speed powerup (~1.67x, was 2x)
     if (gameState && gameState.powerup === 'overclock') delay *= 0.5; // Panic speed boost (2x, was 2.5x)
     if (gameState && gameState.playerSlowed) delay *= 1.5; // Coffee spill slow effect
@@ -3397,6 +3548,7 @@ const Haptics = {
     last: {},
     lastGlobal: 0,
     strength: 1.0,
+    globalBoost: 1.35,
     globalMinInterval: 18,
     sequenceTokens: {},
     cooldowns: {
@@ -3491,8 +3643,9 @@ const Haptics = {
         if (!act) return;
 
         const dur = this._clamp(duration, 20, 1000);
-        const s = this._clamp(strong * this.strength, 0, 1);
-        const w = this._clamp(weak * this.strength, 0, 1);
+        const boost = this.globalBoost;
+        const s = this._clamp(strong * this.strength * boost, 0, 1);
+        const w = this._clamp(weak * this.strength * boost, 0, 1);
         if (s <= 0.02 && w <= 0.02) return;
 
         if (act.playEffect) {
@@ -3546,14 +3699,15 @@ const Haptics = {
         if (!this._isEnabled()) return;
         const pattern = this.events[event];
         if (!pattern) return;
-        const s = this._clamp((pattern.strong || 0) * scale, 0, 1);
-        const w = this._clamp((pattern.weak || 0) * scale, 0, 1);
+        const boost = this.globalBoost;
+        const s = this._clamp((pattern.strong || 0) * scale * boost, 0, 1);
+        const w = this._clamp((pattern.weak || 0) * scale * boost, 0, 1);
         const cooldown = pattern.cooldown !== undefined ? pattern.cooldown : 0;
 
         if (pattern.sequence) {
             const steps = pattern.sequence.map((step) => ({
-                strong: this._clamp((step.strong || 0) * scale, 0, 1),
-                weak: this._clamp((step.weak || 0) * scale, 0, 1),
+                strong: this._clamp((step.strong || 0) * scale * boost, 0, 1),
+                weak: this._clamp((step.weak || 0) * scale * boost, 0, 1),
                 duration: step.duration || 80,
                 delayAfter: step.delayAfter
             }));
@@ -4834,6 +4988,7 @@ function saveGameState() {
         flowBonusLastFloor: gameState.flowBonusLastFloor || 0,
         coinsBanked: gameState.coinsBanked || 0,
         coinsEarnedThisFloor: gameState.coinsEarnedThisFloor || 0,
+        coinStashBonus: gameState.coinStashBonus || 0,
         coinsCollected: gameState.coinsCollected || 0,
         coinsCollectedCount: gameState.coinsCollectedCount || 0,
         player: { ...gameState.player },
@@ -4913,6 +5068,7 @@ function resumeGame() {
     gameState.flowBonusLastFloor = saveData.flowBonusLastFloor || 0;
     gameState.coinsBanked = saveData.coinsBanked || 0;
     gameState.coinsEarnedThisFloor = saveData.coinsEarnedThisFloor || 0;
+    gameState.coinStashBonus = saveData.coinStashBonus || 0;
     gameState.coinsCollected = saveData.coinsCollected || 0;
     gameState.coinsCollectedCount = saveData.coinsCollectedCount || 0;
     gameState.player.x = saveData.player.x;
@@ -5344,13 +5500,60 @@ function showControllerNotification(connected) {
     }, 2000);
 }
 
+// ============================================
+// ZONE CHECK CACHING (OPTIMIZATION)
+// ============================================
+// Zone checks are called multiple times per frame for player position
+// Cache results and invalidate only when player moves
+const zoneCache = {
+    playerX: -1,
+    playerY: -1,
+    inCafeteria: false,
+    inBathroom: false,
+    inGarden: false,
+    inDogPark: false,
+
+    // Update cache if player position changed
+    update() {
+        if (!gameState || !gameState.player) return;
+        const px = gameState.player.x;
+        const py = gameState.player.y;
+        if (px !== this.playerX || py !== this.playerY) {
+            this.playerX = px;
+            this.playerY = py;
+            // Recalculate zone membership
+            const tile = (gameState.maze && gameState.maze[py]) ? gameState.maze[py][px] : undefined;
+            this.inCafeteria = tile === TILE.CAFETERIA;
+            this.inBathroom = tile === TILE.BATHROOM;
+            this.inGarden = tile === TILE.GARDEN;
+            this.inDogPark = tile === TILE.DOG_PARK;
+        }
+    },
+
+    // Invalidate cache (call when level changes)
+    invalidate() {
+        this.playerX = -1;
+        this.playerY = -1;
+    }
+};
+
 // Check if position is in a special zone
 function isInCafeteria(x, y) {
+    // OPTIMIZED: Use cache for player position
+    if (gameState && gameState.player && x === gameState.player.x && y === gameState.player.y) {
+        return zoneCache.inCafeteria;
+    }
+    // Fallback for non-player positions
     if (!gameState.maze[y] || gameState.maze[y][x] === undefined) return false;
     return gameState.maze[y][x] === TILE.CAFETERIA;
 }
 
 function isInBathroom(x, y) {
+    // OPTIMIZED: Use cache for player position
+    if (gameState && gameState.player && x === gameState.player.x && y === gameState.player.y) {
+        return zoneCache.inBathroom;
+    }
+    // Fallback for non-player positions
     if (!gameState.maze[y] || gameState.maze[y][x] === undefined) return false;
     return gameState.maze[y][x] === TILE.BATHROOM;
 }
@@ -5365,32 +5568,62 @@ function getStunDuration(hitCount) {
 }
 
 // BFS pathfinding to check if path exists between two points
+// OPTIMIZED: Uses typed arrays and circular buffer instead of Set with string keys
 function hasPath(maze, startX, startY, endX, endY) {
     if (!maze[startY] || !maze[endY]) return false;
 
+    const width = MAP_WIDTH;
+    const height = MAP_HEIGHT;
+
+    // Inline walkability check for speed
     const isWalkable = (x, y) => {
-        if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return false;
+        if (x < 0 || x >= width || y < 0 || y >= height) return false;
         const tile = maze[y][x];
         return tile !== TILE.WALL && tile !== TILE.DESK;
     };
 
     if (!isWalkable(startX, startY) || !isWalkable(endX, endY)) return false;
 
-    const visited = new Set();
-    const queue = [[startX, startY]];
-    visited.add(`${startX},${startY}`);
+    // OPTIMIZATION: Use Uint8Array for visited instead of Set with string keys
+    // This avoids string allocation and uses much faster numeric indexing
+    const visited = new Uint8Array(width * height);
 
-    while (queue.length > 0) {
-        const [x, y] = queue.shift();
+    // OPTIMIZATION: Use circular buffer with typed array instead of array.shift()
+    // array.shift() is O(n), circular buffer dequeue is O(1)
+    const maxQueueSize = width * height;
+    const queueX = new Int16Array(maxQueueSize);
+    const queueY = new Int16Array(maxQueueSize);
+    let queueHead = 0;
+    let queueTail = 0;
+
+    // Enqueue start position
+    queueX[queueTail] = startX;
+    queueY[queueTail] = startY;
+    queueTail++;
+    visited[startY * width + startX] = 1;
+
+    // Direction offsets (reuse instead of creating arrays each iteration)
+    const DX = [1, -1, 0, 0];
+    const DY = [0, 0, 1, -1];
+
+    while (queueHead < queueTail) {
+        const x = queueX[queueHead];
+        const y = queueY[queueHead];
+        queueHead++;
 
         if (x === endX && y === endY) return true;
 
-        const neighbors = [[x+1, y], [x-1, y], [x, y+1], [x, y-1]];
-        for (const [nx, ny] of neighbors) {
-            const key = `${nx},${ny}`;
-            if (!visited.has(key) && isWalkable(nx, ny)) {
-                visited.add(key);
-                queue.push([nx, ny]);
+        // Check all 4 neighbors
+        for (let d = 0; d < 4; d++) {
+            const nx = x + DX[d];
+            const ny = y + DY[d];
+            const idx = ny * width + nx;
+
+            if (!visited[idx] && isWalkable(nx, ny)) {
+                visited[idx] = 1;
+                queueX[queueTail] = nx;
+                queueY[queueTail] = ny;
+                queueTail++;
             }
         }
     }
@@ -5569,9 +5802,121 @@ function shiftUnstableWalls() {
     }
 }
 
+// ============================================
+// UNION-FIND DATA STRUCTURE FOR FAST CONNECTIVITY
+// ============================================
+// Used for O(α(n)) connectivity checks during maze generation
+// instead of O(n²) BFS per wall placement
+
+class UnionFind {
+    constructor(width, height) {
+        const size = width * height;
+        this.parent = new Int32Array(size);
+        this.rank = new Uint8Array(size);
+        this.width = width;
+        // Initialize each cell as its own parent
+        for (let i = 0; i < size; i++) {
+            this.parent[i] = i;
+        }
+    }
+
+    // Convert 2D coordinates to 1D index
+    index(x, y) {
+        return y * this.width + x;
+    }
+
+    // Find root with path compression
+    find(i) {
+        if (this.parent[i] !== i) {
+            this.parent[i] = this.find(this.parent[i]);
+        }
+        return this.parent[i];
+    }
+
+    // Union by rank
+    union(i, j) {
+        const rootI = this.find(i);
+        const rootJ = this.find(j);
+        if (rootI === rootJ) return;
+
+        if (this.rank[rootI] < this.rank[rootJ]) {
+            this.parent[rootI] = rootJ;
+        } else if (this.rank[rootI] > this.rank[rootJ]) {
+            this.parent[rootJ] = rootI;
+        } else {
+            this.parent[rootJ] = rootI;
+            this.rank[rootI]++;
+        }
+    }
+
+    // Check if two cells are connected
+    connected(i, j) {
+        return this.find(i) === this.find(j);
+    }
+
+    // Reset the structure for reuse
+    reset() {
+        for (let i = 0; i < this.parent.length; i++) {
+            this.parent[i] = i;
+            this.rank[i] = 0;
+        }
+    }
+}
+
+// Build Union-Find from current maze state
+function buildUnionFind(maze, width, height) {
+    const uf = new UnionFind(width, height);
+    const directions = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+    // Union all adjacent walkable cells
+    for (let y = 1; y < height - 1; y++) {
+        for (let x = 1; x < width - 1; x++) {
+            if (maze[y][x] !== TILE.WALL && maze[y][x] !== TILE.DESK) {
+                const idx = uf.index(x, y);
+                for (const [dx, dy] of directions) {
+                    const nx = x + dx, ny = y + dy;
+                    if (maze[ny] && maze[ny][nx] !== TILE.WALL && maze[ny][nx] !== TILE.DESK) {
+                        uf.union(idx, uf.index(nx, ny));
+                    }
+                }
+            }
+        }
+    }
+    return uf;
+}
+
+// Carve a guaranteed path between two points (used for initial path setup)
+function carveDirectPath(maze, fromX, fromY, toX, toY, width, height) {
+    let x = fromX, y = fromY;
+
+    while (x !== toX || y !== toY) {
+        // Ensure current position is walkable
+        if (y > 0 && y < height - 1 && x > 0 && x < width - 1) {
+            if (maze[y][x] === TILE.WALL) {
+                maze[y][x] = TILE.FLOOR;
+            }
+        }
+
+        // Move toward target with slight randomness for variety
+        if (x !== toX && (y === toY || gameRandom() > 0.4)) {
+            x += x < toX ? 1 : -1;
+        } else if (y !== toY) {
+            y += y < toY ? 1 : -1;
+        }
+    }
+
+    // Ensure destination is walkable
+    if (toY > 0 && toY < height - 1 && toX > 0 && toX < width - 1) {
+        if (maze[toY][toX] === TILE.WALL) {
+            maze[toY][toX] = TILE.FLOOR;
+        }
+    }
+}
+
 // Generate maze with GUARANTEED paths to all exits
-// This uses a simple approach: start with all floors, then add walls that DON'T block paths
+// OPTIMIZED: Uses Union-Find for O(α(n)) connectivity checks instead of O(n²) BFS
 function generateMaze() {
+    const startTime = performance.now();
     const maze = [];
     const startX = Math.floor(MAP_WIDTH / 2);
     const startY = Math.floor(MAP_HEIGHT / 2);
@@ -5597,32 +5942,56 @@ function generateMaze() {
         }
     }
 
-    // Now ADD walls randomly, but verify each wall doesn't block any path
+    // OPTIMIZATION: Pre-carve guaranteed paths from center to all exits
+    // This ensures connectivity before we start adding walls
+    for (const corner of corners) {
+        carveDirectPath(maze, startX, startY, corner.x, corner.y, MAP_WIDTH, MAP_HEIGHT);
+    }
+
     // Scale wall count with map area for consistent density on larger maps
     const mapArea = MAP_WIDTH * MAP_HEIGHT;
     const wallDensity = 0.12; // Target ~12% wall coverage
     const wallsToAdd = Math.floor(mapArea * wallDensity);
     let wallsAdded = 0;
     let attempts = 0;
-    const maxAttempts = wallsToAdd * 5; // More attempts for larger maps
+    const maxAttempts = wallsToAdd * 3; // Reduced attempts since we use smarter validation
 
-    while (wallsAdded < wallsToAdd && attempts < maxAttempts) {
-        attempts++;
-        const x = Math.floor(gameRandom() * (MAP_WIDTH - 2)) + 1;
-        const y = Math.floor(gameRandom() * (MAP_HEIGHT - 2)) + 1;
+    // Pre-compute critical indices for Union-Find checks
+    const centerIdx = startY * MAP_WIDTH + startX;
+    const exitIndices = corners.map(c => c.y * MAP_WIDTH + c.x);
 
-        // Don't place walls near center (player spawn)
-        if (Math.abs(x - startX) <= 2 && Math.abs(y - startY) <= 2) continue;
-
-        // Don't place walls near exits
-        let nearExit = false;
-        for (const corner of corners) {
-            if (Math.abs(x - corner.x) <= 2 && Math.abs(y - corner.y) <= 2) {
-                nearExit = true;
-                break;
+    // Generate candidate wall positions upfront for better cache locality
+    const candidates = [];
+    for (let y = 1; y < MAP_HEIGHT - 1; y++) {
+        for (let x = 1; x < MAP_WIDTH - 1; x++) {
+            // Skip protected zones
+            if (Math.abs(x - startX) <= 2 && Math.abs(y - startY) <= 2) continue;
+            let nearExit = false;
+            for (const corner of corners) {
+                if (Math.abs(x - corner.x) <= 2 && Math.abs(y - corner.y) <= 2) {
+                    nearExit = true;
+                    break;
+                }
+            }
+            if (!nearExit) {
+                candidates.push({ x, y });
             }
         }
-        if (nearExit) continue;
+    }
+
+    // Shuffle candidates for randomness (Fisher-Yates)
+    for (let i = candidates.length - 1; i > 0; i--) {
+        const j = Math.floor(gameRandom() * (i + 1));
+        [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+    }
+
+    // Try to place walls from shuffled candidates
+    for (const candidate of candidates) {
+        if (wallsAdded >= wallsToAdd) break;
+        attempts++;
+        if (attempts >= maxAttempts) break;
+
+        const { x, y } = candidate;
 
         // Skip if already a wall
         if (maze[y][x] !== TILE.FLOOR) continue;
@@ -5630,27 +5999,31 @@ function generateMaze() {
         // Temporarily place wall
         maze[y][x] = TILE.WALL;
 
-        // Check if ALL paths still exist
-        let allPathsExist = true;
-        for (const corner of corners) {
-            if (!hasPath(maze, startX, startY, corner.x, corner.y)) {
-                allPathsExist = false;
+        // OPTIMIZATION: Use Union-Find for O(α(n)) connectivity check
+        // Build Union-Find from current maze state
+        const uf = buildUnionFind(maze, MAP_WIDTH, MAP_HEIGHT);
+
+        // Check if ALL exits remain connected to center
+        let allConnected = true;
+        for (const exitIdx of exitIndices) {
+            if (!uf.connected(centerIdx, exitIdx)) {
+                allConnected = false;
                 break;
             }
         }
 
-        if (allPathsExist) {
+        if (allConnected) {
             wallsAdded++;
         } else {
-            // Remove wall if it blocks any path
+            // Remove wall if it disconnects any exit
             maze[y][x] = TILE.FLOOR;
         }
     }
 
-    console.log(`Maze generated: ${wallsAdded} walls added, paths verified`);
+    const elapsed = performance.now() - startTime;
+    console.log(`Maze generated: ${wallsAdded} walls added in ${elapsed.toFixed(1)}ms (${MAP_WIDTH}x${MAP_HEIGHT})`);
 
-    // === NEW: Add bottleneck corridors near exits ===
-    // Creates chokepoints that force player-enemy confrontation
+    // Add bottleneck corridors near exits for gameplay tension
     addBottleneckCorridors(maze, corners, startX, startY);
 
     return maze;
@@ -5971,6 +6344,9 @@ function addSecretExit(maze) {
 }
 
 function initLevel() {
+    // OPTIMIZATION: Invalidate zone cache when level changes
+    zoneCache.invalidate();
+
     // === ENDLESS MODE: Use endless scaling functions ===
     if (gameState.endlessMode) {
         // Get endless-specific dimensions
@@ -6010,6 +6386,9 @@ function initLevel() {
     const res = RESOLUTIONS[displaySettings.currentResolution] || RESOLUTIONS['640x640'];
     canvas.width = res.width;
     canvas.height = res.height;
+
+    // Invalidate gradient cache on canvas resize
+    gradientCache.invalidate();
 
     gameState.maze = generateMaze();
 
@@ -6169,10 +6548,7 @@ function initLevel() {
     if (gameState.perks.includes('timeLord')) {
         gameState.timer += 10;
     }
-    // Vault Master: +6 starting coins each floor
-    if (gameState.perks.includes('vaultMaster')) {
-        awardCoins(6);
-    }
+    // Vault Master: (coin multipliers removed)
 
     // Add cafeteria on floors 10, 7, 4 (rebalanced for 13-floor game)
     if (gameState.floor === 10 || gameState.floor === 7 || gameState.floor === 4) {
@@ -6494,6 +6870,11 @@ function initLevel() {
         numCoins = 12 + Math.floor(gameRandom() * 5); // 12-16 coins (late floors)
     } else {
         numCoins = 10 + Math.floor(gameRandom() * 4); // 10-13 coins (final floors)
+    }
+
+    if (gameState.coinStashBonus && gameState.coinStashBonus > 0) {
+        numCoins += gameState.coinStashBonus;
+        gameState.coinStashBonus = 0;
     }
     const MIN_COIN_DISTANCE = 4; // Minimum distance between coins
 
@@ -8583,7 +8964,9 @@ function updateCollectingPowerups(deltaTime) {
 
         // Animation complete after 0.25 seconds
         if (cp.collectTimer >= 0.25) {
-            gameState.collectingPowerups.splice(i, 1);
+            // OPTIMIZATION: Swap-and-pop for O(1) removal
+            gameState.collectingPowerups[i] = gameState.collectingPowerups[gameState.collectingPowerups.length - 1];
+            gameState.collectingPowerups.pop();
         }
     }
 }
@@ -8862,7 +9245,9 @@ function updateCelebrations(deltaTime) {
         }
 
         if (cel.timer <= 0) {
-            gameState.celebrations.splice(i, 1);
+            // OPTIMIZATION: Swap-and-pop for O(1) removal
+            gameState.celebrations[i] = gameState.celebrations[gameState.celebrations.length - 1];
+            gameState.celebrations.pop();
         }
     }
 }
@@ -8889,27 +9274,18 @@ function drawCelebrations() {
 function checkCelebrationTriggers(event, data = {}) {
     switch (event) {
         case 'floorComplete':
-            // Speedster: cleared with 10+ seconds
-            if (gameState.timer >= 10) {
-                showCelebration('speedster');
-                // Speed bonus coins!
-                const speedBonus = Math.max(1, Math.floor(gameState.timer / 8));
-                awardCoins(speedBonus);
-                showCelebration('speedBonus', { coins: speedBonus });
-            }
-            // Flawless: no hits this floor
-            if (gameState.floorHits === 0) {
-                showCelebration('flawless');
-                // Flawless bonus coins!
-                const flawlessBonus = 3 + Math.floor((13 - gameState.floor) / 4);
-                awardCoins(flawlessBonus);
-                showCelebration('flawlessBonus', { coins: flawlessBonus });
-            }
-            // DOMINATION: Both speedster AND flawless!
-            if (gameState.timer >= 10 && gameState.floorHits === 0) {
-                showCelebration('domination');
-                awardCoins(5); // Extra domination bonus
-            }
+    // Speedster: cleared with 10+ seconds
+    if (gameState.timer >= 10) {
+        showCelebration('speedster');
+    }
+    // Flawless: no hits this floor
+    if (gameState.floorHits === 0) {
+        showCelebration('flawless');
+    }
+    // DOMINATION: Both speedster AND flawless!
+    if (gameState.timer >= 10 && gameState.floorHits === 0) {
+        showCelebration('domination');
+    }
             break;
         case 'enemyStunned':
             if (data.count >= 2) {
@@ -9892,7 +10268,10 @@ function fryEnemy(enemy) {
     gameState.coins.push({
         x: enemy.x,
         y: enemy.y,
-        value: coinValue
+        value: coinValue,
+        collected: false,
+        bobOffset: Math.random() * Math.PI * 2,
+        sparkle: Math.random() * Math.PI * 2
     });
 
     // Create crispy effect at enemy location
@@ -9904,9 +10283,11 @@ function fryEnemy(enemy) {
     });
 
     // Remove enemy from the game
+    // OPTIMIZATION: Swap-and-pop for O(1) removal
     const idx = gameState.enemies.indexOf(enemy);
     if (idx > -1) {
-        gameState.enemies.splice(idx, 1);
+        gameState.enemies[idx] = gameState.enemies[gameState.enemies.length - 1];
+        gameState.enemies.pop();
     }
 }
 
@@ -10402,7 +10783,7 @@ function updateFires(deltaTime) {
         // Check if player is on fire (skip player-created fires)
         // Unstoppable perk: immune to fire damage
         if (fire.x === gameState.player.x && fire.y === gameState.player.y && !fire.isPlayerFire) {
-            if (!gameState.perks.includes('unstoppable')) {
+            if (!hasPerk('unstoppable')) { // OPTIMIZED: O(1) lookup
                 // Player is BURNING!
                 if (gameState.player.burning <= 0) {
                     gameState.player.burning = 2.0;  // 2 seconds of burn
@@ -10671,7 +11052,7 @@ function handlePlayerEnemyCollision(enemy) {
     if (inBathroom) return;
 
     // === UNSTOPPABLE PERK - Immune to stuns and knockbacks ===
-    if (gameState.perks.includes('unstoppable')) {
+    if (hasPerk('unstoppable')) { // OPTIMIZED: O(1) lookup
         // Push enemy away but player is unaffected
         enemy.stunned = 1.0;
         pushEnemyAway(enemy, gameState.player.x, gameState.player.y);
@@ -10921,11 +11302,7 @@ function movePlayer(dx, dy) {
                 coin.collecting = true;
                 coin.collectScale = 1.3; // Pop up
                 coin.collectAlpha = 1.0;
-                // Coin multiplier perks: Vault Master (3x) > Lucky Coins (2x)
-                let coinMultiplier = 1;
-                if (gameState.perks.includes('vaultMaster')) coinMultiplier = 3;
-                else if (gameState.perks.includes('luckyCoins')) coinMultiplier = 2;
-                awardCoins(coin.value * coinMultiplier);
+                awardCoins(coin.value);
 
                 // Combo system for rapid collection
                 // Each coin extends the combo timer, making it easier to chain!
@@ -10946,9 +11323,9 @@ function movePlayer(dx, dy) {
                 }
                 gameState.coinComboTimer = baseComboTime + comboBonus;
 
-                // Play coin collect sound with pitch scaling (Mario-style ascending notes)
-                const pitchScale = 1.0 + (gameState.coinCombo * 0.08); // Higher pitch per combo
-                AudioManager.play('powerup', 0.5, Math.min(pitchScale, 2.0)); // Cap at 2x pitch
+                // Play coin collect sound with subtle pitch scaling (bucket-of-change feel)
+                const pitchScale = 1.0 + (gameState.coinCombo * 0.05);
+                AudioManager.play('coin', 0.7, Math.min(pitchScale, 1.6));
                 Haptics.pulse('coin', 0.12, 0.25, 40, 40);
                 if (gameState.coinCombo >= 5) {
                     Haptics.sequence('coinCombo', [
@@ -11120,7 +11497,9 @@ function movePlayer(dx, dy) {
                 }
                 // Remove from collecting array if present
                 gameState.collectingPowerups = gameState.collectingPowerups.filter(cp => cp.index !== i);
-                gameState.powerups.splice(i, 1);
+                // OPTIMIZATION: Swap-and-pop for O(1) removal
+                gameState.powerups[i] = gameState.powerups[gameState.powerups.length - 1];
+                gameState.powerups.pop();
             }
         }
 
@@ -11362,11 +11741,7 @@ function performDash() {
             const coin = gameState.coins[j];
             if (!coin.collected && coin.x === checkX && coin.y === checkY) {
                 coin.collected = true;
-                // Coin multiplier perks: Vault Master (3x) > Lucky Coins (2x)
-                let coinMultiplier = 1;
-                if (gameState.perks.includes('vaultMaster')) coinMultiplier = 3;
-                else if (gameState.perks.includes('luckyCoins')) coinMultiplier = 2;
-                awardCoins(coin.value * coinMultiplier);
+                awardCoins(coin.value);
                 gameState.coinCombo++;
                 gameState.coinComboTimer = 2.0;
             }
@@ -11470,9 +11845,15 @@ function performPunch() {
                     triggerPunchChainExplosion(enemy);
                 }
 
-                // === SHOP ECONOMY: Enemies drop coins when defeated ===
-                const coinDrop = 1; // Flat 1 coin per enemy
-                awardCoins(coinDrop);
+                // === SHOP ECONOMY: Enemies drop a coin when defeated ===
+                gameState.coins.push({
+                    x: enemy.x,
+                    y: enemy.y,
+                    value: 1,
+                    collected: false,
+                    bobOffset: Math.random() * Math.PI * 2,
+                    sparkle: Math.random() * Math.PI * 2
+                });
 
                 // Coin drop visual effect
                 for (let c = 0; c < 3; c++) {
@@ -13001,10 +13382,9 @@ function purchasePerk(perkId, price) {
             return;
         }
 
-        // Deduct price and add bonus coins (net gain)
-        gameState.coinsBanked = getBankedCoins() - price + stashPerk.bonusAmount;
-        gameState.coinsCollected = (gameState.coinsCollected || 0) + stashPerk.bonusAmount;
-        gameState.coinsCollectedCount = (gameState.coinsCollectedCount || 0) + stashPerk.bonusAmount;
+        // Deduct price and queue extra coins to spawn next floor
+        gameState.coinsBanked = getBankedCoins() - price;
+        gameState.coinStashBonus = (gameState.coinStashBonus || 0) + stashPerk.bonusAmount;
 
         AudioManager.play('powerup', 0.8);
         showCelebration('perkPurchased', { perk: 'Coin Stash', price: `+${stashPerk.bonusAmount - price} net` });
@@ -13026,6 +13406,7 @@ function purchasePerk(perkId, price) {
 
     // Add perk to player's collection
     gameState.perks.push(perkId);
+    gameState.perkSet.add(perkId); // OPTIMIZATION: Keep Set in sync for O(1) lookups
     gameState.perksPicked++;
 
     // Play sound
@@ -13516,6 +13897,12 @@ function instantRestart() {
     gameState.enemiesKnockedOut = 0;
     gameState.enemiesZapped = 0;
     gameState.fires = [];
+    gameState.coins = [];
+    gameState.coinsBanked = 0;
+    gameState.coinsEarnedThisFloor = 0;
+    gameState.coinStashBonus = 0;
+    gameState.coinsCollected = 0;
+    gameState.coinsCollectedCount = 0;
     gameState.runStartTime = Date.now();
     gameState.runTotalTime = 0;
     gameState.floorTimes = [];
@@ -13976,6 +14363,13 @@ function showMessage(title, text, isWin) {
 
 function update(deltaTime) {
     gameState.animationTime += deltaTime;
+
+    // OPTIMIZATION: Update animation cache once per frame (used 80+ times in draw)
+    animCache.update(gameState.animationTime);
+
+    // OPTIMIZATION: Refresh gradient cache dimensions if canvas size changed
+    gradientCache.refreshDimensions();
+
     updateFlow(deltaTime);
 
     // Update character animation state - reset isMoving if player hasn't moved recently
@@ -14019,6 +14413,9 @@ function update(deltaTime) {
 
     // Update screen shake
     screenShake.update(deltaTime);
+
+    // OPTIMIZATION: Update zone cache once per frame
+    zoneCache.update();
 
     // === ENDLESS MODE: Update milestone flash decay ===
     if (gameState.milestoneFlash && gameState.milestoneFlash > 0) {
@@ -14175,11 +14572,7 @@ function update(deltaTime) {
                     // Auto-collect if reached player
                     if (coin.x === gameState.player.x && coin.y === gameState.player.y) {
                         coin.collected = true;
-                        // Coin multiplier perks: Vault Master (3x) > Lucky Coins (2x)
-                        let coinMultiplier = 1;
-                        if (gameState.perks.includes('vaultMaster')) coinMultiplier = 3;
-                        else if (gameState.perks.includes('luckyCoins')) coinMultiplier = 2;
-                        awardCoins(coin.value * coinMultiplier);
+                awardCoins(coin.value);
 
                         // Coin combo
                         if (gameState.coinComboTimer > 0) {
@@ -14526,18 +14919,24 @@ function update(deltaTime) {
     }
 
     // Update crispy effects (decay and remove)
+    // OPTIMIZATION: Use swap-and-pop instead of splice for O(1) removal
     for (let i = gameState.crispyEffects.length - 1; i >= 0; i--) {
         gameState.crispyEffects[i].timer -= deltaTime;
         if (gameState.crispyEffects[i].timer <= 0) {
-            gameState.crispyEffects.splice(i, 1);
+            // Swap with last element and pop (O(1) instead of O(n))
+            gameState.crispyEffects[i] = gameState.crispyEffects[gameState.crispyEffects.length - 1];
+            gameState.crispyEffects.pop();
         }
     }
 
     // Update punch effects (decay and remove)
+    // OPTIMIZATION: Use swap-and-pop instead of splice for O(1) removal
     for (let i = gameState.punchEffects.length - 1; i >= 0; i--) {
         gameState.punchEffects[i].timer -= deltaTime;
         if (gameState.punchEffects[i].timer <= 0) {
-            gameState.punchEffects.splice(i, 1);
+            // Swap with last element and pop (O(1) instead of O(n))
+            gameState.punchEffects[i] = gameState.punchEffects[gameState.punchEffects.length - 1];
+            gameState.punchEffects.pop();
         }
     }
 
@@ -14707,6 +15106,8 @@ function gameLoop(timestamp) {
 }
 
 function startGame(mode = 'normal') {
+    // Starting a new run should not inherit any saved/resume state
+    clearSavedGame();
     // Initialize audio system on first user interaction
     AudioManager.init();
     AudioManager.resume();
@@ -14779,6 +15180,7 @@ function startGame(mode = 'normal') {
     gameState.slowMoFactor = 1.0;
     // === PERKS: Reset for new run ===
     gameState.perks = [];
+    gameState.perkSet = new Set(); // OPTIMIZATION: O(1) perk lookup cache
     gameState.perkChoices = null;
     gameState.perksPicked = 0;
     gameState.enemiesKnockedOut = 0;
@@ -14788,8 +15190,9 @@ function startGame(mode = 'normal') {
     gameState.fireSpawnTimer = 0;
 
     // === SHOP ECONOMY: Start with coins to buy first upgrade ===
-    gameState.coinsBanked = 8; // Starting coins for first shop purchase
+    gameState.coinsBanked = 0; // Start with zero coins
     gameState.coinsEarnedThisFloor = 0;
+    gameState.coinStashBonus = 0;
     gameState.coinsCollected = 0;
     gameState.coinsCollectedCount = 0;
     gameState.coinCombo = 0;
