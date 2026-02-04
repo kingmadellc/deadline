@@ -2,6 +2,12 @@ const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
 // ============================================
+// DEBUG MODE - Set to true for development logging
+// ============================================
+const DEBUG_MODE = false;
+function debugLog(...args) { if (DEBUG_MODE) console.log(...args); }
+
+// ============================================
 // PERFORMANCE OPTIMIZATION: GRADIENT CACHE
 // ============================================
 // Gradients are expensive to create. Cache them and recreate only on canvas resize.
@@ -169,12 +175,6 @@ function getTileSize() {
     // Use VIEWPORT_HEIGHT to keep tiles large regardless of map size
     // This ensures tiles stay readable even on massive 90x90 maps
     return Math.floor(res.height / VIEWPORT_HEIGHT);
-}
-
-// Get current aspect ratio from resolution
-function getCurrentAspectRatio() {
-    const res = RESOLUTIONS[displaySettings.currentResolution] || RESOLUTIONS['640x640'];
-    return res.aspectRatio || '1:1';
 }
 
 let TILE_SIZE = 32; // Will be updated dynamically
@@ -654,23 +654,35 @@ const characterAssetLoader = {
         }
 
         await Promise.allSettled(promises);
-        console.log(`Character assets loaded: ${this.loadedCount}/${this.totalCount}`);
+        // Detailed diagnostic logging
+        const charStatus = Object.entries(CHARACTER_ASSETS).map(([k,v]) =>
+            `${k}: portrait=${v.portrait.loaded}, anim=${v.animation.loaded}`).join(', ');
+        debugLog(`Character assets loaded: ${this.loadedCount}/${this.totalCount} | ${charStatus}`);
         return this.loadedCount;
     },
 
-    loadImage(assetConfig) {
+    loadImage(assetConfig, retryCount = 0) {
         return new Promise((resolve) => {
             const img = new Image();
             img.onload = () => {
                 assetConfig.image = img;
                 assetConfig.loaded = true;
                 this.loadedCount++;
+                debugLog(`✓ Loaded: ${assetConfig.src}`);
                 resolve(true);
             };
             img.onerror = () => {
-                assetConfig.loaded = false;
-                console.warn(`Failed to load character asset: ${assetConfig.src}`);
-                resolve(false);
+                // Retry once after a short delay
+                if (retryCount < 1) {
+                    console.warn(`Retrying load: ${assetConfig.src}`);
+                    setTimeout(() => {
+                        this.loadImage(assetConfig, retryCount + 1).then(resolve);
+                    }, 100);
+                } else {
+                    assetConfig.loaded = false;
+                    console.error(`✗ Failed to load character asset: ${assetConfig.src}`);
+                    resolve(false);
+                }
             };
             img.src = assetConfig.src;
         });
@@ -742,7 +754,7 @@ function setResolution(resKey) {
         TILE_SIZE = getTileSize();
         // Regenerate the current level with new dimensions
         initLevel();
-        console.log(`Resolution changed mid-game: regenerated level with ${MAP_WIDTH}x${MAP_HEIGHT} tiles`);
+        debugLog(`Resolution changed mid-game: regenerated level with ${MAP_WIDTH}x${MAP_HEIGHT} tiles`);
     }
 
     // Save preference
@@ -751,7 +763,7 @@ function setResolution(resKey) {
     // Fit canvas to viewport
     fitCanvasToViewport();
 
-    console.log(`Resolution set to ${resKey}, tile size: ${TILE_SIZE}`);
+    debugLog(`Resolution set to ${resKey}, tile size: ${TILE_SIZE}`);
 }
 
 // Auto-fit canvas to viewport while maintaining aspect ratio
@@ -849,7 +861,7 @@ function redetectResolution() {
 function toggleFullscreen() {
     if (!document.fullscreenElement) {
         document.documentElement.requestFullscreen().catch(err => {
-            console.log('Fullscreen request failed:', err);
+            debugLog('Fullscreen request failed:', err);
         });
         displaySettings.fullscreen = true;
     } else {
@@ -938,12 +950,12 @@ const AudioManager = {
             this.setSfxVolume(settings.sfxVolume);
 
             this.initialized = true;
-            console.log('Audio system initialized');
+            debugLog('Audio system initialized');
 
             // Generate procedural sounds
             this.generateSounds();
         } catch (e) {
-            console.log('Audio initialization failed:', e);
+            debugLog('Audio initialization failed:', e);
         }
     },
 
@@ -1395,7 +1407,7 @@ const AudioManager = {
             ) * 0.85;
         }, 0.8);
 
-        console.log('Industrial/noir sounds generated');
+        debugLog('Industrial/noir sounds generated');
     },
 
 
@@ -1733,14 +1745,14 @@ const AudioManager = {
         try {
             const response = await fetch(`music-${trackName}.mp3`);
             if (!response.ok) {
-                console.log(`Music track not found: music-${trackName}.mp3`);
+                debugLog(`Music track not found: music-${trackName}.mp3`);
                 return;
             }
             const arrayBuffer = await response.arrayBuffer();
             this.musicBuffers[trackName] = await this.context.decodeAudioData(arrayBuffer);
-            console.log(`Music loaded: ${trackName}`);
+            debugLog(`Music loaded: ${trackName}`);
         } catch (e) {
-            console.log(`Failed to load music: ${trackName}`, e);
+            debugLog(`Failed to load music: ${trackName}`, e);
         }
     },
 
@@ -1759,7 +1771,7 @@ const AudioManager = {
         // Check if track is loaded
         const buffer = this.musicBuffers[trackName];
         if (!buffer) {
-            console.log(`Music not loaded: ${trackName}`);
+            debugLog(`Music not loaded: ${trackName}`);
             return;
         }
 
@@ -1786,7 +1798,7 @@ const AudioManager = {
         this.musicSource.start();
         this.musicPlaying = true;
         this.currentTrack = trackName;
-        console.log(`Playing music: ${trackName}`);
+        debugLog(`Playing music: ${trackName}`);
     },
 
     // Stop music with optional fade out
@@ -1943,23 +1955,6 @@ function getMapDimensionsForFloor(floor) {
     const variation = Math.floor(gameRandom() * 3) - 1; // -1, 0, or +1
     const size = Math.max(14, baseSize + variation);
     return { width: size, height: size };
-}
-
-// Legacy function for backwards compatibility
-function getMapSizeForFloor(floor) {
-    return getBaseMapHeightForFloor(floor);
-}
-
-// Get number of enemies for floor - scales with map area
-function getEnemyCountForFloor(floor) {
-    const dims = getMapDimensionsForFloor(floor);
-    const totalTiles = dims.width * dims.height;
-    // Base enemies scales with map area
-    let baseEnemies = Math.floor(totalTiles / 100);
-    // Add more as floors descend (rebalanced for 13-floor game)
-    baseEnemies += Math.floor((13 - floor) / 2);
-    // Cap at reasonable number
-    return Math.min(baseEnemies, 15);
 }
 
 // Get number of fires that can spawn on floor (rebalanced for 13-floor game)
@@ -2744,7 +2739,7 @@ function getRandomPerkChoices(count = 3) {
 
     const availablePerks = Object.values(PERKS).filter(perk => {
         // Don't offer already-owned perks
-        if (gameState.perks.includes(perk.id)) return false;
+        if (hasPerk(perk.id)) return false;
         // Remove coin multiplier perks (coins are always 1)
         if (perk.id === 'luckyCoins' || perk.id === 'vaultMaster') return false;
 
@@ -3059,7 +3054,7 @@ function loadStats() {
             Object.assign(playerStats, parsed);
         }
     } catch (e) {
-        console.log('Failed to load stats:', e);
+        debugLog('Failed to load stats:', e);
     }
     // Ensure status theme packs unlock based on loaded stats
     checkStatusThemeUnlocks();
@@ -3070,7 +3065,7 @@ function saveStats() {
     try {
         localStorage.setItem('deadline_stats', JSON.stringify(playerStats));
     } catch (e) {
-        console.log('Failed to save stats:', e);
+        debugLog('Failed to save stats:', e);
     }
 }
 
@@ -3280,7 +3275,7 @@ function saveDailyChallengeData() {
     try {
         localStorage.setItem('deadline_dailyChallenge', JSON.stringify(data));
     } catch (e) {
-        console.log('Failed to save daily challenge:', e);
+        debugLog('Failed to save daily challenge:', e);
     }
 }
 
@@ -3303,7 +3298,7 @@ function loadDailyChallengeData() {
             }
         }
     } catch (e) {
-        console.log('Failed to load daily challenge:', e);
+        debugLog('Failed to load daily challenge:', e);
         dailyChallenge.bestTime = null;
         dailyChallenge.completed = false;
         dailyChallenge.leaderboard = [];
@@ -4541,14 +4536,14 @@ function updateInputActions() {
 
 // Gamepad connection events
 window.addEventListener('gamepadconnected', (e) => {
-    console.log('Gamepad connected:', e.gamepad.id);
+    debugLog('Gamepad connected:', e.gamepad.id);
     gamepadState.connected = true;
     gamepadState.index = e.gamepad.index;
     showControllerNotification(true);
 });
 
 window.addEventListener('gamepaddisconnected', (e) => {
-    console.log('Gamepad disconnected');
+    debugLog('Gamepad disconnected');
     gamepadState.connected = false;
     gamepadState.index = -1;
     showControllerNotification(false);
@@ -4791,7 +4786,7 @@ function loadMilestones() {
             unlockedMilestones = JSON.parse(saved);
         }
     } catch (e) {
-        console.log('Failed to load milestones:', e);
+        debugLog('Failed to load milestones:', e);
         unlockedMilestones = [];
     }
 }
@@ -4800,7 +4795,7 @@ function saveMilestones() {
     try {
         localStorage.setItem('deadline_milestones', JSON.stringify(unlockedMilestones));
     } catch (e) {
-        console.log('Failed to save milestones:', e);
+        debugLog('Failed to save milestones:', e);
     }
 }
 
@@ -4909,9 +4904,9 @@ function loadSettings() {
         Haptics.strength = (settings.hapticsStrength !== undefined) ? settings.hapticsStrength : 1.0;
         Haptics.enabled = Haptics.strength > 0;
 
-        console.log('Settings loaded:', settings);
+        debugLog('Settings loaded:', settings);
     } catch (e) {
-        console.log('Failed to load settings:', e);
+        debugLog('Failed to load settings:', e);
         settings = { ...DEFAULT_SETTINGS };
     }
 }
@@ -4921,9 +4916,9 @@ function saveSettings() {
         settings.resolution = displaySettings.currentResolution;
         settings.fullscreen = displaySettings.fullscreen;
         localStorage.setItem('deadline_settings', JSON.stringify(settings));
-        console.log('Settings saved');
+        debugLog('Settings saved');
     } catch (e) {
-        console.log('Failed to save settings:', e);
+        debugLog('Failed to save settings:', e);
     }
 }
 
@@ -4943,7 +4938,7 @@ function setDifficulty(difficultyId) {
     // Update slider UI
     updateDifficultySliderUI(difficultyId);
 
-    console.log(`Difficulty set to: ${difficultyId}`);
+    debugLog(`Difficulty set to: ${difficultyId}`);
 }
 
 // Update difficulty from slider input
@@ -5069,7 +5064,7 @@ function loadProgress() {
         // Check for any new unlocks based on current progress
         checkCharacterUnlocks();
     } catch (e) {
-        console.log('Failed to load progress:', e);
+        debugLog('Failed to load progress:', e);
     }
 }
 
@@ -5077,7 +5072,7 @@ function saveProgress() {
     try {
         localStorage.setItem('deadline_progress', JSON.stringify(playerProgress));
     } catch (e) {
-        console.log('Failed to save progress:', e);
+        debugLog('Failed to save progress:', e);
     }
 }
 
@@ -5109,10 +5104,10 @@ function saveGameState() {
     try {
         localStorage.setItem('deadline_savedGame', JSON.stringify(saveData));
         showSaveNotification('Game saved!');
-        console.log('Game saved at floor', gameState.floor);
+        debugLog('Game saved at floor', gameState.floor);
         return true;
     } catch (e) {
-        console.log('Failed to save game:', e);
+        debugLog('Failed to save game:', e);
         return false;
     }
 }
@@ -5123,7 +5118,7 @@ function loadGameState() {
         if (!saved) return null;
         return JSON.parse(saved);
     } catch (e) {
-        console.log('Failed to load saved game:', e);
+        debugLog('Failed to load saved game:', e);
         return null;
     }
 }
@@ -5139,14 +5134,14 @@ function clearSavedGame() {
 function resumeGame() {
     const saveData = loadGameState();
     if (!saveData) {
-        console.log('No saved game found');
+        debugLog('No saved game found');
         return false;
     }
 
     // Check if save is recent (within 24 hours)
     const age = Date.now() - saveData.savedAt;
     if (age > 24 * 60 * 60 * 1000) {
-        console.log('Save too old, clearing');
+        debugLog('Save too old, clearing');
         clearSavedGame();
         return false;
     }
@@ -5187,7 +5182,7 @@ function resumeGame() {
     clearSavedGame();
 
     showSaveNotification('Game resumed!');
-    console.log('Game resumed at floor', gameState.floor);
+    debugLog('Game resumed at floor', gameState.floor);
     return true;
 }
 
@@ -5331,7 +5326,7 @@ function updateProgressAfterRun(won) {
     playerStats.escapePoints = (playerStats.escapePoints || 0) + escapePointsEarned;
     playerStats.totalCoinsCollected = (playerStats.totalCoinsCollected || 0) + (gameState.coinsCollected || 0);
 
-    console.log(`Earned ${escapePointsEarned} escape points. Total: ${playerStats.escapePoints}`);
+    debugLog(`Earned ${escapePointsEarned} escape points. Total: ${playerStats.escapePoints}`);
 
     if (won) {
         playerProgress.totalWins++;
@@ -5467,18 +5462,6 @@ function showAchievementsScreen() {
     modal.style.display = 'flex';
 }
 
-function addAchievementsToTitle() {
-    const tertiaryRow = document.getElementById('tertiaryButtons');
-    if (tertiaryRow && !document.getElementById('titleAchievementsBtn')) {
-        const achieveBtn = document.createElement('button');
-        achieveBtn.id = 'titleAchievementsBtn';
-        achieveBtn.className = 'btn-tertiary';
-        achieveBtn.textContent = 'AUDITS';
-        achieveBtn.onclick = showAchievementsScreen;
-        tertiaryRow.appendChild(achieveBtn);
-    }
-}
-
 // ============================================
 // STATISTICS SCREEN
 // ============================================
@@ -5550,18 +5533,6 @@ function resetAllProgress() {
         clearSavedGame();
         showStatsScreen(); // Refresh the screen
         updateResumeButton();
-    }
-}
-
-function addStatsToTitle() {
-    const tertiaryRow = document.getElementById('tertiaryButtons');
-    if (tertiaryRow && !document.getElementById('titleStatsBtn')) {
-        const statsBtn = document.createElement('button');
-        statsBtn.id = 'titleStatsBtn';
-        statsBtn.className = 'btn-tertiary';
-        statsBtn.textContent = 'RECORDS';
-        statsBtn.onclick = showStatsScreen;
-        tertiaryRow.appendChild(statsBtn);
     }
 }
 
@@ -6128,7 +6099,7 @@ function generateMaze() {
     }
 
     const elapsed = performance.now() - startTime;
-    console.log(`Maze generated: ${wallsAdded} walls added in ${elapsed.toFixed(1)}ms (${MAP_WIDTH}x${MAP_HEIGHT})`);
+    debugLog(`Maze generated: ${wallsAdded} walls added in ${elapsed.toFixed(1)}ms (${MAP_WIDTH}x${MAP_HEIGHT})`);
 
     // Add bottleneck corridors near exits for gameplay tension
     addBottleneckCorridors(maze, corners, startX, startY);
@@ -6209,7 +6180,7 @@ function addBottleneckCorridors(maze, corners, startX, startY) {
         }
     }
 
-    console.log('Bottleneck corridors added near exits');
+    debugLog('Bottleneck corridors added near exits');
 }
 
 // Office obstacle types with weights (matches start screen debris system)
@@ -6293,7 +6264,7 @@ function addDesksToMaze(maze) {
             maze[y][x] = TILE.FLOOR;
         }
     }
-    console.log(`Added ${obstaclesAdded} office obstacles`);
+    debugLog(`Added ${obstaclesAdded} office obstacles`);
 }
 
 // Add cafeteria zone (on some floors)
@@ -6675,14 +6646,14 @@ function initLevel() {
 
     // === PERK EFFECTS: Apply perks that activate at floor start ===
     // Safety First: Start each floor with a shield
-    if (gameState.perks.includes('shieldStart')) {
+    if (hasPerk('shieldStart')) {
         gameState.player.shielded = 5;
     }
     // Head Start / Time Lord: Bonus time at floor start
-    if (gameState.perks.includes('startTime')) {
+    if (hasPerk('startTime')) {
         gameState.timer += 5;
     }
-    if (gameState.perks.includes('timeLord')) {
+    if (hasPerk('timeLord')) {
         gameState.timer += 10;
     }
     // Vault Master: (coin multipliers removed)
@@ -6729,7 +6700,7 @@ function initLevel() {
 
     for (const exit of gameState.exits) {
         if (!hasPath(gameState.maze, startX, startY, exit.x, exit.y)) {
-            console.log(`EMERGENCY: Path blocked to exit at (${exit.x}, ${exit.y}), forcing clear path...`);
+            debugLog(`EMERGENCY: Path blocked to exit at (${exit.x}, ${exit.y}), forcing clear path...`);
             forcePathClear(gameState.maze, startX, startY, exit.x, exit.y);
         }
     }
@@ -6737,7 +6708,7 @@ function initLevel() {
     // Double-check ALL paths one more time - if still blocked, force clear again
     for (const exit of gameState.exits) {
         if (!hasPath(gameState.maze, startX, startY, exit.x, exit.y)) {
-            console.log(`CRITICAL: Still no path to (${exit.x}, ${exit.y}), doing straight-line clear...`);
+            debugLog(`CRITICAL: Still no path to (${exit.x}, ${exit.y}), doing straight-line clear...`);
             straightLineClear(gameState.maze, startX, startY, exit.x, exit.y);
         }
     }
@@ -6745,7 +6716,7 @@ function initLevel() {
     // Also verify secret exit on floor 7 (rebalanced from floor 13)
     if (gameState.floor === 7 && gameState.secretExit) {
         if (!hasPath(gameState.maze, startX, startY, gameState.secretExit.x, gameState.secretExit.y)) {
-            console.log('Path blocked to secret exit, forcing clear path...');
+            debugLog('Path blocked to secret exit, forcing clear path...');
             forcePathClear(gameState.maze, startX, startY, gameState.secretExit.x - 1, gameState.secretExit.y);
         }
     }
@@ -6759,7 +6730,7 @@ function initLevel() {
         }
     }
     if (allPathsOk) {
-        console.log('All exit paths verified OK');
+        debugLog('All exit paths verified OK');
     }
 
     // Progressive enemy introduction
@@ -6777,12 +6748,12 @@ function initLevel() {
             numEnemies = getEndlessEnemyCount(gameState.endlessFloor);
             enemyDifficulty = getEndlessAIDifficulty(gameState.endlessFloor);
         } else {
-            // Standard mode: Enemy counts rebalanced for 13-floor game
-            if (gameState.floor === 13) numEnemies = 2;      // Tutorial floor
-            else if (gameState.floor >= 11) numEnemies = 3;  // Floors 12-11
-            else if (gameState.floor >= 8) numEnemies = 4;   // Floors 10-8
-            else if (gameState.floor >= 4) numEnemies = 5;   // Floors 7-4
-            else numEnemies = 6;                              // Floors 3-1
+            // Standard mode: Enemy counts rebalanced for 13-floor game (increased for more action)
+            if (gameState.floor === 13) numEnemies = 3;      // Was 2 → Now 3
+            else if (gameState.floor >= 11) numEnemies = 4;  // Was 3 → Now 4
+            else if (gameState.floor >= 8) numEnemies = 5;   // Was 4 → Now 5
+            else if (gameState.floor >= 4) numEnemies = 6;   // Was 5 → Now 6
+            else numEnemies = 7;                              // Was 6 → Now 7
 
             // Apply difficulty multiplier (Playtest Feature #1)
             const difficultyPreset = DIFFICULTY_PRESETS[settings.difficulty] || DIFFICULTY_PRESETS.normal;
@@ -6799,16 +6770,16 @@ function initLevel() {
             }
             enemyDifficulty = baseDifficulty;
 
-            // First-run onboarding: gentler enemy ramp on early floors
+            // First-run onboarding: gentler enemy ramp on early floors (slightly increased)
             if (gameState.firstRunTutorial) {
                 if (gameState.floor === 13) {
-                    numEnemies = 0;
+                    numEnemies = 1;              // Was 0 → Now 1 (introduce enemies immediately)
                     enemyDifficulty = 'easy';
                 } else if (gameState.floor === 12) {
-                    numEnemies = 1;
+                    numEnemies = 2;              // Was 1 → Now 2
                     enemyDifficulty = 'easy';
                 } else if (gameState.floor === 11) {
-                    numEnemies = 2;
+                    numEnemies = 3;              // Was 2 → Now 3
                     enemyDifficulty = 'easy';
                 }
             }
@@ -7369,176 +7340,176 @@ function drawTile(x, y) {
         ctx.fillRect(screenX + 14, screenY + 14, 4, 2);
 
     } else if (tile === TILE.CHAIR) {
-        // Office swivel chair (matches start screen debris)
-        // Wheel base - star pattern
+        // Office swivel chair (matches start screen debris) - REDUCED
+        // Wheel base - star pattern (reduced width)
         ctx.fillStyle = COLORS.chairBase;
-        ctx.fillRect(screenX + 6, screenY + 24, 4, 4);
-        ctx.fillRect(screenX + 22, screenY + 24, 4, 4);
+        ctx.fillRect(screenX + 9, screenY + 24, 3, 4);
+        ctx.fillRect(screenX + 20, screenY + 24, 3, 4);
         ctx.fillRect(screenX + 14, screenY + 26, 4, 3);
 
         // Center column
         ctx.fillStyle = COLORS.chairColumn;
-        ctx.fillRect(screenX + 14, screenY + 16, 4, 10);
+        ctx.fillRect(screenX + 14, screenY + 17, 4, 9);
 
-        // Seat cushion
+        // Seat cushion (reduced from 24 to 18 wide)
         ctx.fillStyle = COLORS.chairSeat;
-        ctx.fillRect(screenX + 4, screenY + 12, 24, 6);
+        ctx.fillRect(screenX + 7, screenY + 13, 18, 5);
         ctx.fillStyle = COLORS.chairSeatLight;
-        ctx.fillRect(screenX + 6, screenY + 13, 20, 4);
+        ctx.fillRect(screenX + 9, screenY + 14, 14, 3);
 
-        // Back rest
+        // Back rest (reduced from 20 to 16 wide)
         ctx.fillStyle = COLORS.chairSeat;
-        ctx.fillRect(screenX + 6, screenY + 2, 20, 10);
+        ctx.fillRect(screenX + 8, screenY + 4, 16, 9);
         ctx.fillStyle = COLORS.chairSeatLight;
-        ctx.fillRect(screenX + 8, screenY + 3, 16, 8);
+        ctx.fillRect(screenX + 10, screenY + 5, 12, 7);
 
-        // Arm rests
+        // Arm rests (moved inward)
         ctx.fillStyle = COLORS.chairArm;
-        ctx.fillRect(screenX + 2, screenY + 8, 4, 6);
-        ctx.fillRect(screenX + 26, screenY + 8, 4, 6);
+        ctx.fillRect(screenX + 5, screenY + 9, 3, 5);
+        ctx.fillRect(screenX + 24, screenY + 9, 3, 5);
 
     } else if (tile === TILE.FILING_CABINET) {
-        // Metal filing cabinet (matches start screen debris)
-        // Cabinet body
+        // Metal filing cabinet (matches start screen debris) - REDUCED
+        // Cabinet body (reduced from 24x28 to 20x24)
         ctx.fillStyle = COLORS.cabinetBody;
-        ctx.fillRect(screenX + 4, screenY + 2, 24, 28);
+        ctx.fillRect(screenX + 6, screenY + 4, 20, 24);
 
         // Top edge highlight
         ctx.fillStyle = COLORS.cabinetTop;
-        ctx.fillRect(screenX + 4, screenY + 2, 24, 3);
+        ctx.fillRect(screenX + 6, screenY + 4, 20, 3);
 
-        // Drawer faces
+        // Drawer faces (reduced width from 20 to 16)
         ctx.fillStyle = COLORS.cabinetDrawer;
-        ctx.fillRect(screenX + 6, screenY + 6, 20, 7);
-        ctx.fillRect(screenX + 6, screenY + 14, 20, 7);
-        ctx.fillRect(screenX + 6, screenY + 22, 20, 7);
+        ctx.fillRect(screenX + 8, screenY + 8, 16, 6);
+        ctx.fillRect(screenX + 8, screenY + 15, 16, 6);
+        ctx.fillRect(screenX + 8, screenY + 22, 16, 5);
 
         // Drawer handles
         ctx.fillStyle = COLORS.cabinetHandle;
-        ctx.fillRect(screenX + 13, screenY + 8, 6, 2);
-        ctx.fillRect(screenX + 13, screenY + 16, 6, 2);
-        ctx.fillRect(screenX + 13, screenY + 24, 6, 2);
+        ctx.fillRect(screenX + 14, screenY + 10, 4, 2);
+        ctx.fillRect(screenX + 14, screenY + 17, 4, 2);
+        ctx.fillRect(screenX + 14, screenY + 24, 4, 2);
 
     } else if (tile === TILE.MONITOR) {
-        // CRT monitor on stand (matches start screen debris)
-        // Stand base
+        // CRT monitor on stand (matches start screen debris) - REDUCED
+        // Stand base (reduced from 16 to 12 wide)
         ctx.fillStyle = COLORS.monitorStand;
-        ctx.fillRect(screenX + 8, screenY + 26, 16, 3);
+        ctx.fillRect(screenX + 10, screenY + 26, 12, 3);
 
         // Stand neck
         ctx.fillStyle = COLORS.monitorStand;
-        ctx.fillRect(screenX + 13, screenY + 20, 6, 6);
+        ctx.fillRect(screenX + 13, screenY + 21, 6, 5);
 
-        // Monitor frame
+        // Monitor frame (reduced from 28x20 to 22x16)
         ctx.fillStyle = COLORS.monitorFrame;
-        ctx.fillRect(screenX + 2, screenY + 2, 28, 20);
+        ctx.fillRect(screenX + 5, screenY + 4, 22, 17);
 
-        // Screen
+        // Screen (reduced from 24x16 to 18x13)
         ctx.fillStyle = COLORS.monitorScreen;
-        ctx.fillRect(screenX + 4, screenY + 4, 24, 16);
+        ctx.fillRect(screenX + 7, screenY + 6, 18, 13);
 
         // Screen content - animated glow lines
         const glowOffset = Math.sin(gameState.animationTime * 3 + x + y) * 0.5 + 0.5;
         ctx.fillStyle = COLORS.monitorText1;
-        ctx.fillRect(screenX + 6, screenY + 6, 10, 2);
+        ctx.fillRect(screenX + 9, screenY + 8, 8, 2);
         ctx.fillStyle = COLORS.monitorText2;
-        ctx.fillRect(screenX + 6, screenY + 10, 16, 2);
+        ctx.fillRect(screenX + 9, screenY + 11, 12, 2);
         ctx.fillStyle = COLORS.monitorText3;
-        ctx.fillRect(screenX + 6, screenY + 14, 8, 2);
+        ctx.fillRect(screenX + 9, screenY + 14, 6, 2);
 
         // Animated cursor blink
         if (glowOffset > 0.5) {
             ctx.fillStyle = COLORS.monitorText1;
-            ctx.fillRect(screenX + 18, screenY + 14, 3, 2);
+            ctx.fillRect(screenX + 17, screenY + 14, 3, 2);
         }
 
     } else if (tile === TILE.PLANT) {
-        // Potted office plant (matches start screen debris)
-        // Pot
+        // Potted office plant (matches start screen debris) - ENLARGED
+        // Pot (enlarged from 12x10 to 18x12)
         ctx.fillStyle = COLORS.plantPot;
-        ctx.fillRect(screenX + 10, screenY + 20, 12, 10);
+        ctx.fillRect(screenX + 7, screenY + 18, 18, 12);
         ctx.fillStyle = COLORS.plantPotRim;
-        ctx.fillRect(screenX + 8, screenY + 18, 16, 3);
+        ctx.fillRect(screenX + 5, screenY + 16, 22, 4);
 
-        // Soil
+        // Soil (enlarged)
         ctx.fillStyle = COLORS.plantSoil;
-        ctx.fillRect(screenX + 11, screenY + 19, 10, 2);
+        ctx.fillRect(screenX + 8, screenY + 17, 16, 3);
 
-        // Leaves
+        // Leaves (larger and fuller)
         ctx.fillStyle = COLORS.plantLeaf;
-        ctx.fillRect(screenX + 14, screenY + 10, 4, 9);
-        ctx.fillRect(screenX + 8, screenY + 6, 5, 6);
-        ctx.fillRect(screenX + 19, screenY + 4, 5, 8);
-        ctx.fillRect(screenX + 5, screenY + 10, 4, 5);
-        ctx.fillRect(screenX + 23, screenY + 8, 4, 5);
+        ctx.fillRect(screenX + 13, screenY + 6, 6, 11);  // Center stem
+        ctx.fillRect(screenX + 6, screenY + 3, 7, 8);    // Left leaf
+        ctx.fillRect(screenX + 19, screenY + 2, 7, 9);   // Right leaf
+        ctx.fillRect(screenX + 3, screenY + 8, 6, 7);    // Far left leaf
+        ctx.fillRect(screenX + 23, screenY + 6, 6, 7);   // Far right leaf
 
-        // Leaf highlights
+        // Leaf highlights (adjusted for larger leaves)
         ctx.fillStyle = COLORS.plantLeafLight;
-        ctx.fillRect(screenX + 9, screenY + 7, 3, 4);
-        ctx.fillRect(screenX + 20, screenY + 5, 3, 4);
+        ctx.fillRect(screenX + 7, screenY + 4, 4, 5);
+        ctx.fillRect(screenX + 20, screenY + 3, 4, 5);
 
     } else if (tile === TILE.WATER_COOLER) {
-        // Water cooler dispenser (matches start screen debris)
-        // Base/dispenser unit
+        // Water cooler dispenser (matches start screen debris) - ENLARGED
+        // Base/dispenser unit (enlarged from 16x12 to 20x14)
         ctx.fillStyle = COLORS.coolerBase;
-        ctx.fillRect(screenX + 8, screenY + 18, 16, 12);
+        ctx.fillRect(screenX + 6, screenY + 16, 20, 14);
         ctx.fillStyle = COLORS.coolerBaseLight;
-        ctx.fillRect(screenX + 10, screenY + 20, 12, 8);
+        ctx.fillRect(screenX + 8, screenY + 18, 16, 10);
 
-        // Water jug
+        // Water jug (enlarged from 10x16 to 14x16)
         ctx.fillStyle = COLORS.coolerJug;
-        ctx.fillRect(screenX + 11, screenY + 2, 10, 16);
+        ctx.fillRect(screenX + 9, screenY + 0, 14, 16);
         ctx.fillStyle = COLORS.coolerJugLight;
-        ctx.fillRect(screenX + 13, screenY + 3, 6, 14);
+        ctx.fillRect(screenX + 11, screenY + 1, 10, 14);
 
-        // Jug cap
+        // Jug cap (enlarged)
         ctx.fillStyle = COLORS.coolerCap;
-        ctx.fillRect(screenX + 12, screenY + 0, 8, 3);
+        ctx.fillRect(screenX + 10, screenY - 2, 12, 4);
 
-        // Taps
+        // Taps (adjusted positions)
         ctx.fillStyle = COLORS.coolerTapHot;
-        ctx.fillRect(screenX + 5, screenY + 22, 4, 4);
+        ctx.fillRect(screenX + 3, screenY + 20, 5, 5);
         ctx.fillStyle = COLORS.coolerTapCold;
-        ctx.fillRect(screenX + 23, screenY + 22, 4, 4);
+        ctx.fillRect(screenX + 24, screenY + 20, 5, 5);
 
     } else if (tile === TILE.TRASHCAN) {
-        // Office trash can (matches start screen debris)
-        // Can body
+        // Office trash can (matches start screen debris) - ENLARGED
+        // Can body (enlarged from 16x20 to 20x22)
         ctx.fillStyle = COLORS.trashBody;
-        ctx.fillRect(screenX + 8, screenY + 8, 16, 20);
+        ctx.fillRect(screenX + 6, screenY + 6, 20, 22);
         ctx.fillStyle = COLORS.trashInner;
-        ctx.fillRect(screenX + 10, screenY + 10, 12, 16);
+        ctx.fillRect(screenX + 8, screenY + 8, 16, 18);
 
-        // Rim
+        // Rim (enlarged from 20x4 to 24x5)
         ctx.fillStyle = COLORS.trashRim;
-        ctx.fillRect(screenX + 6, screenY + 6, 20, 4);
+        ctx.fillRect(screenX + 4, screenY + 4, 24, 5);
 
-        // Crumpled paper sticking out
+        // Crumpled paper sticking out (enlarged)
         ctx.fillStyle = COLORS.trashPaper;
-        ctx.fillRect(screenX + 12, screenY + 2, 5, 5);
+        ctx.fillRect(screenX + 10, screenY + 0, 7, 6);
         ctx.fillStyle = '#ffffff';
-        ctx.fillRect(screenX + 16, screenY + 0, 4, 6);
+        ctx.fillRect(screenX + 16, screenY - 2, 6, 7);
 
     } else if (tile === TILE.LAMP) {
-        // Desk lamp (matches start screen debris)
-        // Base
+        // Desk lamp (matches start screen debris) - REDUCED
+        // Base (reduced from 12 to 10 wide)
         ctx.fillStyle = COLORS.lampBase;
-        ctx.fillRect(screenX + 10, screenY + 26, 12, 3);
+        ctx.fillRect(screenX + 11, screenY + 26, 10, 3);
 
-        // Pole
+        // Pole (narrower)
         ctx.fillStyle = COLORS.lampPole;
-        ctx.fillRect(screenX + 14, screenY + 10, 4, 16);
+        ctx.fillRect(screenX + 14, screenY + 12, 4, 14);
 
-        // Shade
+        // Shade (reduced from 20x10 to 16x8)
         ctx.fillStyle = COLORS.lampShade;
-        ctx.fillRect(screenX + 6, screenY + 2, 20, 10);
+        ctx.fillRect(screenX + 8, screenY + 4, 16, 8);
         ctx.fillStyle = COLORS.lampShadeLight;
-        ctx.fillRect(screenX + 8, screenY + 4, 16, 6);
+        ctx.fillRect(screenX + 10, screenY + 5, 12, 6);
 
-        // Light glow (animated)
+        // Light glow (animated, adjusted)
         const lampGlow = Math.sin(gameState.animationTime * 2 + x + y) * 0.2 + 0.6;
         ctx.fillStyle = `rgba(255, 230, 109, ${lampGlow})`;
-        ctx.fillRect(screenX + 10, screenY + 6, 12, 4);
+        ctx.fillRect(screenX + 11, screenY + 6, 10, 4);
 
     } else if (tile === TILE.WINDOW) {
         // Check if this window has exploded
@@ -11797,7 +11768,7 @@ function handlePlayerEnemyCollision(enemy) {
         gameState.killCombo = 0;
         gameState.killComboTimer = 0;
 
-        console.log(`Player hit #${gameState.player.hitCount}, stunned for ${stunDuration} seconds`);
+        debugLog(`Player hit #${gameState.player.hitCount}, stunned for ${stunDuration} seconds`);
         // Mark enemy as having just attacked (cooldown) - prevents repeated attacks
         enemy.lastAttackTime = Date.now();
         // Push enemy away so player isn't stuck on same tile
@@ -12093,7 +12064,7 @@ function movePlayer(dx, dy) {
                     // GHOST WALK - Pass through walls and desks for 3.5 seconds
                     gameState.powerup = 'ghost';
                     // Check for ghostTrail perk - 50% longer duration
-                    const ghostDuration = gameState.perks.includes('ghostTrail') ? 5.25 : 3.5;
+                    const ghostDuration = hasPerk('ghostTrail') ? 5.25 : 3.5;
                     gameState.powerupTimer = ghostDuration;
                     showCelebration('ghostWalk');
                     screenShake.trigger(8, 0.2);
@@ -12153,9 +12124,9 @@ function performDash() {
     let dashCooldown = DASH_COOLDOWN;
     let dashInvincibility = DASH_INVINCIBILITY;
 
-    if (gameState.perks.includes('dashRange')) dashRange += 1;
-    if (gameState.perks.includes('dashSpeed')) dashCooldown *= 0.6;
-    if (gameState.perks.includes('invincibleDash')) dashInvincibility *= 2;
+    if (hasPerk('dashRange')) dashRange += 1;
+    if (hasPerk('dashSpeed')) dashCooldown *= 0.6;
+    if (hasPerk('invincibleDash')) dashInvincibility *= 2;
 
     // Get dash direction from last movement or facing direction
     let dx = 0, dy = 0;
@@ -12178,8 +12149,8 @@ function performDash() {
     // Calculate how far we can dash (stop at walls)
     // deskVault perk: Can dash through desks (but not walls)
     // ghostPhase (Phase Dash) perk: Can dash through BOTH walls and desks
-    const hasDeskVault = gameState.perks.includes('deskVault');
-    const hasPhaseDash = gameState.perks.includes('ghostPhase');
+    const hasDeskVault = hasPerk('deskVault');
+    const hasPhaseDash = hasPerk('ghostPhase');
     let dashDistance = 0;
     let finalX = gameState.player.x;
     let finalY = gameState.player.y;
@@ -12250,7 +12221,7 @@ function performDash() {
     Haptics.playEvent('dash');
 
     // === DASH DAMAGE PERK: Stun enemies we dash through ===
-    if (gameState.perks.includes('dashDamage')) {
+    if (hasPerk('dashDamage')) {
         for (const enemy of gameState.enemies) {
             // Check if enemy is along dash path
             for (let i = 1; i <= dashDistance; i++) {
@@ -12302,7 +12273,7 @@ function performDash() {
     }
 
     // === DASH TRAIL PERK: Leave damaging fire tiles along dash path ===
-    if (gameState.perks.includes('dashTrail')) {
+    if (hasPerk('dashTrail')) {
         const maxTrailFires = Math.min(dashDistance, 3); // Cap at 3 fire tiles
 
         for (let i = 1; i <= maxTrailFires; i++) {
@@ -12403,10 +12374,10 @@ function performPunch() {
     // Apply perk modifiers
     let punchRange = PUNCH_RANGE;
     let punchCooldown = PUNCH_COOLDOWN;
-    if (gameState.perks.includes('punchRange')) punchRange += 1;
-    if (gameState.perks.includes('punchSpeed')) punchCooldown *= 0.6;
+    if (hasPerk('punchRange')) punchRange += 1;
+    if (hasPerk('punchSpeed')) punchCooldown *= 0.6;
     // Omnipunch (Legendary): Massive punch radius - hit enemies in a 3-tile radius
-    if (gameState.perks.includes('omnipunch')) punchRange = 3;
+    if (hasPerk('omnipunch')) punchRange = 3;
 
     gameState.player.isPunching = true;
     gameState.player.punchCooldown = punchCooldown;
@@ -12425,7 +12396,7 @@ function performPunch() {
             enemiesHit++;
 
             // === CRITICAL HIT SYSTEM: 15% chance for double damage + extra effects ===
-            const critChance = gameState.perks.includes('criticalHit') ? 0.25 : 0.15;
+            const critChance = hasPerk('criticalHit') ? 0.25 : 0.15;
             const isCriticalHit = Math.random() < critChance;
             const damageDealt = isCriticalHit ? 2 : 1;
 
@@ -12462,7 +12433,7 @@ function performPunch() {
                 }
 
                 // === PUNCH CHAIN PERK: Punched enemies create chain reaction ===
-                if (gameState.perks.includes('punchChain') && enemy.special !== 'explode') {
+                if (hasPerk('punchChain') && enemy.special !== 'explode') {
                     triggerPunchChainExplosion(enemy);
                 }
 
@@ -12519,7 +12490,7 @@ function performPunch() {
                 gameState.killCombo = 1;
             }
             // Perk: Momentum - combo timer lasts 50% longer
-            const comboWindow = gameState.perks.includes('comboExtend') ? COMBO_WINDOW * 1.5 : COMBO_WINDOW;
+            const comboWindow = hasPerk('comboExtend') ? COMBO_WINDOW * 1.5 : COMBO_WINDOW;
             gameState.killComboTimer = comboWindow;
             gameState.lastKillTime = now;
 
@@ -12532,9 +12503,9 @@ function performPunch() {
             const comboMultiplier = gameState.killCombo;
             let baseReward = PUNCH_TIME_REWARD;
             // Perk: Time Vampire - 50% more time per kill
-            if (gameState.perks.includes('punchVampire')) baseReward = Math.floor(baseReward * 1.5);
+            if (hasPerk('punchVampire')) baseReward = Math.floor(baseReward * 1.5);
             // Perk: Time Lord (Legendary) - 50% more time per kill (nerfed from 100%, stacks with Time Vampire!)
-            if (gameState.perks.includes('timeLord')) baseReward = Math.floor(baseReward * 1.5);
+            if (hasPerk('timeLord')) baseReward = Math.floor(baseReward * 1.5);
             const timeReward = Math.floor(baseReward * (1 + (comboMultiplier - 1) * 0.5)); // 4, 6, 8, 10...
             gameState.timer += timeReward;
             timeGained += timeReward;
@@ -12629,7 +12600,7 @@ function performPunch() {
     }
 
     // === EXPLOSIVE PUNCH PERK: Shockwave pushes ALL nearby enemies ===
-    if (gameState.perks.includes('explosivePunch') && enemiesHit > 0) {
+    if (hasPerk('explosivePunch') && enemiesHit > 0) {
         const shockwaveRadius = 4; // Larger than punch range
 
         for (const enemy of gameState.enemies) {
@@ -13034,7 +13005,7 @@ function triggerPunchChainExplosion(enemy) {
                 chainKills++;
 
                 // Chain explosions propagate (with delay to prevent infinite loops)
-                if (gameState.perks.includes('punchChain') && otherEnemy.special !== 'explode') {
+                if (hasPerk('punchChain') && otherEnemy.special !== 'explode') {
                     setTimeout(() => {
                         if (otherEnemy.stunned > 0) { // Still stunned = hasn't recovered
                             triggerPunchChainExplosion(otherEnemy);
@@ -13796,7 +13767,7 @@ const PERK_PRICES = {
 function getPerkPrice(rarity, floor) {
     const basePrice = PERK_PRICES[rarity] || 100;
     // Penny Pincher perk gives 15% discount
-    const discount = gameState.perks.includes('coinHoarder') ? 0.85 : 1.0;
+    const discount = hasPerk('coinHoarder') ? 0.85 : 1.0;
     return Math.round(basePrice * discount);
 }
 
@@ -14546,7 +14517,7 @@ function instantRestart() {
     updatePlayerColors();
     initLevel();
 
-    console.log('Instant restart triggered');
+    debugLog('Instant restart triggered');
 }
 
 function triggerRestartFlash() {
@@ -14829,9 +14800,9 @@ function saveGhostReplay() {
     if (shouldSave) {
         try {
             localStorage.setItem('deadline_ghost_replay', JSON.stringify(currentProgress));
-            console.log('Ghost replay saved - Floor:', currentProgress.lowestFloor);
+            debugLog('Ghost replay saved - Floor:', currentProgress.lowestFloor);
         } catch (e) {
-            console.log('Failed to save ghost replay:', e);
+            debugLog('Failed to save ghost replay:', e);
         }
     }
 }
@@ -15078,7 +15049,7 @@ function update(deltaTime) {
         // === SLOW-MO: Timer ticks slower during slow-mo (player advantage) ===
         const slowMoMultiplier = gameState.slowMoActive ? gameState.slowMoFactor : 1.0;
         // === CHRONO SHIFT PERK: Time slows 50% when timer is below 10s ===
-        const chronoShiftMultiplier = (gameState.perks.includes('chronoShift') && gameState.timer <= 10 && gameState.timer > 0) ? 0.5 : 1.0;
+        const chronoShiftMultiplier = (hasPerk('chronoShift') && gameState.timer <= 10 && gameState.timer > 0) ? 0.5 : 1.0;
         gameState.timer -= deltaTime * cafeteriaMultiplier * burnMultiplier * speedMultiplier * slowMoMultiplier * chronoShiftMultiplier;
     }
 
@@ -15150,7 +15121,7 @@ function update(deltaTime) {
     updateCamera(deltaTime);
 
     // === COIN MAGNET PERK: Attract coins from 4 tiles away ===
-    if (gameState.perks.includes('coinMagnet')) {
+    if (hasPerk('coinMagnet')) {
         for (const coin of gameState.coins) {
             if (coin.collected) continue;
 
@@ -15735,7 +15706,7 @@ function gameLoop(timestamp) {
 async function startGame(mode = 'normal') {
     // Ensure character assets are loaded before starting
     if (!characterAssetsReady) {
-        console.log('Waiting for character assets to load...');
+        debugLog('Waiting for character assets to load...');
         await characterAssetLoader.preloadAll();
         characterAssetsReady = true;
     }
@@ -15872,16 +15843,6 @@ async function startGame(mode = 'normal') {
     initLevel();
 }
 
-// Quick start arcade mode (Playtest Feature #10)
-function quickStartArcade() {
-    startGame('normal');
-}
-
-// Start zen mode (Playtest Feature #4)
-function startZenMode() {
-    startGame('zen');
-}
-
 function togglePause() {
     if (!gameState.started || gameState.gameOver || gameState.won) return;
 
@@ -15943,6 +15904,9 @@ function updateTitleMenuState() {
 
     if (!primaryGroup || !resumeBtn || !playBtn) return;
 
+    // Only update button text if assets are ready (otherwise keep "LOADING...")
+    const canUpdateText = characterAssetsReady;
+
     if (hasSavedGame()) {
         // Show Resume as primary, Play becomes secondary
         primaryGroup.classList.add('has-save');
@@ -15958,13 +15922,17 @@ function updateTitleMenuState() {
             floorInfo.textContent = '';
         }
 
-        // Change Play button text to indicate new game
-        playBtn.innerHTML = '▶ NEW GAME';
+        // Change Play button text to indicate new game (only if assets ready)
+        if (canUpdateText) {
+            playBtn.innerHTML = '▶ NEW GAME';
+        }
     } else {
         // No save - Play is primary
         primaryGroup.classList.remove('has-save');
         resumeBtn.style.display = 'none';
-        playBtn.innerHTML = '▶ PLAY';
+        if (canUpdateText) {
+            playBtn.innerHTML = '▶ PLAY';
+        }
     }
 }
 
@@ -16543,40 +16511,36 @@ function updateTitleHighScore() {
 
 // Initialize settings on load
 document.addEventListener('DOMContentLoaded', () => {
+    // Show title screen
+    document.getElementById('message').style.display = 'block';
+    setTitleBackground();
+
+    // Load saved data
     loadSettings();
     loadProgress();
+    loadStats();
+
+    // Initialize UI
     initDifficultyButtons();
     addResumeButtonToTitle();
+    addCharacterSelectToTitle();
     updatePlayerColors();
+    updateVaultBadge();
+    updateTitleHighScore();
     initTouchControls();
 
     // Preload character assets - enable start button when ready
     characterAssetLoader.preloadAll().then(count => {
         characterAssetsReady = true;
-        if (count > 0) {
-            console.log('Character sprites ready');
-        }
         // Enable start button now that assets are ready
         const playBtn = document.getElementById('menuPlayBtn');
         if (playBtn) {
             playBtn.disabled = false;
-            playBtn.textContent = '▶ START RUN';
         }
+        // Update button text based on save game state
+        updateTitleMenuState();
     });
 });
-
-document.getElementById('message').style.display = 'block';
-setTitleBackground();  // Set random atmospheric background
-loadSettings();
-loadProgress();
-initDifficultyButtons();
-addResumeButtonToTitle();
-addCharacterSelectToTitle(); // Add character selection button
-updatePlayerColors();
-loadStats();  // Load player stats from localStorage
-updateVaultBadge(); // Show vault badge if discovered
-updateTitleHighScore(); // Show best floor reached
-initTouchControls();
 
 // Watch for modal visibility changes to toggle HUD/canvas visibility
 const messageModal = document.getElementById('message');
