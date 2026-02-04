@@ -7784,13 +7784,10 @@ function drawCompanion() {
     const y = comp.y * TILE_SIZE;
     const bounce = Math.sin(comp.frame) * 2;
 
-    // Try to use sprite-based rendering
+    // Use the provided portrait as the only companion image
     const dogAsset = DOG_ASSETS.office_dog;
-    if (dogAsset && dogAsset.animation.loaded && dogAsset.animation.image) {
-        const anim = dogAsset.animation;
-        const frameIndex = Math.floor(comp.frame) % anim.frameCount;
-        const srcX = frameIndex * anim.frameWidth;
-        const srcY = 0;
+    if (dogAsset && dogAsset.portrait && dogAsset.portrait.loaded && dogAsset.portrait.image) {
+        const img = dogAsset.portrait.image;
 
         // Shadow
         ctx.fillStyle = 'rgba(0,0,0,0.25)';
@@ -7798,47 +7795,14 @@ function drawCompanion() {
         ctx.ellipse(x + TILE_SIZE / 2, y + TILE_SIZE - 2, 12, 4, 0, 0, Math.PI * 2);
         ctx.fill();
 
-        // Draw sprite with bounce - dog should be about half the size of human characters
-        // Human characters use spriteScale of 2.5, so dog uses ~1.25 (half)
+        // Draw portrait with bounce
         const dogScale = 1.25;
         const drawWidth = TILE_SIZE * dogScale;
         const drawHeight = TILE_SIZE * dogScale;
         const drawX = x + TILE_SIZE / 2 - drawWidth / 2;
-        const drawY = y + TILE_SIZE / 2 - drawHeight / 2 + bounce + 4; // +4 to lower it slightly
+        const drawY = y + TILE_SIZE / 2 - drawHeight / 2 + bounce + 4;
 
-        ctx.drawImage(
-            anim.image,
-            srcX, srcY, anim.frameWidth, anim.frameHeight,
-            drawX, drawY, drawWidth, drawHeight
-        );
-    } else {
-        // Fallback to simple procedural drawing if sprite not loaded
-        // Dog should be about half the size of humans
-        ctx.fillStyle = 'rgba(0,0,0,0.25)';
-        ctx.beginPath();
-        ctx.ellipse(x + TILE_SIZE / 2, y + TILE_SIZE - 2, 6, 2, 0, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Simple dog body (smaller)
-        ctx.fillStyle = '#8d6e63';
-        ctx.beginPath();
-        ctx.ellipse(x + TILE_SIZE / 2, y + TILE_SIZE / 2 + 6 + bounce, 8, 6, 0, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Dog head (smaller)
-        ctx.fillStyle = '#a1887f';
-        ctx.beginPath();
-        ctx.arc(x + TILE_SIZE / 2 + 5, y + TILE_SIZE / 2 + 2 + bounce, 6, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Eyes (smaller)
-        ctx.fillStyle = '#000';
-        ctx.beginPath();
-        ctx.arc(x + TILE_SIZE / 2 + 3, y + TILE_SIZE / 2 + bounce, 1.5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.arc(x + TILE_SIZE / 2 + 7, y + TILE_SIZE / 2 + bounce, 1.5, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
     }
 
     // Happy aura when near scared enemies
@@ -8585,7 +8549,8 @@ function drawPowerup(powerup) {
         img = powerupImages.companion;
         glowColor = 'rgba(139, 195, 74, 0.6)';
         shadowColor = '#8bc34a';
-        drawFallback = !img || !img.complete;
+        // Do not draw a fallback cartoon; only use the provided image
+        drawFallback = false;
     } else if (powerup.type === 'timeFreeze') {
         img = powerupImages.timeFreeze;
         glowColor = 'rgba(0, 212, 255, 0.6)';
@@ -8667,56 +8632,6 @@ function drawPowerup(powerup) {
         ctx.textAlign = 'center';
         ctx.fillText('✿', cx, cy + 3);
         ctx.textAlign = 'left';
-    } else if (powerup.type === 'companion') {
-        // Fallback: Draw cute dog icon
-        const cx = x + TILE_SIZE / 2;
-        const cy = y + TILE_SIZE / 2 + bounce;
-
-        // Dog body
-        ctx.fillStyle = '#8d6e63';
-        ctx.beginPath();
-        ctx.ellipse(cx, cy + 2, 10, 8, 0, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Dog head
-        ctx.fillStyle = '#a1887f';
-        ctx.beginPath();
-        ctx.arc(cx, cy - 6, 7, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Ears
-        ctx.fillStyle = '#6d4c41';
-        ctx.beginPath();
-        ctx.ellipse(cx - 6, cy - 10, 3, 5, -0.3, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.ellipse(cx + 6, cy - 10, 3, 5, 0.3, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Eyes
-        ctx.fillStyle = '#000';
-        ctx.beginPath();
-        ctx.arc(cx - 3, cy - 6, 1.5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.arc(cx + 3, cy - 6, 1.5, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Nose
-        ctx.fillStyle = '#3e2723';
-        ctx.beginPath();
-        ctx.arc(cx, cy - 3, 2, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Wagging tail
-        const wagAngle = Math.sin(gameState.animationTime * 10) * 0.5;
-        ctx.strokeStyle = '#8d6e63';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(cx + 8, cy + 2);
-        ctx.quadraticCurveTo(cx + 14 + wagAngle * 4, cy - 4, cx + 12 + wagAngle * 6, cy - 8);
-        ctx.stroke();
-        ctx.lineWidth = 1;
     } else if (powerup.type === 'timeFreeze') {
         // Fallback: Clock/stopwatch icon
         const cx = x + TILE_SIZE / 2;
