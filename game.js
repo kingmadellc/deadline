@@ -2443,6 +2443,32 @@ const TILE = {
     WINDOW: 16          // Exterior wall windows (highrise glass)
 };
 
+// Helper function to check if a tile blocks movement (wall or any obstacle)
+function isBlockingTile(tile) {
+    return tile === TILE.WALL ||
+           tile === TILE.DESK ||
+           tile === TILE.CHAIR ||
+           tile === TILE.FILING_CABINET ||
+           tile === TILE.MONITOR ||
+           tile === TILE.PLANT ||
+           tile === TILE.WATER_COOLER ||
+           tile === TILE.TRASHCAN ||
+           tile === TILE.LAMP ||
+           tile === TILE.WINDOW;
+}
+
+// Helper to check if a tile is a breakable obstacle (not walls or windows)
+function isBreakableObstacle(tile) {
+    return tile === TILE.DESK ||
+           tile === TILE.CHAIR ||
+           tile === TILE.FILING_CABINET ||
+           tile === TILE.MONITOR ||
+           tile === TILE.PLANT ||
+           tile === TILE.WATER_COOLER ||
+           tile === TILE.TRASHCAN ||
+           tile === TILE.LAMP;
+}
+
 // Checkpoint system constants (must be defined before gameState)
 const CHECKPOINT_FLOORS = [10, 7, 4];
 const MAX_CONTINUES = 3;
@@ -5653,7 +5679,7 @@ function hasPath(maze, startX, startY, endX, endY) {
     const isWalkable = (x, y) => {
         if (x < 0 || x >= width || y < 0 || y >= height) return false;
         const tile = maze[y][x];
-        return tile !== TILE.WALL && tile !== TILE.DESK;
+        return !isBlockingTile(tile);
     };
 
     if (!isWalkable(startX, startY) || !isWalkable(endX, endY)) return false;
@@ -5712,7 +5738,7 @@ function carvePath(maze, startX, startY, endX, endY) {
 
     while (cx !== endX || cy !== endY) {
         // Make sure current position is walkable
-        if (maze[cy][cx] === TILE.WALL || maze[cy][cx] === TILE.DESK) {
+        if (isBlockingTile(maze[cy][cx])) {
             maze[cy][cx] = TILE.FLOOR;
         }
 
@@ -5740,7 +5766,7 @@ function carvePath(maze, startX, startY, endX, endY) {
     }
 
     // Make sure endpoint is walkable
-    if (maze[endY][endX] === TILE.WALL || maze[endY][endX] === TILE.DESK) {
+    if (isBlockingTile(maze[endY][endX])) {
         maze[endY][endX] = TILE.FLOOR;
     }
 }
@@ -5758,7 +5784,7 @@ function forcePathClear(maze, startX, startY, endX, endY) {
                 const nx = cx + dx;
                 const ny = cy + dy;
                 if (nx > 0 && nx < MAP_WIDTH - 1 && ny > 0 && ny < MAP_HEIGHT - 1) {
-                    if (maze[ny][nx] === TILE.WALL || maze[ny][nx] === TILE.DESK) {
+                    if (isBlockingTile(maze[ny][nx])) {
                         maze[ny][nx] = TILE.FLOOR;
                     }
                 }
@@ -5778,7 +5804,7 @@ function forcePathClear(maze, startX, startY, endX, endY) {
             const nx = endX + dx;
             const ny = endY + dy;
             if (nx > 0 && nx < MAP_WIDTH - 1 && ny > 0 && ny < MAP_HEIGHT - 1) {
-                if (maze[ny][nx] === TILE.WALL || maze[ny][nx] === TILE.DESK) {
+                if (isBlockingTile(maze[ny][nx])) {
                     maze[ny][nx] = TILE.FLOOR;
                 }
             }
@@ -5792,14 +5818,14 @@ function straightLineClear(maze, startX, startY, endX, endY) {
     const minX = Math.min(startX, endX);
     const maxX = Math.max(startX, endX);
     for (let x = minX; x <= maxX; x++) {
-        if (maze[startY][x] === TILE.WALL || maze[startY][x] === TILE.DESK) {
+        if (isBlockingTile(maze[startY][x])) {
             maze[startY][x] = TILE.FLOOR;
         }
         // Also clear tile above and below
-        if (startY > 1 && (maze[startY-1][x] === TILE.WALL || maze[startY-1][x] === TILE.DESK)) {
+        if (startY > 1 && isBlockingTile(maze[startY-1][x])) {
             maze[startY-1][x] = TILE.FLOOR;
         }
-        if (startY < MAP_HEIGHT - 2 && (maze[startY+1][x] === TILE.WALL || maze[startY+1][x] === TILE.DESK)) {
+        if (startY < MAP_HEIGHT - 2 && isBlockingTile(maze[startY+1][x])) {
             maze[startY+1][x] = TILE.FLOOR;
         }
     }
@@ -5808,14 +5834,14 @@ function straightLineClear(maze, startX, startY, endX, endY) {
     const minY = Math.min(startY, endY);
     const maxY = Math.max(startY, endY);
     for (let y = minY; y <= maxY; y++) {
-        if (maze[y][endX] === TILE.WALL || maze[y][endX] === TILE.DESK) {
+        if (isBlockingTile(maze[y][endX])) {
             maze[y][endX] = TILE.FLOOR;
         }
         // Also clear tile left and right
-        if (endX > 1 && (maze[y][endX-1] === TILE.WALL || maze[y][endX-1] === TILE.DESK)) {
+        if (endX > 1 && isBlockingTile(maze[y][endX-1])) {
             maze[y][endX-1] = TILE.FLOOR;
         }
-        if (endX < MAP_WIDTH - 2 && (maze[y][endX+1] === TILE.WALL || maze[y][endX+1] === TILE.DESK)) {
+        if (endX < MAP_WIDTH - 2 && isBlockingTile(maze[y][endX+1])) {
             maze[y][endX+1] = TILE.FLOOR;
         }
     }
@@ -5945,11 +5971,11 @@ function buildUnionFind(maze, width, height) {
     // Union all adjacent walkable cells
     for (let y = 1; y < height - 1; y++) {
         for (let x = 1; x < width - 1; x++) {
-            if (maze[y][x] !== TILE.WALL && maze[y][x] !== TILE.DESK) {
+            if (!isBlockingTile(maze[y][x])) {
                 const idx = uf.index(x, y);
                 for (const [dx, dy] of directions) {
                     const nx = x + dx, ny = y + dy;
-                    if (maze[ny] && maze[ny][nx] !== TILE.WALL && maze[ny][nx] !== TILE.DESK) {
+                    if (maze[ny] && !isBlockingTile(maze[ny][nx])) {
                         uf.union(idx, uf.index(nx, ny));
                     }
                 }
@@ -6275,7 +6301,7 @@ function addCafeteria(maze) {
     for (let y = cafeteriaY - 1; y <= cafeteriaY + height; y++) {
         for (let x = cafeteriaX - 1; x <= cafeteriaX + width; x++) {
             if (y > 0 && y < MAP_HEIGHT - 1 && x > 0 && x < MAP_WIDTH - 1) {
-                if (maze[y][x] === TILE.WALL || maze[y][x] === TILE.DESK) {
+                if (isBlockingTile(maze[y][x])) {
                     maze[y][x] = TILE.FLOOR;
                 }
             }
@@ -6314,7 +6340,7 @@ function addBathroom(maze) {
     for (let y = bathroomY - 1; y <= bathroomY + height; y++) {
         for (let x = bathroomX - 1; x <= bathroomX + width; x++) {
             if (y > 0 && y < MAP_HEIGHT - 1 && x > 0 && x < MAP_WIDTH - 1) {
-                if (maze[y][x] === TILE.WALL || maze[y][x] === TILE.DESK) {
+                if (isBlockingTile(maze[y][x])) {
                     maze[y][x] = TILE.FLOOR;
                 }
             }
@@ -6351,7 +6377,7 @@ function addGarden(maze) {
     for (let y = gardenY - 1; y <= gardenY + height; y++) {
         for (let x = gardenX - 1; x <= gardenX + width; x++) {
             if (y > 0 && y < MAP_HEIGHT - 1 && x > 0 && x < MAP_WIDTH - 1) {
-                if (maze[y][x] === TILE.WALL || maze[y][x] === TILE.DESK) {
+                if (isBlockingTile(maze[y][x])) {
                     maze[y][x] = TILE.FLOOR;
                 }
             }
@@ -6387,7 +6413,7 @@ function addDogPark(maze) {
     for (let y = dogParkY - 1; y <= dogParkY + height; y++) {
         for (let x = dogParkX - 1; x <= dogParkX + width; x++) {
             if (y > 0 && y < MAP_HEIGHT - 1 && x > 0 && x < MAP_WIDTH - 1) {
-                if (maze[y][x] === TILE.WALL || maze[y][x] === TILE.DESK) {
+                if (isBlockingTile(maze[y][x])) {
                     maze[y][x] = TILE.FLOOR;
                 }
             }
@@ -6621,7 +6647,7 @@ function initLevel() {
             const nx = gameState.player.x + dx;
             const ny = gameState.player.y + dy;
             if (nx > 0 && nx < MAP_WIDTH - 1 && ny > 0 && ny < MAP_HEIGHT - 1) {
-                if (gameState.maze[ny][nx] === TILE.WALL || gameState.maze[ny][nx] === TILE.DESK) {
+                if (isBlockingTile(gameState.maze[ny][nx])) {
                     gameState.maze[ny][nx] = TILE.FLOOR;
                 }
             }
@@ -7217,18 +7243,29 @@ function drawTile(x, y) {
         return;
     }
 
-    // Regular office carpet floor - REALISTIC TEXTURE
+    // Regular office carpet floor - ENHANCED REALISTIC TEXTURE
     const baseColor = (x + y) % 2 === 0 ? COLORS.floorDark : COLORS.floorMid;
     ctx.fillStyle = baseColor;
     ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
 
-    // Carpet fiber texture (subtle dots for realism)
-    const seed = (x * 31 + y * 17) % 100; // Deterministic random per tile
-    ctx.fillStyle = COLORS.floorFiber || '#3d3d3d';
-    for (let i = 0; i < 5; i++) {
-        const fx = screenX + ((seed + i * 7) % TILE_SIZE);
-        const fy = screenY + ((seed + i * 11) % TILE_SIZE);
-        ctx.fillRect(fx, fy, 1, 1);
+    // Commercial carpet tile seams (every 2 tiles)
+    if (x % 2 === 0) {
+        ctx.fillStyle = COLORS.floorSeam || '#2e2e2e';
+        ctx.fillRect(screenX, screenY, 1, TILE_SIZE);
+    }
+    if (y % 2 === 0) {
+        ctx.fillStyle = COLORS.floorSeam || '#2e2e2e';
+        ctx.fillRect(screenX, screenY, TILE_SIZE, 1);
+    }
+
+    // Enhanced carpet fiber texture (increased density for realism)
+    const seed = (x * 31 + y * 17) % 100;
+    for (let i = 0; i < 8; i++) {
+        const fiberColor = i % 2 === 0 ? (COLORS.floorFiber || '#3d3d3d') : '#424242';
+        ctx.fillStyle = fiberColor;
+        const fx = screenX + ((seed + i * 7) % 30) + 1;
+        const fy = screenY + ((seed + i * 11) % 30) + 1;
+        ctx.fillRect(fx, fy, 1, 2); // Vertical fiber strands
     }
 
     // Subtle carpet grain lines (horizontal)
@@ -7237,19 +7274,29 @@ function drawTile(x, y) {
         ctx.fillRect(screenX, screenY + TILE_SIZE / 2 - 1, TILE_SIZE, 1);
     }
 
-    // Occasional wear marks (darker spots) in traffic areas
-    if ((x + y * 3) % 11 === 0) {
+    // Diagonal weave pattern for commercial carpet texture
+    if ((x + y) % 3 === 0) {
+        ctx.strokeStyle = 'rgba(50, 50, 50, 0.08)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(screenX, screenY);
+        ctx.lineTo(screenX + TILE_SIZE, screenY + TILE_SIZE);
+        ctx.stroke();
+    }
+
+    // Traffic wear marks (darker spots near walkways)
+    const isNearCenter = Math.abs(x - MAP_WIDTH / 2) < 4 || Math.abs(y - MAP_HEIGHT / 2) < 4;
+    if ((x + y * 3) % 9 === 0 || (isNearCenter && (x + y) % 7 === 0)) {
         ctx.fillStyle = COLORS.floorWear || '#333333';
         ctx.beginPath();
-        ctx.ellipse(screenX + TILE_SIZE / 2, screenY + TILE_SIZE / 2, 6, 4, 0, 0, Math.PI * 2);
+        ctx.ellipse(screenX + TILE_SIZE / 2, screenY + TILE_SIZE / 2, 7, 4, 0, 0, Math.PI * 2);
         ctx.fill();
     }
 
-    // Light highlights for depth
-    ctx.fillStyle = COLORS.floorLight;
-    if ((x + y) % 4 === 0) {
-        ctx.fillRect(screenX + 8, screenY + 8, 2, 2);
-        ctx.fillRect(screenX + 20, screenY + 18, 2, 2);
+    // Light highlights for depth (reduced frequency)
+    if ((x + y) % 6 === 0) {
+        ctx.fillStyle = COLORS.floorLight;
+        ctx.fillRect(screenX + 10, screenY + 10, 2, 2);
     }
 
     if (tile === TILE.WALL) {
@@ -10108,8 +10155,10 @@ function drawMiniMap() {
             const px = miniMapX + x * cellWidth;
             const py = miniMapY + y * cellHeight;
 
-            if (tile === TILE.WALL || tile === TILE.DESK) {
-                ctx.fillStyle = '#444';
+            if (tile === TILE.WINDOW) {
+                ctx.fillStyle = '#1a2a3a'; // Dark blue for exterior windows
+            } else if (isBlockingTile(tile)) {
+                ctx.fillStyle = '#444'; // Gray for walls and obstacles
             } else if (tile === TILE.CAFETERIA) {
                 ctx.fillStyle = '#5a4a3a';
             } else if (tile === TILE.BATHROOM) {
@@ -10227,9 +10276,8 @@ function updateHUD() {
     // === Coin display shows spendable currency (real-time) ===
     const coinDisplay = document.getElementById('coinDisplay');
     if (coinDisplay) {
-        const comboText = gameState.coinCombo > 1 ? ` x${gameState.coinCombo}` : '';
         // Show banked + current-floor coins for real-time accuracy
-        coinDisplay.textContent = `🪙 ${getLiveCoinTotal()}${comboText}`;
+        coinDisplay.textContent = `🪙 ${getLiveCoinTotal()}`;
         coinDisplay.style.color = gameState.coinCombo > 2 ? '#f39c12' : '#f1c40f';
     }
 
@@ -10408,7 +10456,7 @@ function canMove(x, y) {
     // Desk Vault perk: Dash through desks (handled in performDash)
     // Phase Dash perk: Dash through walls AND desks (handled in performDash)
 
-    return tile !== TILE.WALL && tile !== TILE.DESK;
+    return !isBlockingTile(tile);
 }
 
 function pushEnemyAway(enemy, fromX, fromY) {
@@ -10613,7 +10661,7 @@ function canSpawnFireWithoutBlockingAllPaths(fireX, fireY) {
         if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return false;
         if (blockedTiles.has(`${x},${y}`)) return false;
         const tile = gameState.maze[y][x];
-        return tile !== TILE.WALL && tile !== TILE.DESK;
+        return !isBlockingTile(tile);
     };
 
     // BFS from player to any exit, avoiding fires
@@ -11823,16 +11871,16 @@ function performDash() {
         // Check if we can move to this position
         let canPass = canMove(checkX, checkY);
 
-        // Phase Dash (Legendary): Allow passing through walls AND desks
+        // Phase Dash (Legendary): Allow passing through walls AND all obstacles
         if (!canPass && hasPhaseDash) {
-            if (tile === TILE.WALL || tile === TILE.DESK) {
+            if (isBlockingTile(tile)) {
                 canPass = true; // Phase through everything!
             }
         }
-        // deskVault perk: Allow passing through desks only
+        // deskVault perk: Allow passing through breakable obstacles (not walls/windows)
         else if (!canPass && hasDeskVault) {
-            if (tile === TILE.DESK) {
-                canPass = true; // Can vault over desks!
+            if (isBreakableObstacle(tile)) {
+                canPass = true; // Can vault over obstacles!
             }
         }
 
@@ -12370,8 +12418,8 @@ function performWallBreak() {
 
         const tile = gameState.maze[checkY][checkX];
 
-        // Break walls and desks
-        if (tile === TILE.WALL || tile === TILE.DESK) {
+        // Break walls and breakable obstacles (not exterior windows)
+        if (tile === TILE.WALL || isBreakableObstacle(tile)) {
             gameState.maze[checkY][checkX] = TILE.FLOOR;
             wallsBroken++;
             brokenPositions.push({ x: checkX, y: checkY });
