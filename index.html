@@ -264,7 +264,7 @@
             overflow: hidden;
         }
 
-        /* Widescreen fullscreen menu for handhelds like Ally X */
+        /* Widescreen fullscreen menu for handhelds like Ally X (8" 1920x1080) */
         @media (min-aspect-ratio: 16/10) and (max-height: 1200px) {
             #message {
                 width: 95vw;
@@ -272,6 +272,40 @@
                 max-width: none;
                 max-height: none;
                 border-radius: 8px;
+            }
+
+            /* Fix 1: Lighten bottom gradient to prevent dark "discolored" band */
+            #message .content-overlay {
+                background: linear-gradient(180deg,
+                    rgba(0,0,0,0.6) 0%,
+                    rgba(0,0,0,0.3) 30%,
+                    rgba(0,0,0,0.3) 60%,
+                    rgba(0,0,0,0.55) 85%,
+                    rgba(0,0,0,0.7) 100%);
+                padding: 8px 20px 10px 20px;
+            }
+
+            /* Fix 2: Compact UI to fit all buttons without scrolling */
+            #game-title-logo {
+                max-width: 480px;
+            }
+
+            #message .button-group {
+                gap: 6px;
+            }
+
+            #message .button-group.main-buttons {
+                gap: 8px;
+            }
+
+            #message .menu-section {
+                margin-top: 5px;
+                padding-bottom: 8px;
+            }
+
+            #message .primary-action-group {
+                gap: 6px;
+                margin-bottom: 6px;
             }
         }
 
@@ -2935,7 +2969,7 @@
         </div>
     </div>
 
-    <script src="game.js"></script>
+    <script src="game.js?v=20260204-1"></script>
     <script>
     // ============================================
     // FIRE EMBER PARTICLE SYSTEM
