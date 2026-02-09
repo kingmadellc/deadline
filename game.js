@@ -1957,6 +1957,19 @@ function getMapDimensionsForFloor(floor) {
     return { width: size, height: size };
 }
 
+// Get minimum coins required to unlock exits on a floor
+// This prevents pure speedrunning and encourages exploration
+function getMinCoinsForExit(floor) {
+    // Zen mode: no requirements
+    if (gameState && gameState.zenMode) return 0;
+
+    // Scale requirements by floor - harder floors need more exploration
+    if (floor >= 10) return 5;      // Floors 13-10: 5 coins minimum
+    else if (floor >= 6) return 10; // Floors 9-6: 10 coins minimum
+    else if (floor >= 3) return 15; // Floors 5-3: 15 coins minimum
+    else return 20;                  // Floors 2-1: 20 coins minimum (finale pressure)
+}
+
 // Get number of fires that can spawn on floor (rebalanced for 13-floor game)
 function getMaxFiresForFloor(floor) {
     // Fires start from floor 13 with gradual increase - INCREASED for more intensity
@@ -2991,9 +3004,56 @@ let gameState = {
 // ============================================
 function awardCoins(amount) {
     if (!amount || amount <= 0) return;
+
+    // Track coins before update for exit unlock detection
+    const coinsBefore = gameState.coinsEarnedThisFloor || 0;
+    const minRequired = getMinCoinsForExit(gameState.floor);
+
     gameState.coinsEarnedThisFloor = (gameState.coinsEarnedThisFloor || 0) + amount;
     gameState.coinsCollected = (gameState.coinsCollected || 0) + amount;
     gameState.coinsCollectedCount = (gameState.coinsCollectedCount || 0) + amount;
+
+    // Check if this coin collection just unlocked the exits
+    const coinsAfter = gameState.coinsEarnedThisFloor;
+    if (coinsBefore < minRequired && coinsAfter >= minRequired && !gameState.zenMode) {
+        showCelebration('exitUnlocked');
+        AudioManager.play('powerup', 0.6);
+        screenShake.trigger(4, 0.1);
+    }
+
+    // === BEST FRIEND MODE: Triggered when player has dog companion + 50 coins on floor ===
+    // This is the ultimate exploration reward - makes the dog AMAZING
+    const bestFriendThreshold = 50;
+    if (gameState.player.companion &&
+        !gameState.player.companion.bestFriendMode &&
+        coinsBefore < bestFriendThreshold &&
+        coinsAfter >= bestFriendThreshold) {
+
+        // Activate Best Friend Mode!
+        gameState.player.companion.bestFriendMode = true;
+        gameState.player.companion.attackCooldown = 0;        // Instant attack reset
+        gameState.player.companion.stunDuration = 4;          // Double stun duration
+        gameState.player.companion.coinFetchRadius = 8;       // Larger coin fetch radius
+        gameState.player.bestFriendSpeedBoost = true;         // Player moves faster
+
+        showCelebration('bestFriend');
+        AudioManager.play('powerup', 1.0);
+        screenShake.trigger(15, 0.3);
+
+        // Rainbow flash effect (like invincibility)
+        const flash = document.createElement('div');
+        flash.style.cssText = `
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: linear-gradient(45deg, #ff69b4, #f39c12, #27ae60, #3498db, #9b59b6);
+            opacity: 0.5; pointer-events: none; z-index: 999;
+            animation: flashFade 0.6s ease-out forwards;
+        `;
+        document.body.appendChild(flash);
+        setTimeout(() => flash.remove(), 600);
+
+        // Grant bonus time for achieving Best Friend
+        gameState.timer += 10;
+    }
 }
 
 function bankCoinsForFloor() {
@@ -3565,6 +3625,7 @@ function getEffectiveMoveDelay() {
     if (gameState && gameState.powerup === 'speed') delay *= 0.6; // Speed powerup (~1.67x, was 2x)
     if (gameState && gameState.powerup === 'overclock') delay *= 0.5; // Panic speed boost (2x, was 2.5x)
     if (gameState && gameState.playerSlowed) delay *= 1.5; // Coffee spill slow effect
+    if (gameState && gameState.player && gameState.player.bestFriendSpeedBoost) delay *= 0.7; // Best Friend mode: 30% faster
     if (gameState && gameState.flow) {
         const flowBoost = Math.min(gameState.flow, FLOW_MAX) / FLOW_MAX;
         delay *= (1 - (flowBoost * 0.2)); // Up to 20% faster at full flow
@@ -4676,7 +4737,15 @@ const CELEBRATIONS = {
     tierUnlockRare: { text: '🔓 RARE PERKS NOW AVAILABLE!', color: '#9b59b6' },
     tierUnlockEpic: { text: '🔓 EPIC PERKS NOW AVAILABLE!', color: '#f39c12' },
     tierUnlockLegendary: { text: '⭐ LEGENDARY TIER UNLOCKED!', color: '#ffd700' },
-    tierUnlockUltimate: { text: '💎 ULTIMATE PERKS UNLOCKED!', color: '#ff1493' }
+    tierUnlockUltimate: { text: '💎 ULTIMATE PERKS UNLOCKED!', color: '#ff1493' },
+    // === EXIT LOCK CELEBRATIONS ===
+    exitLocked: { text: '🔒 EXIT LOCKED!', color: '#e74c3c' },
+    exitUnlocked: { text: '🔓 EXITS UNLOCKED!', color: '#27ae60' },
+    // === DOG COMPANION CELEBRATIONS ===
+    dogCompanion: { text: '🐕 GOOD BOY JOINS YOU!', color: '#f39c12' },
+    dogAttack: { text: '🐕💥 BITE!', color: '#e74c3c' },
+    dogFetch: { text: '🐕🪙 FETCH!', color: '#f1c40f' },
+    bestFriend: { text: '🐕✨ BEST FRIEND MODE!', color: '#ff69b4' }
 };
 
 // ============================================
@@ -6525,20 +6594,21 @@ function initLevel() {
             showPersonalBestProximityAlert(pbStatus);
         }
     } else {
-        // Standard mode timer calculation - increased for more deliberate pacing
-        // Floor timers (base): 13=60, 12=57, 11=54, 10=50, 9=47, 8=44, 7=40, 6=37, 5=34, 4-1=30
+        // Standard mode timer calculation - TIGHTENED for more tension and powerup value
+        // Floor timers (base): 13=50, 12=47, 11=44, 10=42, 9=39, 8=36, 7=33, 6=30, 5=27, 4-1=25
+        // This makes time bonuses and exploration decisions more meaningful
         if (gameState.floor >= 11) {
-            // Opening floors (13-11): 60, 57, 54 (3s steps)
-            gameState.timer = 60 - (13 - gameState.floor) * 3;
+            // Opening floors (13-11): 50, 47, 44 (3s steps) - was 60, 57, 54
+            gameState.timer = 50 - (13 - gameState.floor) * 3;
         } else if (gameState.floor >= 8) {
-            // Early-mid floors (10-8): 50, 47, 44 (3s steps)
-            gameState.timer = 50 - (10 - gameState.floor) * 3;
+            // Early-mid floors (10-8): 42, 39, 36 (3s steps) - was 50, 47, 44
+            gameState.timer = 42 - (10 - gameState.floor) * 3;
         } else if (gameState.floor >= 5) {
-            // Mid floors (7-5): 40, 37, 34 (3s steps)
-            gameState.timer = 40 - (7 - gameState.floor) * 3;
+            // Mid floors (7-5): 33, 30, 27 (3s steps) - was 40, 37, 34
+            gameState.timer = 33 - (7 - gameState.floor) * 3;
         } else {
-            // Late floors (4-1): 30 base
-            gameState.timer = 30;
+            // Late floors (4-1): 25 base - was 30
+            gameState.timer = 25;
         }
 
         // Give more time on larger maps (based on area)
@@ -6673,8 +6743,9 @@ function initLevel() {
         gameState.zones.garden = addGarden(gameState.maze);
     }
 
-    // Add dog park randomly (~40% chance on any floor, gives companion powerup)
-    if (gameRandom() < 0.4) {
+    // Add dog park on specific floors 12, 9, 6, 3 (guaranteed, gives companion powerup)
+    // These are strategic rest stops - dog is ALWAYS present and worth visiting
+    if (gameState.floor === 12 || gameState.floor === 9 || gameState.floor === 6 || gameState.floor === 3) {
         gameState.zones.dogPark = addDogPark(gameState.maze);
     }
 
@@ -8260,25 +8331,64 @@ function drawCompanion() {
     const y = comp.y * TILE_SIZE;
     const bounce = Math.sin(comp.frame) * 2;
 
+    // === BEST FRIEND MODE: Rainbow glow effect ===
+    if (comp.bestFriendMode) {
+        const glowTime = performance.now() / 1000;
+        const hue = (glowTime * 60) % 360;  // Cycling rainbow
+
+        // Outer glow
+        ctx.save();
+        ctx.shadowColor = `hsl(${hue}, 100%, 60%)`;
+        ctx.shadowBlur = 20 + Math.sin(glowTime * 4) * 5;
+        ctx.fillStyle = `hsla(${hue}, 100%, 70%, 0.3)`;
+        ctx.beginPath();
+        ctx.arc(x + TILE_SIZE / 2, y + TILE_SIZE / 2, TILE_SIZE * 0.8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        // Sparkle particles
+        if (Math.random() < 0.3) {
+            gameState.particles.push({
+                x: x + Math.random() * TILE_SIZE,
+                y: y + Math.random() * TILE_SIZE,
+                vx: (Math.random() - 0.5) * 2,
+                vy: -Math.random() * 2 - 1,
+                size: 2 + Math.random() * 3,
+                color: `hsl(${(hue + Math.random() * 60) % 360}, 100%, 70%)`,
+                lifetime: 0.5
+            });
+        }
+    }
+
     // Use the provided portrait as the only companion image
     const dogAsset = DOG_ASSETS.office_dog;
     if (dogAsset && dogAsset.portrait && dogAsset.portrait.loaded && dogAsset.portrait.image) {
         const img = dogAsset.portrait.image;
 
-        // Shadow
-        ctx.fillStyle = 'rgba(0,0,0,0.25)';
+        // Shadow (bigger in Best Friend mode)
+        const shadowSize = comp.bestFriendMode ? 16 : 12;
+        ctx.fillStyle = comp.bestFriendMode ? 'rgba(255,105,180,0.3)' : 'rgba(0,0,0,0.25)';
         ctx.beginPath();
-        ctx.ellipse(x + TILE_SIZE / 2, y + TILE_SIZE - 2, 12, 4, 0, 0, Math.PI * 2);
+        ctx.ellipse(x + TILE_SIZE / 2, y + TILE_SIZE - 2, shadowSize, 4, 0, 0, Math.PI * 2);
         ctx.fill();
 
-        // Draw portrait with bounce
-        const dogScale = 1.25;
+        // Draw portrait with bounce (slightly larger in Best Friend mode)
+        const dogScale = comp.bestFriendMode ? 1.4 : 1.25;
         const drawWidth = TILE_SIZE * dogScale;
         const drawHeight = TILE_SIZE * dogScale;
         const drawX = x + TILE_SIZE / 2 - drawWidth / 2;
         const drawY = y + TILE_SIZE / 2 - drawHeight / 2 + bounce + 4;
 
         ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+
+        // Best Friend crown/halo
+        if (comp.bestFriendMode) {
+            ctx.fillStyle = '#ffd700';
+            ctx.font = 'bold 12px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('✨', x + TILE_SIZE / 2, drawY - 2);
+            ctx.textAlign = 'left';
+        }
     }
 
     // Happy aura when near scared enemies
@@ -8291,19 +8401,19 @@ function drawCompanion() {
     }
 
     if (nearScaredEnemy) {
-        // Bark effect
-        ctx.fillStyle = '#fff';
-        ctx.font = 'bold 10px sans-serif';
+        // Bark effect (more intense in Best Friend mode)
+        ctx.fillStyle = comp.bestFriendMode ? '#ff69b4' : '#fff';
+        ctx.font = comp.bestFriendMode ? 'bold 12px sans-serif' : 'bold 10px sans-serif';
         ctx.textAlign = 'center';
         const barkPulse = Math.sin(comp.frame * 4) > 0;
         if (barkPulse) {
-            ctx.fillText('WOOF!', x + TILE_SIZE / 2, y - 8);
+            ctx.fillText(comp.bestFriendMode ? 'BARK! BARK!' : 'WOOF!', x + TILE_SIZE / 2, y - 8);
         }
         ctx.textAlign = 'left';
     }
 
-    // Timer indicator (fading paw prints when about to expire)
-    if (comp.timer < 3) {
+    // Timer indicator - hidden in Best Friend mode (permanent until floor ends)
+    if (comp.timer < 3 && !comp.bestFriendMode) {
         const fadeAlpha = comp.timer / 3;
         ctx.fillStyle = `rgba(139, 195, 74, ${fadeAlpha})`;
         ctx.font = '10px sans-serif';
@@ -10280,12 +10390,32 @@ function updateHUD() {
         timerEl.style.color = gameState.timer <= 5 ? '#e94560' : '#ff6b6b';
     }
 
-    // === Coin display shows spendable currency (real-time) ===
+    // === Coin display shows spendable currency + exit requirement ===
     const coinDisplay = document.getElementById('coinDisplay');
     if (coinDisplay) {
-        // Show banked + current-floor coins for real-time accuracy
-        coinDisplay.textContent = `🪙 ${getLiveCoinTotal()}`;
-        coinDisplay.style.color = gameState.coinCombo > 2 ? '#f39c12' : '#f1c40f';
+        const minRequired = getMinCoinsForExit(gameState.floor);
+        const coinsThisFloor = gameState.coinsEarnedThisFloor || 0;
+        const totalCoins = getLiveCoinTotal();
+
+        // Show coins with exit requirement status
+        if (gameState.zenMode || coinsThisFloor >= minRequired) {
+            // Exits unlocked - show total coins in gold
+            coinDisplay.textContent = `🪙 ${totalCoins}`;
+            coinDisplay.style.color = gameState.coinCombo > 2 ? '#f39c12' : '#f1c40f';
+        } else {
+            // Exits locked - show requirement in red
+            const remaining = minRequired - coinsThisFloor;
+            coinDisplay.textContent = `🔒 ${coinsThisFloor}/${minRequired}`;
+            coinDisplay.style.color = '#e74c3c';
+
+            // Pulse effect when close to unlocking
+            if (remaining <= 3) {
+                const pulse = Math.sin(gameState.animationTime * 8) * 0.5 + 0.5;
+                coinDisplay.style.textShadow = `0 0 ${4 + pulse * 6}px rgba(231, 76, 60, ${0.5 + pulse * 0.3})`;
+            } else {
+                coinDisplay.style.textShadow = 'none';
+            }
+        }
     }
 
     // === FLOW DISPLAY ===
@@ -10336,9 +10466,13 @@ function updateHUD() {
         powerupExpiring = gameState.player.invincible <= 3;
     }
 
-    // Add companion indicator if active
+    // Add companion indicator if active (special display for Best Friend mode)
     if (gameState.player.companion) {
-        powerupText += ` | 🐕 ${gameState.player.companion.timer.toFixed(1)}s`;
+        if (gameState.player.companion.bestFriendMode) {
+            powerupText += ` | 🐕✨ BEST FRIEND!`;
+        } else {
+            powerupText += ` | 🐕 Good Boy!`;
+        }
     }
 
     // Add clone indicator if active
@@ -11850,6 +11984,36 @@ function movePlayer(dx, dy) {
         for (let exitIndex = 0; exitIndex < gameState.exits.length; exitIndex++) {
             const exit = gameState.exits[exitIndex];
             if (gameState.player.x === exit.x && gameState.player.y === exit.y) {
+                // === EXIT COIN REQUIREMENT: Must collect minimum coins to unlock exits ===
+                // This prevents pure speedrunning and encourages exploration
+                const minCoinsRequired = getMinCoinsForExit(gameState.floor);
+                const coinsThisFloor = gameState.coinsEarnedThisFloor || 0;
+
+                if (coinsThisFloor < minCoinsRequired && !gameState.zenMode) {
+                    // Exit is locked - show feedback and bounce player back
+                    if (!gameState.exitLockedMessageCooldown || gameState.exitLockedMessageCooldown <= 0) {
+                        const remaining = minCoinsRequired - coinsThisFloor;
+                        showCelebration('exitLocked', `Collect ${remaining} more coin${remaining > 1 ? 's' : ''} to unlock!`);
+                        AudioManager.play('hurt', 0.5);
+                        screenShake.trigger(5, 0.15);
+                        gameState.exitLockedMessageCooldown = 1.5; // Prevent spam
+                    }
+                    // Bounce player back from exit
+                    const bounceDir = [
+                        { dx: 1, dy: 1 },   // TL exit - bounce SE
+                        { dx: -1, dy: 1 },  // TR exit - bounce SW
+                        { dx: 1, dy: -1 },  // BL exit - bounce NE
+                        { dx: -1, dy: -1 }  // BR exit - bounce NW
+                    ][exitIndex];
+                    const newX = gameState.player.x + bounceDir.dx;
+                    const newY = gameState.player.y + bounceDir.dy;
+                    if (gameState.maze[newY] && gameState.maze[newY][newX] !== TILE.WALL) {
+                        gameState.player.x = newX;
+                        gameState.player.y = newY;
+                    }
+                    return; // Don't proceed to next floor
+                }
+
                 // === TRACK EXIT USAGE (for wall-breaker secret unlock) ===
                 // Exits: 0=TL, 1=TR, 2=BL, 3=BR
                 const exitCorners = ['TL', 'TR', 'BL', 'BR'];
@@ -11989,13 +12153,20 @@ function movePlayer(dx, dy) {
                     playerStats.powerupsCollected++;
                     saveStats();
                 } else if (pu.type === 'companion') {
-                    // Dog companion from dog park - follows player and scares enemies
+                    // ENHANCED Dog companion from dog park - attacks enemies, fetches coins!
+                    // Duration: Lasts rest of floor (999 seconds) - dog is your best friend
                     gameState.player.companion = {
                         x: gameState.player.x,
                         y: gameState.player.y,
-                        timer: 15,  // Lasts 15 seconds
-                        frame: 0
+                        timer: 999,  // Lasts until floor ends (essentially permanent per floor)
+                        frame: 0,
+                        // New enhanced abilities
+                        attackCooldown: 0,     // Cooldown between attacks
+                        coinFetchRadius: 5,    // Auto-collect coins within 5 tiles
+                        stunDuration: 2,       // Stuns enemies for 2 seconds on attack
+                        coinsCollectedByDog: 0 // Track for stats/celebration
                     };
+                    showCelebration('dogCompanion');
                     Haptics.playEvent('powerup_use');
                     playerStats.powerupsCollected++;
                     saveStats();
@@ -15015,6 +15186,11 @@ function update(deltaTime) {
         if (gameState.milestoneFlash < 0) gameState.milestoneFlash = 0;
     }
 
+    // === EXIT LOCK: Update message cooldown ===
+    if (gameState.exitLockedMessageCooldown && gameState.exitLockedMessageCooldown > 0) {
+        gameState.exitLockedMessageCooldown -= deltaTime;
+    }
+
     // === ENDLESS MODE: Unstable floor wall shifting ===
     if (gameState.endlessMode && gameState.endlessDangerZone === 'unstable' && gameState.started && !gameState.gameOver) {
         gameState.endlessWallShiftTimer -= deltaTime;
@@ -15480,10 +15656,15 @@ function update(deltaTime) {
         }
     }
 
-    // Update dog companion
+    // Update ENHANCED dog companion
     if (gameState.player.companion) {
         gameState.player.companion.timer -= deltaTime;
         gameState.player.companion.frame += deltaTime * 8;
+
+        // Update attack cooldown
+        if (gameState.player.companion.attackCooldown > 0) {
+            gameState.player.companion.attackCooldown -= deltaTime;
+        }
 
         // Companion follows player with slight lag
         const comp = gameState.player.companion;
@@ -15499,18 +15680,75 @@ function update(deltaTime) {
             }
         }
 
-        // Companion scares nearby enemies (they run away)
+        // === ENHANCED: Dog ATTACKS enemies (stuns them) instead of just scaring ===
         for (const enemy of gameState.enemies) {
-            if (enemy.stunned <= 0) {
+            if (enemy.stunned <= 0 && comp.attackCooldown <= 0) {
                 const dist = Math.abs(enemy.x - comp.x) + Math.abs(enemy.y - comp.y);
-                if (dist < 4) {
-                    // Enemy is scared and runs away
-                    enemy.scared = 2;  // 2 seconds of being scared
+                if (dist <= 2) {
+                    // Dog bites and stuns the enemy!
+                    enemy.stunned = comp.stunDuration || 2;
+                    enemy.scared = 3;  // Also scared after being bitten
+                    comp.attackCooldown = 1.5; // 1.5 second cooldown between attacks
+
+                    // Visual and audio feedback
+                    showCelebration('dogAttack');
+                    AudioManager.play('punch', 0.6);
+                    screenShake.trigger(4, 0.1);
+
+                    // Award time bonus for dog attacks (makes dog valuable!)
+                    gameState.timer += 2;
+                    gameState.enemiesKnockedOut = (gameState.enemiesKnockedOut || 0) + 1;
+
+                    // Spawn bite particles
+                    for (let p = 0; p < 5; p++) {
+                        gameState.particles.push({
+                            x: enemy.x * TILE_SIZE + TILE_SIZE / 2,
+                            y: enemy.y * TILE_SIZE + TILE_SIZE / 2,
+                            vx: (Math.random() - 0.5) * 4,
+                            vy: (Math.random() - 0.5) * 4,
+                            size: 3 + Math.random() * 2,
+                            color: '#f39c12',
+                            lifetime: 0.4
+                        });
+                    }
+                    break; // Only attack one enemy per update
+                }
+            }
+            // Still scare nearby enemies (larger radius)
+            if (enemy.stunned <= 0 && enemy.scared <= 0) {
+                const dist = Math.abs(enemy.x - comp.x) + Math.abs(enemy.y - comp.y);
+                if (dist < 5) {
+                    enemy.scared = 2;
                 }
             }
         }
 
-        // Remove companion when timer expires
+        // === ENHANCED: Dog FETCHES coins automatically! ===
+        const fetchRadius = comp.coinFetchRadius || 5;
+        for (let i = gameState.coins.length - 1; i >= 0; i--) {
+            const coin = gameState.coins[i];
+            if (!coin.collected && !coin.collecting) {
+                const coinDist = Math.abs(coin.x - comp.x) + Math.abs(coin.y - comp.y);
+                if (coinDist <= fetchRadius) {
+                    // Dog fetches the coin!
+                    coin.collecting = true;
+                    coin.collectScale = 1.3;
+                    coin.collectAlpha = 1.0;
+                    awardCoins(coin.value);
+
+                    comp.coinsCollectedByDog = (comp.coinsCollectedByDog || 0) + 1;
+
+                    // Show fetch celebration every 5 coins
+                    if (comp.coinsCollectedByDog % 5 === 0) {
+                        showCelebration('dogFetch');
+                    }
+
+                    AudioManager.play('coin', 0.5);
+                }
+            }
+        }
+
+        // Remove companion when timer expires (shouldn't happen with 999s timer)
         if (comp.timer <= 0) {
             gameState.player.companion = null;
         }
@@ -16509,8 +16747,8 @@ function updateTitleHighScore() {
     }
 }
 
-// Initialize settings on load
-document.addEventListener('DOMContentLoaded', () => {
+// Initialize game when DOM is ready
+function initializeGame() {
     // Show title screen
     document.getElementById('message').style.display = 'block';
     setTitleBackground();
@@ -16540,7 +16778,15 @@ document.addEventListener('DOMContentLoaded', () => {
         // Update button text based on save game state
         updateTitleMenuState();
     });
-});
+}
+
+// Handle initialization timing - works whether DOMContentLoaded has fired or not
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeGame);
+} else {
+    // DOM already ready (script at end of body), run immediately
+    initializeGame();
+}
 
 // Watch for modal visibility changes to toggle HUD/canvas visibility
 const messageModal = document.getElementById('message');
